@@ -55,6 +55,9 @@ export default function SingleInvoiceReturn({
   // Update return amount when items change
   useEffect(() => {
     if (originalInvoicePaidAmount > 0) {
+      // Check if we should ignore writeoff on partial returns
+      const ignoreWriteoffOnPartialReturns = posDetails?.custom_ignore_write_off_on_partial_returns || false;
+
       // Calculate return amount based on percentage of items being returned
       const totalItemsAmount = returnItems.reduce((sum, item) => {
         return sum + (item.qty * item.rate);
@@ -64,11 +67,20 @@ export default function SingleInvoiceReturn({
         return sum + ((item.return_qty || 0) * item.rate);
       }, 0);
 
-      // Calculate percentage of items being returned
-      const returnPercentage = totalItemsAmount > 0 ? returnedItemsAmount / totalItemsAmount : 0;
+      // Check if this is a partial return (not all items are being returned)
+      const isPartialReturn = returnedItemsAmount < totalItemsAmount;
 
-      // Apply the same percentage to the original paid amount (what customer actually paid)
-      const calculatedReturnAmount = originalInvoicePaidAmount * returnPercentage;
+      let calculatedReturnAmount;
+
+      if (ignoreWriteoffOnPartialReturns && isPartialReturn) {
+        // For partial returns when checkbox is ticked: ignore writeoff, use original item rates
+        calculatedReturnAmount = returnedItemsAmount;
+      } else {
+        // Original logic: Calculate percentage of items being returned
+        const returnPercentage = totalItemsAmount > 0 ? returnedItemsAmount / totalItemsAmount : 0;
+        // Apply the same percentage to the original paid amount (what customer actually paid)
+        calculatedReturnAmount = originalInvoicePaidAmount * returnPercentage;
+      }
 
       // Round to 2 decimal places to avoid floating point precision issues
       setReturnAmount(Math.round(calculatedReturnAmount * 100) / 100);
@@ -79,7 +91,7 @@ export default function SingleInvoiceReturn({
       }, 0);
       setReturnAmount(Math.round(total * 100) / 100);
     }
-  }, [returnItems, originalInvoicePaidAmount]);
+  }, [returnItems, originalInvoicePaidAmount, posDetails?.custom_ignore_write_off_on_partial_returns]);
 
   // Set default payment method when payment modes are loaded
 

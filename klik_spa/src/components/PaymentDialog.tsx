@@ -29,12 +29,12 @@ import {
   CheckCircle
 } from "lucide-react";
 import type { CartItem, GiftCoupon, Customer } from "../../types";
+import { toast } from "react-toastify";
 import { usePaymentModes } from "../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../hooks/useSalesTaxCharges";
 import { usePOSDetails } from "../hooks/usePOSProfile";
 import { createDraftSalesInvoice } from "../services/salesInvoice";
 import { createSalesInvoice } from "../services/salesInvoice";
-import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 import { DisplayPrintPreview, handlePrintInvoice } from "../utils/invoicePrint";
 import { sendEmails, sendWhatsAppMessage, sendSMSMessage } from "../services/useSharing";
@@ -505,6 +505,33 @@ export default function PaymentDialog({
     }
   }, [invoiceSubmitted, invoiceData, print_receipt_on_order_complete]);
 
+  // Determine if roundoff should be enabled
+  const isRoundOffEnabled = () => {
+    // Check if writeoff is allowed in POS profile
+    if (!posDetails?.custom_allow_write_off) {
+      return false;
+    }
+
+    // Check if there are any cash payment methods with amounts
+    const cashMethods = modes.filter(mode => mode.type === "Cash");
+    const cashMethodsWithAmount = cashMethods.filter(mode =>
+      (paymentAmounts[mode.mode_of_payment] || 0) > 0
+    );
+
+    // Must have cash methods with amounts
+    return cashMethodsWithAmount.length > 0;
+  };
+
+  const roundOffEnabled = isRoundOffEnabled();
+
+  // Clear roundoff when it becomes disabled
+  useEffect(() => {
+    if (!roundOffEnabled && roundOffAmount !== 0) {
+      setRoundOffAmount(0);
+      setRoundOffInput("0.00");
+    }
+  }, [roundOffEnabled, roundOffAmount]);
+
   if (!isOpen) return null;
   if (isLoading || posLoading) return <div className="p-6">Loading...</div>;
   if (error) return <div className="p-6 text-red-500">Error: {error}</div>;
@@ -529,7 +556,6 @@ export default function PaymentDialog({
     };
   });
 
-  // Determine which payment method should be adjusted by round-off when no field is active
   const getRoundTargetMethodId = (): string | null => {
     console.log('getRoundTargetMethodId Debug:', {
       activeMethodId,
@@ -640,7 +666,7 @@ export default function PaymentDialog({
 
 
     // Update the payment amount and let the adjustment useEffect handle the logic
-    setLastModifiedMethodId(methodId); // Track which method was just modified
+    setLastModifiedMethodId(methodId);
     setPaymentAmounts((prev) => ({
       ...prev,
       [methodId]: numericAmount,
@@ -649,13 +675,51 @@ export default function PaymentDialog({
   const handleRoundOff = () => {
     if (invoiceSubmitted || isProcessingPayment) return;
 
+    // Check if writeoff is allowed in POS profile
+    if (!posDetails?.custom_allow_write_off) {
+      toast.error("Writeoff not allowed.\n Ask your administrator to enable it in POS profile.");
+      return;
+    }
+
+    // Check if there are any cash payment methods with amounts
+    const cashMethods = modes.filter(mode => mode.type === "Cash");
+    const cashMethodsWithAmount = cashMethods.filter(mode =>
+      (paymentAmounts[mode.mode_of_payment] || 0) > 0
+    );
+
+    if (cashMethodsWithAmount.length === 0) {
+      toast.error("Writeoff is only allowed for cash payment methods");
+      return;
+    }
+
+    // Check if cash has any amount
+    const totalCashAmount = cashMethodsWithAmount.reduce((sum, mode) =>
+      sum + (paymentAmounts[mode.mode_of_payment] || 0), 0
+    );
+
+    if (totalCashAmount === 0) {
+      toast.error("Cash payment method must have an amount to apply writeoff");
+      return;
+    }
+
     const totalBeforeRoundOff = calculations.isInclusive
       ? calculations.taxableAmount
       : calculations.taxableAmount + calculations.taxAmount;
 
+    // Get write_off_limit from POS profile (default to 1.0 if not set)
+    const writeOffLimit = posDetails?.write_off_limit || 1.0;
+
     console.log('🔍 Detailed Roundoff Debug:', {
       calculations,
       totalBeforeRoundOff,
+      writeOffLimit,
+      custom_allow_write_off: posDetails?.custom_allow_write_off,
+      cashMethods: cashMethods.map(m => ({ name: m.mode_of_payment, type: m.type })),
+      cashMethodsWithAmount: cashMethodsWithAmount.map(m => ({
+        name: m.mode_of_payment,
+        amount: paymentAmounts[m.mode_of_payment] || 0
+      })),
+      totalCashAmount,
       isB2C,
       isB2B,
       businessType: posDetails?.business_type,
@@ -677,13 +741,24 @@ export default function PaymentDialog({
       selectedSalesTaxCharges
     });
 
-    // Universal roundoff logic: Always round down to nearest 10 regardless of business type
-    // This provides consistent rounding behavior for all business types
-    const rounded = Math.floor(totalBeforeRoundOff / 10) * 10; // Round down to nearest 10
-    const difference = rounded - totalBeforeRoundOff; // This will be negative (roundoff amount)
+    // New roundoff logic based on write_off_limit
+    let rounded, difference;
 
-    console.log('Universal Roundoff Debug:', {
+    if (writeOffLimit <= 1) {
+      // For write_off_limit <= 1, round down to nearest whole number (remove decimals)
+      // Maximum roundoff is 0.99
+      rounded = Math.floor(totalBeforeRoundOff);
+      difference = rounded - totalBeforeRoundOff; // This will be negative (roundoff amount)
+    } else {
+      // For write_off_limit > 1, round down to nearest multiple of write_off_limit
+      // Maximum roundoff is write_off_limit - 0.01
+      rounded = Math.floor(totalBeforeRoundOff / writeOffLimit) * writeOffLimit;
+      difference = rounded - totalBeforeRoundOff; // This will be negative (roundoff amount)
+    }
+
+    console.log('Write-off Limit Roundoff Debug:', {
       totalBeforeRoundOff,
+      writeOffLimit,
       rounded,
       difference,
       paymentAmounts,
@@ -761,6 +836,11 @@ export default function PaymentDialog({
   };
 
   const handleRoundOffChange = (value: string) => {
+    // Prevent manual input if roundoff is not enabled
+    if (!roundOffEnabled) {
+      return;
+    }
+
     // Ensure the value always starts with - for manual entry
     let processedValue = value;
 
@@ -1230,19 +1310,19 @@ export default function PaymentDialog({
                           type="number"
                           value={roundOffInput}
                           onChange={(e) => handleRoundOffChange(e.target.value)}
-                          disabled={invoiceSubmitted || isProcessingPayment}
+                          disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled}
                           placeholder="-0.00"
                           className={`flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
-                            invoiceSubmitted || isProcessingPayment
+                            invoiceSubmitted || isProcessingPayment || !roundOffEnabled
                               ? "cursor-not-allowed opacity-50"
                               : ""
                           }`}
                         />
                         <button
                           onClick={handleRoundOff}
-                          disabled={invoiceSubmitted || isProcessingPayment}
+                          disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled}
                           className={`px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors ${
-                            invoiceSubmitted || isProcessingPayment
+                            invoiceSubmitted || isProcessingPayment || !roundOffEnabled
                               ? "cursor-not-allowed opacity-50"
                               : ""
                           }`}
@@ -2034,7 +2114,7 @@ export default function PaymentDialog({
                             onChange={(e) =>
                               handleRoundOffChange(e.target.value)
                             }
-                            disabled={invoiceSubmitted || isProcessingPayment}
+                            disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled}
                             placeholder="-0.00"
                             className={`flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
                               invoiceSubmitted || isProcessingPayment
@@ -2044,9 +2124,9 @@ export default function PaymentDialog({
                           />
                           <button
                             onClick={handleRoundOff}
-                            disabled={invoiceSubmitted || isProcessingPayment}
+                            disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled}
                             className={`px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors ${
-                              invoiceSubmitted || isProcessingPayment
+                              invoiceSubmitted || isProcessingPayment || !roundOffEnabled
                                 ? "cursor-not-allowed opacity-50"
                                 : ""
                             }`}

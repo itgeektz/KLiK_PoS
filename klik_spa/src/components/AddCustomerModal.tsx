@@ -120,7 +120,7 @@ export default function AddCustomerModal({
     };
 
     fetchData();
-  }, [getCustomerGroups, getTerritories]);
+  }, []); // Remove getCustomerGroups and getTerritories from dependencies
 
   useEffect(() => {
     if (customer && !formInitializedRef.current) {

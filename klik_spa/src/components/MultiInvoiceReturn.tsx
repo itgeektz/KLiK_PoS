@@ -45,18 +45,21 @@ export default function MultiInvoiceReturn({
   const [invoices, setInvoices] = useState<InvoiceForReturn[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [itemsFetched, setItemsFetched] = useState(false);
   const [daysBack, setDaysBack] = useState<number>(90);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [invoicePayments, setInvoicePayments] = useState<Record<string, { method: string; amount: number }>>({});
 
   // New workflow states
-  const [workflowStep, setWorkflowStep] = useState<'select-customer' | 'select-items' | 'filter-invoices' | 'select-invoices' | 'summary'>('select-customer');
+  const [workflowStep, setWorkflowStep] = useState<'select-customer' | 'select-items' | 'filter-invoices' | 'select-invoices'>('select-customer');
   const [selectedCustomer, setSelectedCustomer] = useState<string>(customer || '');
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<{item_code: string, item_name: string}[]>([]);
   const [availableItems, setAvailableItems] = useState<{item_code: string, item_name: string}[]>([]);
   const [filteredAvailableItems, setFilteredAvailableItems] = useState<{item_code: string, item_name: string}[]>([]);
+  const [itemsCache, setItemsCache] = useState<Map<string, {item_code: string, item_name: string}[]>>(new Map());
 
   // Use the customers hook with search to fetch from server when searching
   const { customers: searchableCustomers, isLoading: customersLoading } = useCustomers(customerSearchQuery);
@@ -86,6 +89,21 @@ export default function MultiInvoiceReturn({
   }, [selectedCustomer]);
 
   const loadAvailableItems = useCallback(async () => {
+    if (!selectedCustomer) return;
+
+    // Create cache key based on parameters
+    const cacheKey = `${selectedCustomer}-${daysBack}-${selectedAddress}`;
+
+    // Check cache first
+    if (itemsCache.has(cacheKey)) {
+      const cachedItems = itemsCache.get(cacheKey)!;
+      setAvailableItems(cachedItems);
+      setFilteredAvailableItems(cachedItems);
+      setItemsFetched(true);
+      return;
+    }
+
+    setLoadingItems(true);
     try {
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - (daysBack * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
@@ -108,21 +126,91 @@ export default function MultiInvoiceReturn({
           item_name: name
         }));
 
+        // Cache the results
+        setItemsCache(prev => new Map(prev).set(cacheKey, items));
+
         setAvailableItems(items);
         setFilteredAvailableItems(items);
+        setItemsFetched(true);
       } else {
         setAvailableItems([]);
         setFilteredAvailableItems([]);
+        setItemsFetched(true);
       }
     } catch (error) {
       console.error('Error loading available items:', error);
       setAvailableItems([]);
       setFilteredAvailableItems([]);
+      setItemsFetched(true);
+    } finally {
+      setLoadingItems(false);
     }
-  }, [selectedCustomer, daysBack, selectedAddress]);
+  }, [selectedCustomer, daysBack, selectedAddress, itemsCache]);
+
+  const loadAvailableItemsForCustomer = useCallback(async (customerName: string) => {
+    if (!customerName) return;
+
+    // Create cache key based on parameters
+    const cacheKey = `${customerName}-${daysBack}-${selectedAddress}`;
+
+    // Check cache first
+    if (itemsCache.has(cacheKey)) {
+      const cachedItems = itemsCache.get(cacheKey)!;
+      setAvailableItems(cachedItems);
+      setFilteredAvailableItems(cachedItems);
+      setItemsFetched(true);
+      return;
+    }
+
+    setLoadingItems(true);
+    try {
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - (daysBack * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+
+      const result = await getCustomerInvoicesForReturn(customerName, startDate, endDate, selectedAddress);
+
+      if (result.success && result.data) {
+        // Extract unique items from all invoices
+        const itemMap = new Map<string, string>();
+        result.data.forEach(invoice => {
+          invoice.items.forEach(item => {
+            if (item.available_qty > 0) {
+              itemMap.set(item.item_code, item.item_name);
+            }
+          });
+        });
+
+        const items = Array.from(itemMap.entries()).map(([code, name]) => ({
+          item_code: code,
+          item_name: name
+        }));
+
+        // Cache the results
+        setItemsCache(prev => new Map(prev).set(cacheKey, items));
+
+        setAvailableItems(items);
+        setFilteredAvailableItems(items);
+        setItemsFetched(true);
+      } else {
+        setAvailableItems([]);
+        setFilteredAvailableItems([]);
+        setItemsFetched(true);
+      }
+    } catch (error) {
+      console.error('Error loading available items:', error);
+      setAvailableItems([]);
+      setFilteredAvailableItems([]);
+      setItemsFetched(true);
+    } finally {
+      setLoadingItems(false);
+    }
+  }, [daysBack, selectedAddress, itemsCache]);
 
   useEffect(() => {
     if (isOpen) {
+      // Reset items fetched flag when modal opens or customer changes
+      setItemsFetched(false);
+
       // Only reset on initial open, not on subsequent renders
       if (customer) {
         setWorkflowStep('select-items');
@@ -252,18 +340,12 @@ export default function MultiInvoiceReturn({
 
       invoices.forEach(invoice => {
         if (selectedInvoices.has(invoice.name)) {
-          // Calculate return amount based on percentage of items being returned vs original paid amount
-          const totalItemsAmount = invoice.items.reduce((sum, item) => sum + (item.qty * item.rate), 0);
+          // For partial returns, calculate return amount based on items being returned
+          // This ensures the amount matches what can actually be returned
           const returnedItemsAmount = invoice.items.reduce((sum, item) => sum + (item.return_qty || 0) * item.rate, 0);
 
-          // Calculate percentage of items being returned
-          const returnPercentage = totalItemsAmount > 0 ? returnedItemsAmount / totalItemsAmount : 0;
-
-          // Apply the same percentage to the original paid amount (what customer actually paid)
-          const calculatedReturnAmount = ((invoice as InvoiceWithPaidAmount).paid_amount || invoice.grand_total) * returnPercentage;
-
           // Round to 2 decimal places to avoid floating point precision issues
-          const amount = Math.round(calculatedReturnAmount * 100) / 100;
+          const amount = Math.round(returnedItemsAmount * 100) / 100;
 
           // Update the payment amount for this invoice
           if (updated[invoice.name]) {
@@ -351,8 +433,8 @@ export default function MultiInvoiceReturn({
     )
   );
 
-  const hasItemsToReturn = invoices.some(invoice =>
-    invoice.items.some(item => (item.return_qty || 0) > 0)
+  const hasItemsToReturn = selectedInvoices.size > 0 && invoices.some(invoice =>
+    selectedInvoices.has(invoice.name) && invoice.items.some(item => (item.return_qty || 0) > 0)
   );
 
   const totalReturnAmount = invoices.reduce((total, invoice) =>
@@ -482,17 +564,6 @@ export default function MultiInvoiceReturn({
                 </div>
                 <span className="text-xs sm:text-sm font-medium hidden sm:inline">Select Invoices</span>
               </div>
-
-              <div className="w-4 sm:w-8 h-1 bg-gray-300 dark:bg-gray-600"></div>
-
-              <div className={`flex items-center space-x-1 sm:space-x-2 ${workflowStep === 'summary' ? 'text-beveren-600 dark:text-beveren-400' : 'text-gray-400'}`}>
-                <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium ${
-                  workflowStep === 'summary' ? 'bg-beveren-600 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-500'
-                }`}>
-                  {customer ? '4' : '5'}
-                </div>
-                <span className="text-xs sm:text-sm font-medium hidden sm:inline">Review & Confirm</span>
-              </div>
             </div>
           </div>
         </div>
@@ -538,13 +609,11 @@ export default function MultiInvoiceReturn({
                         onClick={async () => {
                           const customerName = customer.id || customer.name || '';
                           setSelectedCustomer(customerName);
+                          setItemsFetched(false);
                           setWorkflowStep('select-items');
 
                           // Load items and addresses with the selected customer
                           try {
-                            const endDate = new Date().toISOString().split('T')[0];
-                            const startDate = new Date(Date.now() - (daysBack * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
-
                             // Load addresses
                             const addressResponse = await fetch(`/api/method/klik_pos.api.customer.get_customer_addresses?customer=${customerName}`);
                             const addressData = await addressResponse.json();
@@ -555,35 +624,11 @@ export default function MultiInvoiceReturn({
                               setCustomerAddresses([]);
                             }
 
-                            // Load available items
-                            const result = await getCustomerInvoicesForReturn(customerName, startDate, endDate, selectedAddress);
-
-                            if (result.success && result.data) {
-                              // Extract unique items from all invoices
-                              const itemMap = new Map<string, string>();
-                              result.data.forEach(invoice => {
-                                invoice.items.forEach(item => {
-                                  if (item.available_qty > 0) {
-                                    itemMap.set(item.item_code, item.item_name);
-                                  }
-                                });
-                              });
-
-                              const items = Array.from(itemMap.entries()).map(([code, name]) => ({
-                                item_code: code,
-                                item_name: name
-                              }));
-
-                              setAvailableItems(items);
-                              setFilteredAvailableItems(items);
-                            } else {
-                              setAvailableItems([]);
-                              setFilteredAvailableItems([]);
-                            }
+                            // Load available items using the proper function
+                            // Use customerName directly since setSelectedCustomer is async
+                            await loadAvailableItemsForCustomer(customerName);
                           } catch (error) {
                             console.error('Error loading customer data:', error);
-                            setAvailableItems([]);
-                            setFilteredAvailableItems([]);
                             setCustomerAddresses([]);
                           }
                         }}
@@ -669,10 +714,15 @@ export default function MultiInvoiceReturn({
                     <span className="text-sm text-gray-600 dark:text-gray-400">days</span>
                     <button
                       onClick={loadAvailableItems}
-                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                      title="Refresh items with new days setting"
+                      disabled={loadingItems}
+                      className={`p-2 rounded-lg transition-colors ${
+                        loadingItems
+                          ? 'text-gray-400 cursor-not-allowed'
+                          : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                      title={loadingItems ? "Loading items..." : "Refresh items with new days setting"}
                     >
-                      <RotateCcw className="w-4 h-4" />
+                      <RotateCcw className={`w-4 h-4 ${loadingItems ? 'animate-spin' : ''}`} />
                     </button>
                   </div>
                 </div>
@@ -689,7 +739,12 @@ export default function MultiInvoiceReturn({
                         value={selectedAddress}
                         onChange={(e) => {
                           setSelectedAddress(e.target.value);
-                          setTimeout(() => loadAvailableItems(), 100);
+                          // Debounce the API call to avoid too many requests
+                          setTimeout(() => {
+                            if (!loadingItems) {
+                              loadAvailableItems();
+                            }
+                          }, 300);
                         }}
                         className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
                                   focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800
@@ -725,10 +780,12 @@ export default function MultiInvoiceReturn({
             </div>
 
             {/* Available Items */}
-            {isLoading ? (
+            {loadingItems || !itemsFetched ? (
               <div className="bg-white dark:bg-gray-800 rounded-lg p-6 text-center flex-1 flex flex-col items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-beveren-600 mx-auto mb-4"></div>
-                <p className="text-gray-600 dark:text-gray-400">Loading available items...</p>
+                <p className="text-gray-600 dark:text-gray-400">
+                  {loadingItems ? 'Loading available items...' : 'Preparing to load items...'}
+                </p>
               </div>
             ) : availableItems.length > 0 ? (
               <div className="bg-white dark:bg-gray-800 rounded-lg p-3 sm:p-4 flex-1 flex flex-col">
@@ -763,7 +820,7 @@ export default function MultiInvoiceReturn({
                     {selectedItems.length > 0 && (
                       <button
                         onClick={() => setSelectedItems([])}
-                        className="px-3 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-700 transition-colors"
+                        className="px-3 py-2 text-sm text-orange-600  hover:bg-red-50 dark:text-orange-400 dark:hover:text-orange-300 dark:hover:bg-orange-900/20 rounded-lg border border-orange-200  transition-colors"
                       >
                         Clear All
                       </button>
@@ -1143,30 +1200,12 @@ export default function MultiInvoiceReturn({
                               step="0.01"
                               min="0"
                               value={invoicePayments[invoice.name]?.amount ?? (() => {
-                                // Check if we should ignore writeoff on partial returns
-                                const ignoreWriteoffOnPartialReturns = posDetails?.custom_ignore_write_off_on_partial_returns || false;
-
-                                // Calculate return amount based on percentage of items being returned vs original paid amount
-                                const totalItemsAmount = invoice.items.reduce((sum, item) => sum + (item.qty * item.rate), 0);
+                                // For partial returns, calculate return amount based on items being returned
+                                // This ensures the amount matches what can actually be returned
                                 const returnedItemsAmount = invoice.items.reduce((sum, item) => sum + (item.return_qty || 0) * item.rate, 0);
 
-                                // Check if this is a partial return (not all items are being returned)
-                                const isPartialReturn = returnedItemsAmount < totalItemsAmount;
-
-                                let calculatedReturnAmount;
-
-                                if (ignoreWriteoffOnPartialReturns && isPartialReturn) {
-                                  // For partial returns when checkbox is ticked: ignore writeoff, use original item rates
-                                  calculatedReturnAmount = returnedItemsAmount;
-                                } else {
-                                  // Original logic: Calculate percentage of items being returned
-                                  const returnPercentage = totalItemsAmount > 0 ? returnedItemsAmount / totalItemsAmount : 0;
-                                  // Apply the same percentage to the original paid amount (what customer actually paid)
-                                  calculatedReturnAmount = ((invoice as InvoiceWithPaidAmount).paid_amount || invoice.grand_total) * returnPercentage;
-                                }
-
                                 // Round to 2 decimal places to avoid floating point precision issues
-                                return Math.round(calculatedReturnAmount * 100) / 100;
+                                return Math.round(returnedItemsAmount * 100) / 100;
                               })()}
                               onChange={(e) => {
                                 const value = parseFloat(e.target.value) || 0;
@@ -1204,7 +1243,7 @@ export default function MultiInvoiceReturn({
                 {hasItemsToReturn && (
                   <div className="flex items-center space-x-2">
                     <CheckCircle className="w-4 h-4 text-orange-500" />
-                    <span>Items selected for return from multiple invoices</span>
+                    <span>Items selected for return from {selectedInvoices.size} invoice(s)</span>
                   </div>
                 )}
               </div>
@@ -1216,7 +1255,7 @@ export default function MultiInvoiceReturn({
                   Cancel
                 </button>
                 <button
-                  onClick={() => setWorkflowStep('summary')}
+                  onClick={handleSubmitReturn}
                   disabled={!hasItemsToReturn || isLoading}
                   className={`px-6 sm:px-8 py-3 rounded-lg font-semibold text-base sm:text-lg transition-colors shadow-lg ${
                     hasItemsToReturn && !isLoading
@@ -1224,151 +1263,9 @@ export default function MultiInvoiceReturn({
                       : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                   }`}
                 >
-                  Review Returns
+                  {isLoading ? 'Processing...' : 'Create Returns'}
                 </button>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step 5: Summary */}
-        {workflowStep === 'summary' && (
-          <div className="flex-1 flex flex-col overflow-y-auto sm:overflow-visible px-4 sm:px-6 py-4 bg-gray-50 dark:bg-gray-700">
-            <div className="mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                Step {customer ? '4' : '5'}: Review Returns
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Review the returns before processing
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              {/* Customer Info */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-600">
-                <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Customer</h4>
-                <p className="text-gray-700 dark:text-gray-300">{selectedCustomer}</p>
-              </div>
-
-              {/* Invoice Returns Summary */}
-              <div className="space-y-4">
-                {invoices
-                  .filter(invoice => selectedInvoices.has(invoice.name))
-                  .map(invoice => {
-                    const returnItems = invoice.items.filter(item => (item.return_qty || 0) > 0);
-                    const returnAmount = invoicePayments[invoice.name]?.amount ??
-                      returnItems.reduce((sum, item) => sum + (item.return_qty || 0) * item.rate, 0);
-
-                    return (
-                      <div key={invoice.name} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600">
-                        {/* Invoice Header */}
-                        <div className="p-4 border-b border-gray-200 dark:border-gray-600">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-gray-900 dark:text-white text-lg">
-                                {invoice.name}
-                              </h4>
-                              <div className="flex items-center space-x-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                <div className="flex items-center space-x-1">
-                                  <Clock className="w-4 h-4" />
-                                  <span>{invoice.posting_date}</span>
-                                </div>
-                                <div className="flex items-center space-x-1">
-                                  <MapPin className="w-4 h-4" />
-                                  <span>{invoice.customer_name || 'Walk-in Customer'}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                                {formatCurrency(returnAmount)}
-                              </div>
-                              <div className="text-sm text-gray-500 dark:text-gray-400">
-                                {invoicePayments[invoice.name]?.method || 'Cash'}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Return Items */}
-                        <div className="p-4">
-                          <div className="space-y-3">
-                            {returnItems.map((item, index) => (
-                              <div key={index} className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
-                                <div className="flex-1">
-                                  <h5 className="font-medium text-gray-900 dark:text-white">
-                                    {item.item_name}
-                                  </h5>
-                                  <div className="flex items-center space-x-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                    <span>Code: {item.item_code}</span>
-                                    {item.batch_no && <span>Batch: {item.batch_no}</span>}
-                                  </div>
-                                </div>
-                                <div className="flex items-center space-x-6 text-right">
-                                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                                    <div>Sold: {item.qty}</div>
-                                    <div>Returned: {item.returned_qty || 0}</div>
-                                    <div className="font-medium text-gray-700 dark:text-gray-300">
-                                      Return: {item.return_qty || 0}
-                                    </div>
-                                  </div>
-                                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                                    <div>Unit Price</div>
-                                    <div className="font-medium text-gray-700 dark:text-gray-300">
-                                      {formatCurrency(item.rate)}
-                                    </div>
-                                  </div>
-                                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                                    <div>Return Amount</div>
-                                    <div className="font-semibold text-gray-900 dark:text-white">
-                                      {formatCurrency((item.return_qty || 0) * item.rate)}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-
-              {/* Total Summary */}
-              <div className="bg-beveren-50 dark:bg-beveren-900/20 rounded-lg p-4 border border-beveren-200 dark:border-beveren-700">
-                <div className="flex justify-between items-center">
-                  <span className="text-lg font-semibold text-gray-900 dark:text-white">Total Return Amount:</span>
-                  <span className="text-xl font-bold text-beveren-600 dark:text-beveren-400">
-                    {formatCurrency(totalReturnAmount)}
-                  </span>
-                </div>
-                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  {invoices.filter(invoice => selectedInvoices.has(invoice.name)).length} invoice(s) • {invoices
-                    .filter(invoice => selectedInvoices.has(invoice.name))
-                    .reduce((total, invoice) => total + invoice.items.filter(item => (item.return_qty || 0) > 0).length, 0)} item(s)
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:gap-4">
-              <button
-                onClick={() => setWorkflowStep('select-invoices')}
-                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 font-medium"
-              >
-                Back to Invoices
-              </button>
-              <button
-                onClick={handleSubmitReturn}
-                disabled={isLoading}
-                className={`px-6 sm:px-8 py-3 rounded-lg font-semibold text-base sm:text-lg transition-colors shadow-lg ${
-                  !isLoading
-                    ? 'bg-orange-600 text-white hover:bg-orange-700 hover:shadow-xl'
-                    : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                {isLoading ? 'Processing...' : 'Create Returns'}
-              </button>
             </div>
           </div>
         )}

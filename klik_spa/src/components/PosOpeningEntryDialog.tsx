@@ -207,7 +207,6 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
                     </option>
                   )}
                   {posProfiles && Array.isArray(posProfiles) && posProfiles.map((profile, index) => {
-                    console.log("Rendering profile option:", profile);
                     // Handle both string arrays and object arrays
                     const profileName = typeof profile === 'string' ? profile : profile?.name;
                     const profileDisplay = typeof profile === 'string' ? profile : (profile?.name || `Profile ${index + 1}`);

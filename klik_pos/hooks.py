@@ -50,6 +50,8 @@ fixtures = [
 					"POS Profile-custom_enable_whatsapp",
 					"POS Profile-custom_enable_sms",
 					"POS Profile-custom_scale_barcodes_start_with",
+					"POS Profile-custom_ignore_write_off_on_partial_returns",
+					"POS Profile-custom_allow_write_off",
 				),
 			]
 		],

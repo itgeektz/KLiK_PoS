@@ -36,12 +36,7 @@ export default function RetailPOSLayout() {
   type POSProfileWithCustom = POSProfile & { custom_scale_barcodes_start_with?: string }
   const scalePrefix = (posDetails as POSProfileWithCustom)?.custom_scale_barcodes_start_with || ""
 
-  // Debug: show configured scale prefix once per mount/changes
-  useEffect(() => {
-    console.log('[ScaleDebug] scalePrefix:', scalePrefix)
-  }, [scalePrefix])
-
-    // Use media query to detect mobile/tablet screens
+  // Use media query to detect mobile/tablet screens
   const isMobile = useMediaQuery("(max-width: 1024px)")
 
   const handleAddToCart = (item: MenuItem) => {
@@ -92,8 +87,7 @@ export default function RetailPOSLayout() {
       }
       const expected = computeEAN13(body12)
       if (expected !== check) {
-        console.warn('[ScaleDebug] invalid check digit', { raw, expected, check })
-        // Continue parsing but flag could be added if needed
+        // Invalid check digit - continue parsing
       }
     }
 
@@ -147,7 +141,7 @@ export default function RetailPOSLayout() {
 
     // Show success message for barcode scanning
     if (useScannerOnly) {
-      console.log(`✅ Added ${item.name} to cart via barcode scanning`)
+      // Barcode scanning success handled silently
     }
   }
 
@@ -209,10 +203,8 @@ export default function RetailPOSLayout() {
       const base = query.substring(0, 7)
       const matched = menuItems.find(mi => mi.id === base || (mi.barcode && mi.barcode === base))
       setPinnedItemId(matched ? matched.id : null)
-      console.log('[ScaleDebug] typing:', { query, base, matchedId: matched?.id, pinnedItemId: matched ? matched.id : null })
     } else {
       if (pinnedItemId) {
-        console.log('[ScaleDebug] clearing pinned due to not scale typing:', { query })
         setPinnedItemId(null)
       }
     }
@@ -261,7 +253,6 @@ export default function RetailPOSLayout() {
 
           const item = menuItems.find(mi => mi.id === base || (mi.barcode && mi.barcode === base))
           if (item) {
-            console.log('[ScaleDebug] enter scale add:', { base, qty, itemId: item.id })
             await addOrIncreaseWithQuantity(item, qty)
             setSearchQuery('')
             setPinnedItemId(null)
@@ -283,7 +274,6 @@ export default function RetailPOSLayout() {
                 sold: 0,
                 uom: data.message.stock_uom,
               }
-              console.log('[ScaleDebug] enter scale API add:', { base, qty, itemId: fetched.id })
               await addOrIncreaseWithQuantity(fetched, qty)
             }
           } catch {
@@ -353,7 +343,6 @@ export default function RetailPOSLayout() {
           const qty = parsed.quantity
           const item = menuItems.find(mi => mi.id === base || (mi.barcode && mi.barcode === base))
           if (item) {
-            console.log('[ScaleDebug] auto scale add:', { base, qty, itemId: item.id })
             addOrIncreaseWithQuantity(item, qty)
             setSearchQuery('')
             setPinnedItemId(null)
@@ -412,9 +401,6 @@ export default function RetailPOSLayout() {
 
     // If exactly one item is already matched and pinned, keep it visible regardless of extra digits
     const queryForFilter = pinnedItemId && isScaleTyping ? searchQuery.substring(0, 7) : (isScaleTyping ? searchQuery.substring(0, 7) : searchQuery)
-    if (isScaleTyping) {
-      console.log('[ScaleDebug] filter using base:', { searchQuery, base: queryForFilter, pinnedItemId })
-    }
 
     // Search filter - search by name, category, item_code, barcode, or any text content
     const matchesSearch =
@@ -429,9 +415,6 @@ export default function RetailPOSLayout() {
     const passes = matchesCategory && matchesSearch
     if (pinnedItemId && isScaleTyping) {
       const keep = passes || item.id === pinnedItemId
-      if (!passes && keep) {
-        console.log('[ScaleDebug] keeping pinned in results:', { itemId: item.id, pinnedItemId })
-      }
       return keep
     }
     if (identifierItemId) {

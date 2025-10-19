@@ -138,22 +138,17 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
 
           if (response.ok) {
             const data = await response.json();
-            console.log(`📦 UOM API Response:`, data.message);
 
             if (data?.message?.uoms) {
               const uoms = data.message.uoms.map((uom: any) => uom.uom);
               setAvailableUOMs(uoms);
-              console.log(`✅ Loaded ${uoms.length} UOMs for ${itemCode}:`, uoms);
             } else {
-              console.log(`❌ No UOMs data in API response`);
               setAvailableUOMs(['Nos']); // Fallback to base UOM
             }
           } else {
-            console.log(`❌ UOM API call failed:`, response.status, response.statusText);
             setAvailableUOMs(['Nos']); // Fallback to base UOM
           }
         } else {
-          console.log(`❌ No item_code or id found for item:`, item);
           setAvailableUOMs(['Nos']); // Fallback to base UOM
         }
       } catch (error) {
@@ -206,17 +201,16 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
 
               onUOMChange(item.id, newUOM, selectedUOMData.price);
             } else {
-              console.log(`❌ No UOM data found for ${newUOM}`);
-              console.log(`Available UOMs:`, data.message.uoms.map((u: any) => u.uom));
+              // No UOM data found
             }
           } else {
-            console.log(`❌ No UOMs data in API response`);
+            // No UOMs data in API response
           }
         } else {
-          console.log(`❌ API call failed:`, response.status, response.statusText);
+          // API call failed
         }
       } else {
-        console.log(`❌ No item_code or id found for item:`, item);
+        // No item_code or id found for item
       }
     } catch (error) {
       console.error('❌ Error fetching UOM pricing:', error);
@@ -482,20 +476,7 @@ export default function OrderSummary({
     // Debug: Check if the cart item was updated
     setTimeout(() => {
       const updatedItem = cartItems.find(item => item.id === itemId);
-      console.log(`✅ Cart Update Complete:`);
-      console.log(`  After Update:`, {
-        name: updatedItem?.name,
-        uom: updatedItem?.uom,
-        price: updatedItem?.price,
-        quantity: updatedItem?.quantity
-      });
-
-      if (currentItem && updatedItem) {
-        console.log(`📊 Price Comparison:`);
-        console.log(`  Old: ${currentItem.uom} = $${currentItem.price}`);
-        console.log(`  New: ${updatedItem.uom} = $${updatedItem.price}`);
-        console.log(`  Difference: $${(updatedItem.price - currentItem.price).toFixed(2)}`);
-      }
+      // Cart update completed
     }, 100);
   }, [updateUOM, cartItems]);
   // State for item-level discounts and details

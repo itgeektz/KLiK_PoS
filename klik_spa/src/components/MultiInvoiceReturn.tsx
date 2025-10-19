@@ -51,7 +51,7 @@ export default function MultiInvoiceReturn({
   const [invoicePayments, setInvoicePayments] = useState<Record<string, { method: string; amount: number }>>({});
 
   // New workflow states
-  const [workflowStep, setWorkflowStep] = useState<'select-customer' | 'select-items' | 'filter-invoices' | 'select-invoices'>('select-customer');
+  const [workflowStep, setWorkflowStep] = useState<'select-customer' | 'select-items' | 'filter-invoices' | 'select-invoices' | 'summary'>('select-customer');
   const [selectedCustomer, setSelectedCustomer] = useState<string>(customer || '');
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<{item_code: string, item_name: string}[]>([]);
@@ -481,6 +481,17 @@ export default function MultiInvoiceReturn({
                   {customer ? '3' : '4'}
                 </div>
                 <span className="text-xs sm:text-sm font-medium hidden sm:inline">Select Invoices</span>
+              </div>
+
+              <div className="w-4 sm:w-8 h-1 bg-gray-300 dark:bg-gray-600"></div>
+
+              <div className={`flex items-center space-x-1 sm:space-x-2 ${workflowStep === 'summary' ? 'text-beveren-600 dark:text-beveren-400' : 'text-gray-400'}`}>
+                <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium ${
+                  workflowStep === 'summary' ? 'bg-beveren-600 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-500'
+                }`}>
+                  {customer ? '4' : '5'}
+                </div>
+                <span className="text-xs sm:text-sm font-medium hidden sm:inline">Review & Confirm</span>
               </div>
             </div>
           </div>
@@ -1205,7 +1216,7 @@ export default function MultiInvoiceReturn({
                   Cancel
                 </button>
                 <button
-                  onClick={handleSubmitReturn}
+                  onClick={() => setWorkflowStep('summary')}
                   disabled={!hasItemsToReturn || isLoading}
                   className={`px-6 sm:px-8 py-3 rounded-lg font-semibold text-base sm:text-lg transition-colors shadow-lg ${
                     hasItemsToReturn && !isLoading
@@ -1213,9 +1224,151 @@ export default function MultiInvoiceReturn({
                       : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                   }`}
                 >
-                  {isLoading ? 'Processing...' : 'Create Returns'}
+                  Review Returns
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: Summary */}
+        {workflowStep === 'summary' && (
+          <div className="flex-1 flex flex-col overflow-y-auto sm:overflow-visible px-4 sm:px-6 py-4 bg-gray-50 dark:bg-gray-700">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Step {customer ? '4' : '5'}: Review Returns
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Review the returns before processing
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {/* Customer Info */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-600">
+                <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Customer</h4>
+                <p className="text-gray-700 dark:text-gray-300">{selectedCustomer}</p>
+              </div>
+
+              {/* Invoice Returns Summary */}
+              <div className="space-y-4">
+                {invoices
+                  .filter(invoice => selectedInvoices.has(invoice.name))
+                  .map(invoice => {
+                    const returnItems = invoice.items.filter(item => (item.return_qty || 0) > 0);
+                    const returnAmount = invoicePayments[invoice.name]?.amount ??
+                      returnItems.reduce((sum, item) => sum + (item.return_qty || 0) * item.rate, 0);
+
+                    return (
+                      <div key={invoice.name} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600">
+                        {/* Invoice Header */}
+                        <div className="p-4 border-b border-gray-200 dark:border-gray-600">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-gray-900 dark:text-white text-lg">
+                                {invoice.name}
+                              </h4>
+                              <div className="flex items-center space-x-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                <div className="flex items-center space-x-1">
+                                  <Clock className="w-4 h-4" />
+                                  <span>{invoice.posting_date}</span>
+                                </div>
+                                <div className="flex items-center space-x-1">
+                                  <MapPin className="w-4 h-4" />
+                                  <span>{invoice.customer_name || 'Walk-in Customer'}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                                {formatCurrency(returnAmount)}
+                              </div>
+                              <div className="text-sm text-gray-500 dark:text-gray-400">
+                                {invoicePayments[invoice.name]?.method || 'Cash'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Return Items */}
+                        <div className="p-4">
+                          <div className="space-y-3">
+                            {returnItems.map((item, index) => (
+                              <div key={index} className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+                                <div className="flex-1">
+                                  <h5 className="font-medium text-gray-900 dark:text-white">
+                                    {item.item_name}
+                                  </h5>
+                                  <div className="flex items-center space-x-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                    <span>Code: {item.item_code}</span>
+                                    {item.batch_no && <span>Batch: {item.batch_no}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-6 text-right">
+                                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                                    <div>Sold: {item.qty}</div>
+                                    <div>Returned: {item.returned_qty || 0}</div>
+                                    <div className="font-medium text-gray-700 dark:text-gray-300">
+                                      Return: {item.return_qty || 0}
+                                    </div>
+                                  </div>
+                                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                                    <div>Unit Price</div>
+                                    <div className="font-medium text-gray-700 dark:text-gray-300">
+                                      {formatCurrency(item.rate)}
+                                    </div>
+                                  </div>
+                                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                                    <div>Return Amount</div>
+                                    <div className="font-semibold text-gray-900 dark:text-white">
+                                      {formatCurrency((item.return_qty || 0) * item.rate)}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Total Summary */}
+              <div className="bg-beveren-50 dark:bg-beveren-900/20 rounded-lg p-4 border border-beveren-200 dark:border-beveren-700">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-semibold text-gray-900 dark:text-white">Total Return Amount:</span>
+                  <span className="text-xl font-bold text-beveren-600 dark:text-beveren-400">
+                    {formatCurrency(totalReturnAmount)}
+                  </span>
+                </div>
+                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  {invoices.filter(invoice => selectedInvoices.has(invoice.name)).length} invoice(s) • {invoices
+                    .filter(invoice => selectedInvoices.has(invoice.name))
+                    .reduce((total, invoice) => total + invoice.items.filter(item => (item.return_qty || 0) > 0).length, 0)} item(s)
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <button
+                onClick={() => setWorkflowStep('select-invoices')}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 font-medium"
+              >
+                Back to Invoices
+              </button>
+              <button
+                onClick={handleSubmitReturn}
+                disabled={isLoading}
+                className={`px-6 sm:px-8 py-3 rounded-lg font-semibold text-base sm:text-lg transition-colors shadow-lg ${
+                  !isLoading
+                    ? 'bg-orange-600 text-white hover:bg-orange-700 hover:shadow-xl'
+                    : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                {isLoading ? 'Processing...' : 'Create Returns'}
+              </button>
             </div>
           </div>
         )}

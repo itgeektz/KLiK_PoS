@@ -57,7 +57,7 @@ export default function SingleInvoiceReturn({
     if (originalInvoicePaidAmount > 0) {
       // Check if we should ignore writeoff on partial returns
       const ignoreWriteoffOnPartialReturns = posDetails?.custom_ignore_write_off_on_partial_returns || false;
-      
+
       // Calculate return amount based on percentage of items being returned
       const totalItemsAmount = returnItems.reduce((sum, item) => {
         return sum + (item.qty * item.rate);
@@ -71,7 +71,7 @@ export default function SingleInvoiceReturn({
       const isPartialReturn = returnedItemsAmount < totalItemsAmount;
 
       let calculatedReturnAmount;
-      
+
       if (ignoreWriteoffOnPartialReturns && isPartialReturn) {
         // For partial returns when checkbox is ticked: ignore writeoff, use original item rates
         calculatedReturnAmount = returnedItemsAmount;

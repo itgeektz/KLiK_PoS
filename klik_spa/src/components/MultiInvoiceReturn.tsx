@@ -1134,7 +1134,7 @@ export default function MultiInvoiceReturn({
                               value={invoicePayments[invoice.name]?.amount ?? (() => {
                                 // Check if we should ignore writeoff on partial returns
                                 const ignoreWriteoffOnPartialReturns = posDetails?.custom_ignore_write_off_on_partial_returns || false;
-                                
+
                                 // Calculate return amount based on percentage of items being returned vs original paid amount
                                 const totalItemsAmount = invoice.items.reduce((sum, item) => sum + (item.qty * item.rate), 0);
                                 const returnedItemsAmount = invoice.items.reduce((sum, item) => sum + (item.return_qty || 0) * item.rate, 0);

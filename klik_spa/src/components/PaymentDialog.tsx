@@ -557,41 +557,27 @@ export default function PaymentDialog({
   });
 
   const getRoundTargetMethodId = (): string | null => {
-    console.log('getRoundTargetMethodId Debug:', {
-      activeMethodId,
-      paymentAmounts,
-      modes: modes.map(m => ({ id: m.mode_of_payment, default: m.default })),
-      modesLength: modes.length,
-      paymentMethodsLength: paymentMethods.length
-    });
-
     // If there's an active method and it exists in payment amounts, use it
     if (activeMethodId && paymentAmounts.hasOwnProperty(activeMethodId)) {
-      console.log('Using active method:', activeMethodId);
       return activeMethodId;
     }
 
     // Collect non-zero methods
     const nonZero = Object.entries(paymentAmounts).filter(([, amt]) => (amt || 0) > 0).map(([id]) => id);
-    console.log('Non-zero methods:', nonZero);
 
     if (nonZero.length === 1) {
-      console.log('Using single non-zero method:', nonZero[0]);
       return nonZero[0];
     }
 
     // Prefer a non-default method that has a value
     const defaultId = modes.find((m) => m.default === 1)?.mode_of_payment || null;
-    console.log('Default method ID:', defaultId);
 
     const nonDefaultWithValue = nonZero.find((id) => id !== defaultId);
     if (nonDefaultWithValue) {
-      console.log('Using non-default method with value:', nonDefaultWithValue);
       return nonDefaultWithValue;
     }
 
     // Fallback to default method
-    console.log('Using fallback default method:', defaultId);
     return defaultId;
   };
 
@@ -709,38 +695,6 @@ export default function PaymentDialog({
     // Get write_off_limit from POS profile (default to 1.0 if not set)
     const writeOffLimit = posDetails?.write_off_limit || 1.0;
 
-    console.log('🔍 Detailed Roundoff Debug:', {
-      calculations,
-      totalBeforeRoundOff,
-      writeOffLimit,
-      custom_allow_write_off: posDetails?.custom_allow_write_off,
-      cashMethods: cashMethods.map(m => ({ name: m.mode_of_payment, type: m.type })),
-      cashMethodsWithAmount: cashMethodsWithAmount.map(m => ({
-        name: m.mode_of_payment,
-        amount: paymentAmounts[m.mode_of_payment] || 0
-      })),
-      totalCashAmount,
-      isB2C,
-      isB2B,
-      businessType: posDetails?.business_type,
-      isCombinedBusinessType: posDetails?.business_type === "B2B & B2C",
-      posDetails,
-      isInclusive: calculations.isInclusive,
-      taxableAmount: calculations.taxableAmount,
-      taxAmount: calculations.taxAmount,
-      grandTotal: calculations.grandTotal,
-      roundOffAmount,
-      cartItems: cartItems.map(item => ({
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        discountedPrice: (item as any).discountedPrice
-      })),
-      appliedCoupons,
-      selectedSalesTaxCharges
-    });
-
     // New roundoff logic based on write_off_limit
     let rounded, difference;
 
@@ -756,19 +710,6 @@ export default function PaymentDialog({
       difference = rounded - totalBeforeRoundOff; // This will be negative (roundoff amount)
     }
 
-    console.log('Write-off Limit Roundoff Debug:', {
-      totalBeforeRoundOff,
-      writeOffLimit,
-      rounded,
-      difference,
-      paymentAmounts,
-      activeMethodId,
-      isB2C,
-      isB2B,
-      businessType: posDetails?.business_type,
-      isCombinedBusinessType: posDetails?.business_type === "B2B & B2C"
-    });
-
     setRoundOffAmount(difference);
     setRoundOffInput(difference.toFixed(2));
 
@@ -777,16 +718,12 @@ export default function PaymentDialog({
     // B2C & B2B & B2C: Auto-fill payment amounts (push checkout total to payment method)
     if (isB2B && !isB2C) {
       // Pure B2B: Don't auto-fill payment amounts
-      console.log('B2B Business Type: Not auto-filling payment amounts - user must manually enter');
       // Just set the roundoff amount, don't modify payment amounts
     } else {
       // B2C or B2B & B2C: Auto-fill payment amounts
-      console.log('B2C or B2B & B2C Business Type: Auto-filling payment amounts');
 
       // Adjust the currently active or most relevant payment method to reflect the rounded total
       const targetId = getRoundTargetMethodId();
-      console.log('Roundoff Target Method ID:', targetId);
-      console.log('Available Payment Methods:', paymentMethods.map(m => ({ id: m.id, name: m.name })));
 
       // Always ensure we have a valid target method
       let finalTargetId = targetId;
@@ -794,7 +731,6 @@ export default function PaymentDialog({
       if (!finalTargetId && paymentMethods.length > 0) {
         // Use first available method as fallback
         finalTargetId = paymentMethods[0].id;
-        console.log('Using first available method as fallback:', finalTargetId);
       }
 
       // Additional fallback: use default mode from modes if paymentMethods array is empty or unresolved
@@ -803,7 +739,6 @@ export default function PaymentDialog({
           || modes[0]?.mode_of_payment;
         if (fallbackDefaultFromModes) {
           finalTargetId = fallbackDefaultFromModes;
-          console.log('Using fallback default from modes as target:', finalTargetId);
         }
       }
 
@@ -814,14 +749,6 @@ export default function PaymentDialog({
 
         // Set the target method to the rounded amount
         newPaymentAmounts[finalTargetId] = rounded;
-
-        console.log('Roundoff Payment Calculation:', {
-          targetId: finalTargetId,
-          rounded,
-          previousAmounts: paymentAmounts,
-          newAmounts: newPaymentAmounts,
-          paymentMethodsCount: paymentMethods.length
-        });
 
         setPaymentAmounts(newPaymentAmounts);
       } else {

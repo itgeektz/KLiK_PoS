@@ -1331,20 +1331,63 @@ def get_customer_invoices_for_return(customer, start_date=None, end_date=None, s
 			order_by="posting_date desc",
 		)
 
-		for invoice in invoices:
-			items = frappe.get_all(
+		# Batch fetch all items for all invoices
+		invoice_names = [inv.name for inv in invoices]
+		all_items = []
+		if invoice_names:
+			all_items = frappe.get_all(
 				"Sales Invoice Item",
-				filters={"parent": invoice.name},
-				fields=["item_code", "item_name", "qty", "rate", "amount"],
+				filters={"parent": ["in", invoice_names]},
+				fields=["parent", "item_code", "item_name", "qty", "rate", "amount"],
+				order_by="parent, idx",
 			)
 
-			# Calculate returned quantities for each item
-			for item in items:
-				returned_data = returned_qty(customer, invoice.name, item.item_code)
-				item.returned_qty = returned_data.get("total_returned_qty", 0)
-				item.available_qty = item.qty - item.returned_qty
+		# Batch fetch all returned quantities for all items at once
+		returned_qty_map = {}
+		if all_items:
+			item_codes = list(set([item.item_code for item in all_items]))
+			_invoice_item_pairs = [(item.parent, item.item_code) for item in all_items]
 
-			invoice.items = items
+			if item_codes:
+				# Create a more efficient query to get all returned quantities
+				returns_query = """
+					SELECT
+						rsi.return_against as original_invoice,
+						sii.item_code,
+						COALESCE(SUM(ABS(sii.qty)), 0) as total_returned_qty
+					FROM `tabSales Invoice` rsi
+					JOIN `tabSales Invoice Item` sii ON rsi.name = sii.parent
+					WHERE rsi.is_return = 1
+					  AND rsi.return_against IN ({})
+					  AND sii.item_code IN ({})
+					  AND rsi.docstatus = 1
+					  AND rsi.customer = %s
+					GROUP BY rsi.return_against, sii.item_code
+				""".format(
+					",".join([f"'{name}'" for name in invoice_names]),
+					",".join([f"'{code}'" for code in item_codes]),
+				)
+
+				returns_data = frappe.db.sql(returns_query, (customer,), as_dict=True)
+				returned_qty_map = {
+					(row.original_invoice, row.item_code): row.total_returned_qty for row in returns_data
+				}
+
+		# Group items by invoice and calculate returned quantities
+		invoice_items_map = {}
+		for item in all_items:
+			if item.parent not in invoice_items_map:
+				invoice_items_map[item.parent] = []
+
+			returned_qty_value = returned_qty_map.get((item.parent, item.item_code), 0)
+			item.returned_qty = returned_qty_value
+			item.available_qty = item.qty - returned_qty_value
+
+			invoice_items_map[item.parent].append(item)
+
+		# Assign items to invoices
+		for invoice in invoices:
+			invoice.items = invoice_items_map.get(invoice.name, [])
 
 			# Get all payment methods from payment child table
 			invoice_doc = frappe.get_doc("Sales Invoice", invoice.name)

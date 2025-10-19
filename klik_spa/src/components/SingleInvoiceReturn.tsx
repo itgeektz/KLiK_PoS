@@ -162,8 +162,8 @@ export default function SingleInvoiceReturn({
           rate,
           amount,
           returned_qty: returnedQty,
-          available_qty: qty - returnedQty,
-          return_qty: qty - returnedQty
+          available_qty: Math.round((qty - returnedQty) * 100) / 100,  // Round to 2 decimal places
+          return_qty: Math.round((qty - returnedQty) * 100) / 100  // Round to 2 decimal places
         });
       }
 
@@ -179,8 +179,8 @@ export default function SingleInvoiceReturn({
   const handleReturnQtyChange = (itemCode: string, newQty: number) => {
     setReturnItems(prev => prev.map(item => {
       if (item.item_code === itemCode) {
-        // Ensure return qty doesn't exceed available qty
-        const validQty = Math.max(0, Math.min(newQty, item.available_qty));
+        // Ensure return qty doesn't exceed available qty and round to 2 decimal places
+        const validQty = Math.max(0, Math.min(Math.round(newQty * 100) / 100, item.available_qty));
         return { ...item, return_qty: validQty };
       }
       return item;
@@ -401,7 +401,7 @@ export default function SingleInvoiceReturn({
                               <button
                                 onClick={() => handleReturnQtyChange(
                                   item.item_code,
-                                  (item.return_qty || 0) - 1
+                                  Math.round(((item.return_qty || 0) - 1) * 100) / 100  // Round to 2 decimal places
                                 )}
                                 disabled={!item.return_qty || item.return_qty <= 0}
                                 className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
@@ -415,7 +415,7 @@ export default function SingleInvoiceReturn({
                                 value={item.return_qty || 0}
                                 onChange={(e) => handleReturnQtyChange(
                                   item.item_code,
-                                  parseInt(e.target.value) || 0
+                                  Math.round((parseFloat(e.target.value) || 0) * 100) / 100  // Round to 2 decimal places
                                 )}
                                 className="w-16 px-2 py-1 text-center border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
                                 disabled={item.available_qty === 0}
@@ -423,7 +423,7 @@ export default function SingleInvoiceReturn({
                               <button
                                 onClick={() => handleReturnQtyChange(
                                   item.item_code,
-                                  (item.return_qty || 0) + 1
+                                  Math.round(((item.return_qty || 0) + 1) * 100) / 100  // Round to 2 decimal places
                                 )}
                                 disabled={item.available_qty === 0 || (item.return_qty || 0) >= item.available_qty}
                                 className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-600 rounded"

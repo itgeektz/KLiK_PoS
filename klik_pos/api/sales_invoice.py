@@ -208,7 +208,9 @@ def get_invoice_details(invoice_id):
 		items = []
 		for item in items_data:
 			returned_qty_value = returned_qty_map.get(item.item_code, 0)
-			available_qty = item.qty - returned_qty_value
+			available_qty = round(
+				item.qty - returned_qty_value, 6
+			)  # Round to 6 decimal places to avoid precision issues
 
 			items.append(
 				{
@@ -1220,7 +1222,9 @@ def returned_qty(customer, sales_invoice, item):
 	)
 
 	total = abs(result[0]["total_returned_qty"]) if result else 0.0
-	return {"total_returned_qty": float(total)}
+	return {
+		"total_returned_qty": round(float(total), 6)
+	}  # Round to 6 decimal places to avoid precision issues
 
 
 @frappe.whitelist()
@@ -1381,7 +1385,9 @@ def get_customer_invoices_for_return(customer, start_date=None, end_date=None, s
 
 			returned_qty_value = returned_qty_map.get((item.parent, item.item_code), 0)
 			item.returned_qty = returned_qty_value
-			item.available_qty = item.qty - returned_qty_value
+			item.available_qty = round(
+				item.qty - returned_qty_value, 6
+			)  # Round to 6 decimal places to avoid precision issues
 
 			invoice_items_map[item.parent].append(item)
 
@@ -1485,7 +1491,6 @@ def create_partial_return(
 		return_doc.custom_base_roundoff_amount = 0
 		return_doc.custom_roundoff_account = get_writeoff_account()
 
-
 		# Filter items to only include selected ones with return quantities
 		filtered_items = []
 		for return_item in return_items:
@@ -1549,11 +1554,17 @@ def create_partial_return(
 		requested_return = abs(final_return_amount)
 		is_full_return = abs(requested_return - original_grand_total) < 0.01
 
-		if is_full_return and hasattr(original_invoice, 'custom_roundoff_amount') and original_invoice.custom_roundoff_amount:
+		if (
+			is_full_return
+			and hasattr(original_invoice, "custom_roundoff_amount")
+			and original_invoice.custom_roundoff_amount
+		):
 			# For full returns, mirror the original write-off to make grand total = paid amount
 			return_doc.custom_roundoff_amount = abs(original_invoice.custom_roundoff_amount)
 			return_doc.custom_base_roundoff_amount = abs(original_invoice.custom_base_roundoff_amount)
-			return_doc.custom_roundoff_account = getattr(original_invoice, 'custom_roundoff_account', get_writeoff_account())
+			return_doc.custom_roundoff_account = getattr(
+				original_invoice, "custom_roundoff_account", get_writeoff_account()
+			)
 
 			# Adjust payment amount to match the paid amount (after write-off)
 			original_paid_amount = original_invoice.paid_amount or original_invoice.grand_total

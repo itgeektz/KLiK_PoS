@@ -86,6 +86,8 @@ def get_pos_details():
 		"default_customer": default_customer,
 		"current_opening_entry": current_opening_entry,
 		"custom_scale_barcodes_start_with": pos.custom_scale_barcodes_start_with or "",
+		"write_off_limit":pos.write_off_limit or 1.0,
+		"custom_allow_write_off":pos.custom_allow_write_off or 0,
 	}
 	return details
 

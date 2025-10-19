@@ -91,3 +91,4 @@ def remove_invoice_performance_indexes():
 if __name__ == "__main__":
 	# Run the optimization
 	add_invoice_performance_indexes()
+

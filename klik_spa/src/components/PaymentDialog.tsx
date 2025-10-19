@@ -29,12 +29,12 @@ import {
   CheckCircle
 } from "lucide-react";
 import type { CartItem, GiftCoupon, Customer } from "../../types";
+import { toast } from "react-toastify";
 import { usePaymentModes } from "../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../hooks/useSalesTaxCharges";
 import { usePOSDetails } from "../hooks/usePOSProfile";
 import { createDraftSalesInvoice } from "../services/salesInvoice";
 import { createSalesInvoice } from "../services/salesInvoice";
-import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 import { DisplayPrintPreview, handlePrintInvoice } from "../utils/invoicePrint";
 import { sendEmails, sendWhatsAppMessage, sendSMSMessage } from "../services/useSharing";
@@ -649,13 +649,51 @@ export default function PaymentDialog({
   const handleRoundOff = () => {
     if (invoiceSubmitted || isProcessingPayment) return;
 
+    // Check if writeoff is allowed in POS profile
+    if (!posDetails?.custom_allow_write_off) {
+      toast.error("Writeoff not allowed");
+      return;
+    }
+
+    // Check if there are any cash payment methods with amounts
+    const cashMethods = modes.filter(mode => mode.type === "Cash");
+    const cashMethodsWithAmount = cashMethods.filter(mode =>
+      (paymentAmounts[mode.mode_of_payment] || 0) > 0
+    );
+
+    if (cashMethodsWithAmount.length === 0) {
+      toast.error("Writeoff is only allowed for cash payment methods");
+      return;
+    }
+
+    // Check if cash has any amount
+    const totalCashAmount = cashMethodsWithAmount.reduce((sum, mode) =>
+      sum + (paymentAmounts[mode.mode_of_payment] || 0), 0
+    );
+
+    if (totalCashAmount === 0) {
+      toast.error("Cash payment method must have an amount to apply writeoff");
+      return;
+    }
+
     const totalBeforeRoundOff = calculations.isInclusive
       ? calculations.taxableAmount
       : calculations.taxableAmount + calculations.taxAmount;
 
+    // Get write_off_limit from POS profile (default to 1.0 if not set)
+    const writeOffLimit = posDetails?.write_off_limit || 1.0;
+
     console.log('🔍 Detailed Roundoff Debug:', {
       calculations,
       totalBeforeRoundOff,
+      writeOffLimit,
+      custom_allow_write_off: posDetails?.custom_allow_write_off,
+      cashMethods: cashMethods.map(m => ({ name: m.mode_of_payment, type: m.type })),
+      cashMethodsWithAmount: cashMethodsWithAmount.map(m => ({
+        name: m.mode_of_payment,
+        amount: paymentAmounts[m.mode_of_payment] || 0
+      })),
+      totalCashAmount,
       isB2C,
       isB2B,
       businessType: posDetails?.business_type,
@@ -677,13 +715,24 @@ export default function PaymentDialog({
       selectedSalesTaxCharges
     });
 
-    // Universal roundoff logic: Always round down to nearest 10 regardless of business type
-    // This provides consistent rounding behavior for all business types
-    const rounded = Math.floor(totalBeforeRoundOff / 10) * 10; // Round down to nearest 10
-    const difference = rounded - totalBeforeRoundOff; // This will be negative (roundoff amount)
+    // New roundoff logic based on write_off_limit
+    let rounded, difference;
 
-    console.log('Universal Roundoff Debug:', {
+    if (writeOffLimit <= 1) {
+      // For write_off_limit <= 1, round down to nearest whole number (remove decimals)
+      // Maximum roundoff is 0.99
+      rounded = Math.floor(totalBeforeRoundOff);
+      difference = rounded - totalBeforeRoundOff; // This will be negative (roundoff amount)
+    } else {
+      // For write_off_limit > 1, round down to nearest multiple of write_off_limit
+      // Maximum roundoff is write_off_limit - 0.01
+      rounded = Math.floor(totalBeforeRoundOff / writeOffLimit) * writeOffLimit;
+      difference = rounded - totalBeforeRoundOff; // This will be negative (roundoff amount)
+    }
+
+    console.log('Write-off Limit Roundoff Debug:', {
       totalBeforeRoundOff,
+      writeOffLimit,
       rounded,
       difference,
       paymentAmounts,

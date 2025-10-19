@@ -248,9 +248,9 @@ export default function SingleInvoiceReturn({
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 bg-beveren-100 dark:bg-orange-900/20 border-b border-gray-200 dark:border-gray-700">
+        <div className="px-6 py-4 bg-beveren-100 dark:bg-orange-900/20 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="p-2 bg-orange-100 dark:bg-orange-900/40 rounded-lg">
@@ -462,102 +462,101 @@ export default function SingleInvoiceReturn({
                 </div>
               )}
 
-              {/* Payment Method Selection */}
-              {hasItemsToReturn && (
-                <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                    Payment Method for Return
-                  </h3>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Payment Method Selection */}
-                    <div>
-                      <select
-                        value={selectedPaymentMethod}
-                        onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-beveren-500 transition-colors"
-                        disabled={paymentModesLoading}
-                      >
-                        {paymentModesLoading ? (
-                          <option>Loading payment methods...</option>
-                        ) : (
-                          <>
-                            <option value="">{""}</option>
-                            {paymentModes.map((mode) => {
-                              const val = mode.mode_of_payment || mode.name;
-                              return (
-                                <option key={val} value={val}>
-                                  {val}
-                                </option>
-                              );
-                            })}
-                          </>
-                        )}
-                      </select>
-                    </div>
-
-                    {/* Return Amount Input with currency symbol */}
-                    <div>
-                      <div className="relative">
-                        <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500 dark:text-gray-400 text-sm">
-                          {currencySymbol}
-                        </span>
-                        <input
-                          type="number"
-                          value={returnAmount}
-                          onChange={(e) => {
-                            const value = parseFloat(e.target.value) || 0;
-                            // Round to 2 decimal places to avoid floating point precision issues
-                            setReturnAmount(Math.round(value * 100) / 100);
-                          }}
-                          step="0.01"
-                          min="0"
-                          className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-beveren-500 transition-colors text-right text-lg font-semibold"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              {hasItemsToReturn && (
+        {/* Fixed Footer with Payment Methods and Return Button */}
+        {hasItemsToReturn && (
+          <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 flex-shrink-0">
+            {/* Payment Method Selection */}
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+                Payment Method for Return
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Payment Method Selection */}
+                <div>
+                  <select
+                    value={selectedPaymentMethod}
+                    onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-beveren-500 transition-colors"
+                    disabled={paymentModesLoading}
+                  >
+                    {paymentModesLoading ? (
+                      <option>Loading payment methods...</option>
+                    ) : (
+                      <>
+                        <option value="">{""}</option>
+                        {paymentModes.map((mode) => {
+                          const val = mode.mode_of_payment || mode.name;
+                          return (
+                            <option key={val} value={val}>
+                              {val}
+                            </option>
+                          );
+                        })}
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                {/* Return Amount Input with currency symbol */}
+                <div>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500 dark:text-gray-400 text-sm">
+                      {currencySymbol}
+                    </span>
+                    <input
+                      type="number"
+                      value={returnAmount}
+                      onChange={(e) => {
+                        const value = parseFloat(e.target.value) || 0;
+                        // Round to 2 decimal places to avoid floating point precision issues
+                        setReturnAmount(Math.round(value * 100) / 100);
+                      }}
+                      step="0.01"
+                      min="0"
+                      className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-beveren-500 focus:border-beveren-500 transition-colors text-right text-lg font-semibold"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
                 <div className="flex items-center space-x-2">
                   <CheckCircle className="w-4 h-4 text-green-500" />
                   <span>
                     {returnItems.filter(item => (item.return_qty || 0) > 0).length} item(s) selected for return
                   </span>
                 </div>
-              )}
-            </div>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmitReturn}
-                disabled={!hasItemsToReturn || isLoading || loadingReturnData}
-                className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-                  hasItemsToReturn && !isLoading && !loadingReturnData
-                    ? 'bg-orange-600 text-white hover:bg-orange-700'
-                    : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                {isLoading ? 'Processing...' : 'Create Return'}
-              </button>
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSubmitReturn}
+                  disabled={!hasItemsToReturn || isLoading || loadingReturnData}
+                  className={`px-6 py-3 rounded-lg font-semibold text-base transition-colors shadow-lg ${
+                    hasItemsToReturn && !isLoading && !loadingReturnData
+                      ? 'bg-orange-600 text-white hover:bg-orange-700 hover:shadow-xl'
+                      : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  {isLoading ? 'Processing Return...' : 'Process Return'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

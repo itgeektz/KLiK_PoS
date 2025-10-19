@@ -776,10 +776,19 @@ export default function PaymentDialog({
       processedValue = '-' + value;
     }
 
-    setRoundOffInput(processedValue);
-
     const parsed = parseFloat(processedValue);
     if (!isNaN(parsed)) {
+      // Validate against write-off limit
+      const writeOffLimit = posDetails?.write_off_limit || 1.0;
+      const maxAllowedRoundoff = writeOffLimit <= 1 ? 0.99 : writeOffLimit - 0.01;
+
+      // Check if the absolute value exceeds the limit
+      if (Math.abs(parsed) > maxAllowedRoundoff) {
+        toast.error(`Roundoff amount cannot exceed ${maxAllowedRoundoff.toFixed(2)}. Write-off limit is ${writeOffLimit}.`);
+        return;
+      }
+
+      setRoundOffInput(processedValue);
       setRoundOffAmount(parsed);
 
       // Recompute new grand total after roundoff change

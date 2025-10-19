@@ -1339,14 +1339,14 @@ def get_customer_invoices_for_return(customer, start_date=None, end_date=None, s
 				"Sales Invoice Item",
 				filters={"parent": ["in", invoice_names]},
 				fields=["parent", "item_code", "item_name", "qty", "rate", "amount"],
-				order_by="parent, idx"
+				order_by="parent, idx",
 			)
 
 		# Batch fetch all returned quantities for all items at once
 		returned_qty_map = {}
 		if all_items:
 			item_codes = list(set([item.item_code for item in all_items]))
-			invoice_item_pairs = [(item.parent, item.item_code) for item in all_items]
+			_invoice_item_pairs = [(item.parent, item.item_code) for item in all_items]
 
 			if item_codes:
 				# Create a more efficient query to get all returned quantities
@@ -1365,13 +1365,12 @@ def get_customer_invoices_for_return(customer, start_date=None, end_date=None, s
 					GROUP BY rsi.return_against, sii.item_code
 				""".format(
 					",".join([f"'{name}'" for name in invoice_names]),
-					",".join([f"'{code}'" for code in item_codes])
+					",".join([f"'{code}'" for code in item_codes]),
 				)
 
 				returns_data = frappe.db.sql(returns_query, (customer,), as_dict=True)
 				returned_qty_map = {
-					(row.original_invoice, row.item_code): row.total_returned_qty
-					for row in returns_data
+					(row.original_invoice, row.item_code): row.total_returned_qty for row in returns_data
 				}
 
 		# Group items by invoice and calculate returned quantities

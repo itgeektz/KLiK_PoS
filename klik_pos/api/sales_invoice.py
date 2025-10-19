@@ -1485,6 +1485,7 @@ def create_partial_return(
 		return_doc.custom_base_roundoff_amount = 0
 		return_doc.custom_roundoff_account = get_writeoff_account()
 
+
 		# Filter items to only include selected ones with return quantities
 		filtered_items = []
 		for return_item in return_items:
@@ -1543,6 +1544,20 @@ def create_partial_return(
 				)
 		except Exception:
 			pass
+		# Handle write-off for full returns
+		original_grand_total = abs(original_invoice.grand_total)
+		requested_return = abs(final_return_amount)
+		is_full_return = abs(requested_return - original_grand_total) < 0.01
+
+		if is_full_return and hasattr(original_invoice, 'custom_roundoff_amount') and original_invoice.custom_roundoff_amount:
+			# For full returns, mirror the original write-off to make grand total = paid amount
+			return_doc.custom_roundoff_amount = abs(original_invoice.custom_roundoff_amount)
+			return_doc.custom_base_roundoff_amount = abs(original_invoice.custom_base_roundoff_amount)
+			return_doc.custom_roundoff_account = getattr(original_invoice, 'custom_roundoff_account', get_writeoff_account())
+
+			# Adjust payment amount to match the paid amount (after write-off)
+			original_paid_amount = original_invoice.paid_amount or original_invoice.grand_total
+			final_return_amount = abs(original_paid_amount)
 
 		if final_return_amount > 0:
 			return_doc.append(

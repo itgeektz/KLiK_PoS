@@ -1698,28 +1698,6 @@ export default function OrderSummary({
                         </div>
                       )}
 
-                      {/* Optional: Action buttons for the expanded section */}
-                      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600 flex justify-end space-x-2">
-                        <button
-                          onClick={() => toggleItemExpansion(item.id)}
-                          className={`px-3 py-1 ${
-                            isMobile ? "text-sm" : "text-xs"
-                          } text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 font-medium`}
-                        >
-                          Collapse
-                        </button>
-                        <button
-                          onClick={() => {
-                            // Optional: Add validation or processing logic here
-                            toast.success("Item details updated successfully!");
-                          }}
-                          className={`px-3 py-1 ${
-                            isMobile ? "text-sm" : "text-xs"
-                          } bg-beveren-600 text-white rounded-md hover:bg-beveren-700 transition-colors font-medium`}
-                        >
-                          Update
-                        </button>
-                      </div>
                     </div>
                   )}
                 </div>

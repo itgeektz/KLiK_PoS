@@ -208,7 +208,9 @@ def get_invoice_details(invoice_id):
 		items = []
 		for item in items_data:
 			returned_qty_value = returned_qty_map.get(item.item_code, 0)
-			available_qty = round(item.qty - returned_qty_value, 6)  # Round to 6 decimal places to avoid precision issues
+			available_qty = round(
+				item.qty - returned_qty_value, 6
+			)  # Round to 6 decimal places to avoid precision issues
 
 			items.append(
 				{
@@ -1220,7 +1222,9 @@ def returned_qty(customer, sales_invoice, item):
 	)
 
 	total = abs(result[0]["total_returned_qty"]) if result else 0.0
-	return {"total_returned_qty": round(float(total), 6)}  # Round to 6 decimal places to avoid precision issues
+	return {
+		"total_returned_qty": round(float(total), 6)
+	}  # Round to 6 decimal places to avoid precision issues
 
 
 @frappe.whitelist()
@@ -1381,7 +1385,9 @@ def get_customer_invoices_for_return(customer, start_date=None, end_date=None, s
 
 			returned_qty_value = returned_qty_map.get((item.parent, item.item_code), 0)
 			item.returned_qty = returned_qty_value
-			item.available_qty = round(item.qty - returned_qty_value, 6)  # Round to 6 decimal places to avoid precision issues
+			item.available_qty = round(
+				item.qty - returned_qty_value, 6
+			)  # Round to 6 decimal places to avoid precision issues
 
 			invoice_items_map[item.parent].append(item)
 

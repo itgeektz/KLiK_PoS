@@ -38,12 +38,10 @@ export function useUserInfo(): UseUserInfoReturn {
         credentials: "include",
       });
       const networkTime = performance.now();
-      console.log(`📊 Frontend: User info network request completed in ${(networkTime - networkStartTime).toFixed(2)}ms`);
 
       const parseStartTime = performance.now();
       const data = await response.json();
       const parseTime = performance.now();
-      console.log(`📊 Frontend: User info JSON parsing completed in ${(parseTime - parseStartTime).toFixed(2)}ms`);
 
       if (response.ok && data.message?.success) {
         setUserInfo(data.message.data);

@@ -60,7 +60,6 @@ export function useSalesInvoices(searchTerm: string = "") {
 
       const resData = await response.json();
       const parseTime = performance.now();
-      console.log(`📊 Frontend: JSON parsing completed in ${(parseTime - networkTime).toFixed(2)}ms`);
 
       if (!resData.message || !resData.message.success) {
         throw new Error(resData.message?.error || resData.error || "Failed to fetch invoices");

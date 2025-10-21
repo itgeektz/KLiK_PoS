@@ -52,8 +52,7 @@ export function useUserInfo(): UseUserInfoReturn {
         throw new Error(data.message?.error || "Failed to fetch user info");
       }
 
-      const totalFrontendTime = performance.now() - frontendStartTime;
-      console.log(`📊 Frontend: TOTAL USER INFO TIME: ${totalFrontendTime.toFixed(2)}ms`);
+      // const totalFrontendTime = performance.now() - frontendStartTime;
 
     } catch (err: any) {
       console.error("Error loading user info:", err);

@@ -35,9 +35,12 @@ import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import AddCustomerModal from "../components/AddCustomerModal";
+import BottomNavigation from "../components/BottomNavigation";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 
 export default function CustomerDetailsPage() {
   const navigate = useNavigate();
+  const isMobile = useMediaQuery("(max-width: 1024px)");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
@@ -165,11 +168,9 @@ export default function CustomerDetailsPage() {
       const soldQty = item.qty || item.quantity || 0;
       const returnedQty = item.returned_qty || 0;
       const canReturn = returnedQty < soldQty;
-      console.log(`Item ${item.item_code}: sold=${soldQty}, returned=${returnedQty}, canReturn=${canReturn}`);
       return canReturn;
     });
 
-    console.log(`Invoice ${invoice.id} has returnable items:`, hasReturnable);
     return hasReturnable;
   };
 
@@ -333,9 +334,343 @@ export default function CustomerDetailsPage() {
     );
   }
 
+  // Mobile layout: full-width content with persistent bottom navigation
+  if (isMobile) {
+    return (
+      <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
+        {/* Mobile Header */}
+        <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => navigate(-1)}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <div>
+                  <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                    {customer.customer_name || customer.name}
+                  </h1>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Customer ID: {customer.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  console.log('Customer data being passed to modal:', customer);
+                  setSelectedCustomer(customer);
+                  setShowAddModal(true);
+                }}
+                className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm"
+              >
+                <Edit className="w-4 h-4" />
+                <span>Edit</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto pb-20 w-[98%] mx-auto px-2 py-4">
+          {/* Customer Info Card */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 mb-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 bg-beveren-600 rounded-full flex items-center justify-center">
+                  <User className="w-6 h-6 text-white" />
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {customer.customer_name || customer.name}
+                  </h2>
+                  <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                    <div className="flex items-center space-x-1">
+                      <Mail className="w-3 h-3" />
+                      <span>{customer.email || "No email provided"}</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Phone className="w-3 h-3" />
+                      <span>{customer.phone || "No phone provided"}</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <MapPin className="w-3 h-3" />
+                      <span>{customer.territory || "No territory specified"}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                  Active
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Metrics Cards */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">Total Invoices</p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">
+                    {customerMetrics.totalInvoices}
+                  </p>
+                </div>
+                <FileText className="w-6 h-6 text-beveren-600" />
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">
+                    {formatCurrency(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
+                  </p>
+                </div>
+                <DollarSign className="w-6 h-6 text-green-600" />
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">
+                    {formatCurrency(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
+                  </p>
+                </div>
+                <AlertCircle className={`w-6 h-6 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">
+                    {formatCurrency(customerMetrics.avgOrderValue, posDetails?.currency || 'USD')}
+                  </p>
+                </div>
+                <TrendingUp className="w-6 h-6 text-blue-600" />
+              </div>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 mb-4">
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search invoices..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="all">All Status</option>
+                  <option value="Draft">Draft</option>
+                  <option value="Unpaid">Unpaid</option>
+                  <option value="Partly Paid">Partly Paid</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Overdue">Overdue</option>
+                  <option value="Return">Return</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="week">This Week</option>
+                  <option value="month">This Month</option>
+                  <option value="year">This Year</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Customer Invoices Table */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Customer Invoices ({customerInvoices.length})
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Invoice
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Amount
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                  {customerInvoices.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                        No invoices found for this customer
+                      </td>
+                    </tr>
+                  ) : (
+                    customerInvoices.map((invoice) => (
+                      <tr key={invoice.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {invoice.date} {invoice.time}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {formatCurrency(invoice.totalAmount, invoice.currency)}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => handleViewInvoice(invoice)}
+                              className="text-beveren-600 hover:text-beveren-900 dark:text-beveren-400 dark:hover:text-beveren-300"
+                            >
+                              View
+                            </button>
+                            {invoice.status === "Draft" && (
+                              <button
+                                onClick={() => handleEditInvoice(invoice)}
+                                className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
+                              <button
+                                onClick={() => handleSingleReturnClick(invoice)}
+                                className="text-orange-600 hover:text-orange-900 dark:text-orange-400 dark:hover:text-orange-300"
+                              >
+                                Return
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Load More Button for Customer Invoices */}
+          {hasMore && (
+            <div className="flex justify-center mt-4">
+              <button
+                onClick={loadMore}
+                disabled={isLoading}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
+                  isLoading
+                    ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                    : 'bg-beveren-600 text-white hover:bg-beveren-700'
+                }`}
+              >
+                {isLoading ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>Loading...</span>
+                  </div>
+                ) : (
+                  `Load More (${totalLoaded} loaded)`
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Show message when all customer invoices are loaded */}
+          {!hasMore && totalLoaded > 0 && (
+            <div className="text-center mt-4 py-2">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                All {totalLoaded} customer invoices loaded
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Navigation */}
+        <BottomNavigation />
+
+        {/* Modals */}
+        <InvoiceViewModal
+          invoice={selectedInvoice}
+          isOpen={showInvoiceModal}
+          onClose={() => setShowInvoiceModal(false)}
+          onRefund={handleRefund}
+          onCancel={(invoiceId) => {
+            setShowInvoiceModal(false);
+          }}
+        />
+
+        <SingleInvoiceReturn
+          invoice={selectedInvoiceForReturn}
+          isOpen={showSingleReturn}
+          onClose={() => setShowSingleReturn(false)}
+          onSuccess={handleSingleReturnSuccess}
+        />
+
+        {showAddModal && (
+          <AddCustomerModal
+            customer={selectedCustomer}
+            onClose={() => {
+              setShowAddModal(false);
+              setSelectedCustomer(null);
+            }}
+            onSave={handleSaveCustomer}
+          />
+        )}
+
+        <EditDraftInvoiceDialog
+          isOpen={showEditDraftDialog}
+          onClose={handleEditDraftCancel}
+          invoice={draftInvoiceToEdit}
+          onGoToCart={handleGoToCart}
+          onSubmitPayment={handleSubmitPayment}
+          onSubmitDirect={handleSubmitDirect}
+        />
+      </div>
+    );
+  }
+
+  // Desktop layout
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-12">
-      <div className="flex-1 flex flex-col overflow-hidden ml-20">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Fixed Header */}
         <div className="fixed top-0 left-20 right-0 z-50 bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
           <div className="px-6 py-4">

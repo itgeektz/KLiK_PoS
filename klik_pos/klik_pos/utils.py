@@ -1,12 +1,26 @@
 import frappe
 
+# Performance optimization: Cache frequently accessed data
+_cached_pos_profile = None
+_cached_company_data = {}
+
+
+def clear_pos_profile_cache():
+	"""Clear POS profile cache - useful when POS profile settings change"""
+	global _cached_pos_profile
+	_cached_pos_profile = None
+
 
 def get_current_pos_profile():
-	user = frappe.session.user
-	pos_profile = frappe.get_value("POS Profile User", {"user": user}, "parent")
+	"""Optimized POS profile getter with caching"""
+	global _cached_pos_profile
 
-	pos_doc = frappe.get_doc("POS Profile", pos_profile)
-	return pos_doc
+	if _cached_pos_profile is None:
+		user = frappe.session.user
+		pos_profile = frappe.get_value("POS Profile User", {"user": user}, "parent")
+		_cached_pos_profile = frappe.get_doc("POS Profile", pos_profile)
+
+	return _cached_pos_profile
 
 
 def get_user_default_company():

@@ -8,6 +8,26 @@ from frappe.utils import flt
 
 from klik_pos.klik_pos.utils import get_current_pos_profile, get_user_default_company
 
+# Performance optimization: Cache frequently accessed data
+_cached_pos_profile = None
+_cached_company_data = {}
+_cached_customer_data = {}
+_cached_item_accounts = {}
+
+
+@frappe.whitelist()
+def clear_performance_cache():
+	"""Clear all performance caches - useful when POS profile or company settings change"""
+	global _cached_pos_profile, _cached_company_data, _cached_customer_data, _cached_item_accounts
+	
+	_cached_pos_profile = None
+	_cached_company_data.clear()
+	_cached_customer_data.clear()
+	_cached_item_accounts.clear()
+	
+	frappe.logger().info("Performance cache cleared")
+	return {"success": True, "message": "Performance cache cleared successfully"}
+
 
 def get_current_pos_opening_entry():
 	"""
@@ -156,7 +176,7 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			for item in items:
 				returned_data = returned_qty(inv.customer, inv.name, item.item_code)
 				item["returned_qty"] = returned_data.get("total_returned_qty", 0)
-				item["quantity"] = item.qty  # For backward compatibility
+				item["quantity"] = item.qty
 
 			inv["items"] = items
 
@@ -351,12 +371,6 @@ def create_and_submit_invoice(data):
 		doc.paid_amount = amount_paid
 		doc.outstanding_amount = 0
 
-		# Debug: Print document fields before save
-		frappe.log_error(
-			f"Invoice doc fields: company={doc.company}, currency={doc.currency}, conversion_rate={doc.conversion_rate}",
-			"Invoice Debug",
-		)
-
 		# Save and submit in one transaction
 		doc.save(ignore_permissions=True)
 		doc.submit()
@@ -368,7 +382,12 @@ def create_and_submit_invoice(data):
 			should_create_payment_entry = True
 		elif business_type == "B2B & B2C":
 			# For B2B & B2C, only create payment entry for company customers
-			customer_doc = frappe.get_doc("Customer", customer)
+			# Use cached customer data
+			global _cached_customer_data
+			if customer not in _cached_customer_data:
+				_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
+
+			customer_doc = _cached_customer_data[customer]
 			if customer_doc.customer_type == "Company":
 				should_create_payment_entry = True
 
@@ -382,12 +401,23 @@ def create_and_submit_invoice(data):
 		processing_time = time.time() - start_time
 		frappe.logger().info(f"Invoice {doc.name} processed in {processing_time:.2f} seconds")
 
-		# Return invoice data for print preview
+		# Return minimal invoice data for frontend performance
 		return {
 			"success": True,
 			"invoice_name": doc.name,
 			"invoice_id": doc.name,
-			"invoice": doc,
+			"invoice": {
+				"name": doc.name,
+				"doctype": doc.doctype,
+				"customer": doc.customer,
+				"customer_name": doc.customer_name,
+				"posting_date": doc.posting_date,
+				"base_grand_total": doc.base_grand_total,
+				"currency": doc.currency,
+				"status": doc.status,
+				"is_pos": doc.is_pos,
+				"company": doc.company
+			},
 			"payment_entry": payment_entry.name if payment_entry else None,
 			"processing_time": round(processing_time, 2),
 		}
@@ -514,7 +544,12 @@ def build_sales_invoice_doc(
 	elif business_type == "B2B":
 		doc.is_pos = 0
 	elif business_type == "B2B & B2C":
-		customer_doc = frappe.get_doc("Customer", customer)
+		# Use cached customer data
+		global _cached_customer_data
+		if customer not in _cached_customer_data:
+			_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
+
+		customer_doc = _cached_customer_data[customer]
 		if customer_doc.customer_type == "Individual":
 			doc.is_pos = 1
 		else:
@@ -548,24 +583,60 @@ def build_sales_invoice_doc(
 	else:
 		doc.taxes_and_charges = pos_profile.taxes_and_charges
 
+	# Optimize item processing with batch queries
+	item_codes = [item.get("id") for item in items]
+
+	# Batch fetch all required data at once
+	item_data_map = {}
+	account_data_map = {}
+
+	if item_codes:
+		# Batch fetch item data
+		item_query = """
+			SELECT name, has_batch_no, has_serial_no
+			FROM `tabItem`
+			WHERE name IN ({})
+		""".format(",".join([f"'{code}'" for code in item_codes]))
+
+		item_results = frappe.db.sql(item_query, as_dict=True)
+		item_data_map = {item.name: item for item in item_results}
+
+		# Pre-calculate all income and expense accounts
+		pos_profile = get_current_pos_profile()
+		company = pos_profile.company
+
+		# Cache company data
+		if company not in _cached_company_data:
+			_cached_company_data[company] = frappe.get_doc("Company", company)
+
+		company_doc = _cached_company_data[company]
+		income_account = company_doc.default_income_account
+		expense_account = company_doc.default_expense_account
+
+		# Pre-populate account cache for all items
+		for item_code in item_codes:
+			_cached_item_accounts[item_code] = income_account
+			_cached_item_accounts[f"{item_code}_expense"] = expense_account
+
 	# Populate items
 	for item in items:
-		income_account = get_income_accounts(item.get("id"))
-		expense_account = get_expense_accounts(item.get("id"))
+		item_code = item.get("id")
+		income_account = get_income_accounts(item_code)
+		expense_account = get_expense_accounts(item_code)
 
 		# Ensure we have valid accounts
 		if not income_account:
 			frappe.throw(
-				f"Income account not found for item {item.get('id')}. Please check item defaults or company settings."
+				f"Income account not found for item {item_code}. Please check item defaults or company settings."
 			)
 		if not expense_account:
 			frappe.throw(
-				f"Expense account not found for item {item.get('id')}. Please check item defaults or company settings."
+				f"Expense account not found for item {item_code}. Please check item defaults or company settings."
 			)
 
-		# Check if item has batch tracking
-		item_doc = frappe.get_doc("Item", item.get("id"))
-		has_batch_no = item_doc.has_batch_no
+		# Get item data from batch query
+		item_data = item_data_map.get(item_code, {})
+		has_batch_no = item_data.get("has_batch_no", 0)
 
 		# Prepare item data
 		item_data = {
@@ -633,16 +704,27 @@ def build_sales_invoice_doc(
 
 def get_tax_template(template_name):
 	"""
+	Optimized tax template getter with caching.
 	Custom helper function to fetch Sales Taxes and Charges Template.
 	Returns the full template document or raises an error if not found.
 	"""
+	global _cached_item_accounts
+
 	if not template_name:
 		return None
 
-	try:
-		return frappe.get_doc("Sales Taxes and Charges Template", template_name)
-	except frappe.DoesNotExistError:
-		frappe.throw(f"Tax Template '{template_name}' not found")
+	cache_key = f"tax_template_{template_name}"
+	if cache_key not in _cached_item_accounts:
+		try:
+			template_doc = frappe.get_doc("Sales Taxes and Charges Template", template_name)
+			_cached_item_accounts[cache_key] = template_doc
+		except frappe.DoesNotExistError:
+			frappe.throw(f"Tax Template '{template_name}' not found")
+		except Exception as e:
+			frappe.log_error(f"Error fetching tax template {template_name}: {e!s}")
+			_cached_item_accounts[cache_key] = None
+
+	return _cached_item_accounts[cache_key]
 
 
 def get_customer_billing_currency(customer):
@@ -660,32 +742,54 @@ def get_customer_billing_currency(customer):
 
 
 def get_income_accounts(item_code):
-	try:
-		pos_profile = get_current_pos_profile()
-		company = pos_profile.company
-		company_doc = frappe.get_doc("Company", company)
-		return company_doc.default_income_account
-	except Exception as e:
-		frappe.log_error(
-			f"Error fetching income account for {item_code}: {e!s}",
-			"Income Account Error",
-		)
+	"""Optimized income account getter with caching"""
+	global _cached_item_accounts
 
-		return None
+	if item_code not in _cached_item_accounts:
+		try:
+			pos_profile = get_current_pos_profile()
+			company = pos_profile.company
+
+			# Cache company data
+			if company not in _cached_company_data:
+				_cached_company_data[company] = frappe.get_doc("Company", company)
+
+			company_doc = _cached_company_data[company]
+			_cached_item_accounts[item_code] = company_doc.default_income_account
+		except Exception as e:
+			frappe.log_error(
+				f"Error fetching income account for {item_code}: {e!s}",
+				"Income Account Error",
+			)
+			_cached_item_accounts[item_code] = None
+
+	return _cached_item_accounts[item_code]
 
 
 def get_expense_accounts(item_code):
-	try:
-		pos_profile = get_current_pos_profile()
-		company = pos_profile.company
-		company_doc = frappe.get_doc("Company", company)
-		return company_doc.default_expense_account
-	except Exception as e:
-		frappe.log_error(
-			f"Error fetching expense account for {item_code}: {e!s}",
-			"Expense Account Error",
-		)
-		return None
+	"""Optimized expense account getter with caching"""
+	global _cached_item_accounts
+
+	cache_key = f"{item_code}_expense"
+	if cache_key not in _cached_item_accounts:
+		try:
+			pos_profile = get_current_pos_profile()
+			company = pos_profile.company
+
+			# Cache company data
+			if company not in _cached_company_data:
+				_cached_company_data[company] = frappe.get_doc("Company", company)
+
+			company_doc = _cached_company_data[company]
+			_cached_item_accounts[cache_key] = company_doc.default_expense_account
+		except Exception as e:
+			frappe.log_error(
+				f"Error fetching expense account for {item_code}: {e!s}",
+				"Expense Account Error",
+			)
+			_cached_item_accounts[cache_key] = None
+
+	return _cached_item_accounts[cache_key]
 
 
 from frappe.model.mapper import get_mapped_doc
@@ -957,50 +1061,6 @@ def get_writeoff_account():
 	pos_profile = get_current_pos_profile()
 	if pos_profile.write_off_account:
 		return pos_profile.write_off_account
-
-
-# @frappe.whitelist()
-# def sync_return_payments_before_save(doc, method):
-# 	"""Ensure return invoice payments match original invoice's paid amount when round-off is present.
-# 	Runs just before submit to avoid validation errors like
-# 	"Total payments amount can't be greater than X".
-# 	"""
-# 	try:
-# 		# Only for returns with explicit round-off
-# 		if not getattr(doc, "is_return", 0):
-# 			return
-# 		if not getattr(doc, "custom_roundoff_amount", 0):
-# 			return
-
-# 		# Get the original invoice to check its paid amount
-# 		original_invoice_name = getattr(doc, "return_against", None)
-# 		if not original_invoice_name:
-# 			return
-
-# 		original_invoice = frappe.get_doc("Sales Invoice", original_invoice_name)
-# 		original_paid_amount = original_invoice.paid_amount or 0
-
-# 		if original_paid_amount <= 0:
-# 			return
-
-# 		# Use the original invoice's paid amount as the desired payment
-# 		desired_payment = abs(flt(original_paid_amount, doc.precision("grand_total")))
-
-# 		# On returns, store refund as positive payment row
-# 		if getattr(doc, "payments", None) and len(doc.payments) > 0:
-# 			doc.payments[0].amount = -desired_payment
-# 			for _p in doc.payments[1:]:
-# 				_p.amount = 0
-# 		else:
-# 			doc.append("payments", {"mode_of_payment": "Cash", "amount": desired_payment})
-
-# 		# Sync totals
-# 		doc.paid_amount = -desired_payment
-# 		doc.base_paid_amount = -(desired_payment * (doc.conversion_rate or 1))
-# 		doc.outstanding_amount = 0
-# 	except Exception:
-# 		# Do not block submit; validation will still catch inconsistencies
-# 		frappe.log_error(frappe.get_traceback(), "sync_return_payments_before_submit error")
 
 
 class CustomSalesInvoice(SalesInvoice):

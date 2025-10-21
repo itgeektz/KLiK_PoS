@@ -33,10 +33,6 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
 			permitted_customer_names = [perm.get("doc") for perm in user_permitted["Customer"]]
 			has_customer_permissions = True
 
-		# Debug logging for customer filtering
-		frappe.logger().info(
-			f"Customer API Debug - Business Type: {business_type}, Customer Groups: {customer_group_names}, User Permitted Customers: {len(permitted_customer_names)}, Search: '{search}'"
-		)
 
 		# If user has customer permissions configured but no customers are permitted, return empty result
 		if has_customer_permissions and not permitted_customer_names:

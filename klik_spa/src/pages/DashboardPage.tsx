@@ -40,6 +40,27 @@ export default function DashboardPage() {
   // Current session payment summary from backend (includes zero-amount methods)
   const { modes: sessionPaymentSummary, isLoading: sessionSummaryLoading } = useAllPaymentModes()
 
+  // Performance timing for dashboard loading
+  useEffect(() => {
+    const dashboardStartTime = performance.now()
+    console.log(`🚀 Dashboard: Starting dashboard load at ${dashboardStartTime.toFixed(2)}ms`)
+
+    return () => {
+      const dashboardEndTime = performance.now()
+      const totalTime = dashboardEndTime - dashboardStartTime
+      console.log(`📊 Dashboard: TOTAL DASHBOARD LOAD TIME: ${totalTime.toFixed(2)}ms`)
+    }
+  }, [])
+
+  // Track when all data is loaded
+  useEffect(() => {
+    if (!userInfoLoading && !invoicesLoading && !sessionSummaryLoading && posDetails) {
+      const dataLoadTime = performance.now()
+      console.log(`📊 Dashboard: All data loaded at ${dataLoadTime.toFixed(2)}ms`)
+      console.log(`📊 Dashboard: Invoices count: ${invoices.length}, User: ${userInfo?.full_name}, POS: ${posDetails?.name}`)
+    }
+  }, [userInfoLoading, invoicesLoading, sessionSummaryLoading, posDetails, invoices.length, userInfo?.full_name])
+
 
   // Get currency symbol from POS details
   const currencySymbol = getCurrencySymbol(posDetails?.currency || 'USD')
@@ -103,7 +124,6 @@ export default function DashboardPage() {
   // Inline debug logs (no hooks added)
   try {
     // eslint-disable-next-line no-console
-    console.log('[Dashboard] timeRange:', timeRange, 'current_opening_entry:', posDetails?.current_opening_entry)
     const summary = filteredInvoices.map((inv: SalesInvoice) => ({
       id: inv.id,
       date: inv.date,
@@ -113,7 +133,6 @@ export default function DashboardPage() {
       paymentMethod: inv.paymentMethod,
     }))
     // eslint-disable-next-line no-console
-    console.log('[Dashboard] invoices used for metrics:', summary)
   } catch {}
 
   const filteredStats = (() => {
@@ -210,7 +229,6 @@ export default function DashboardPage() {
   try {
     // Summarize to keep console readable
     // eslint-disable-next-line no-console
-    console.log('[Dashboard] timeRange:', timeRange, 'current_opening_entry:', posDetails?.current_opening_entry)
     const summary = filteredInvoices.map((inv: SalesInvoice) => ({
       id: inv.id,
       date: inv.date,
@@ -219,8 +237,6 @@ export default function DashboardPage() {
       total: inv.totalAmount,
       paymentMethod: inv.paymentMethod,
     }))
-    // eslint-disable-next-line no-console
-    console.log('[Dashboard] invoices used for metrics:', summary)
   } catch (_) {}
 
 
@@ -1094,7 +1110,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="grid grid-cols-1 gap-4 sm:gap-6 mb-6 sm:mb-8">
           {/* Sales by Hour Chart - Only show for today */}
           {timeRange === "today" && salesByHourData.length > 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700">

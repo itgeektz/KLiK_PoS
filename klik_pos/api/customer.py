@@ -179,6 +179,8 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
 			)
 
 			total_count = frappe.db.count("Customer", filters=filters)
+
+		# Process each customer to get detailed information
 		for cust in customer_names:
 			doc = frappe.get_doc("Customer", cust.name)
 

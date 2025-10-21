@@ -198,8 +198,8 @@ export default function MenuGrid({
                   </button>
 
                   <button
-                    onClick={() => {
-                      clearCacheAndReload()
+                    onClick={async () => {
+                      await clearCacheAndReload()
                       setShowUserMenu(false)
                     }}
                     className="flex items-center w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

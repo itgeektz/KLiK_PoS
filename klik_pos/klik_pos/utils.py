@@ -17,6 +17,13 @@ def get_current_pos_profile():
 	return _cached_pos_profile
 
 
+def clear_pos_profile_cache():
+	"""Clear the cached POS profile to force refresh"""
+	global _cached_pos_profile
+	_cached_pos_profile = None
+	frappe.logger().info("🧹 POS Profile cache cleared")
+
+
 def get_user_default_company():
 	user = frappe.session.user
 	return frappe.defaults.get_user_default(user, "Company")

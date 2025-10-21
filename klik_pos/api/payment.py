@@ -44,8 +44,8 @@ def get_all_mode_of_payment():
 def get_opening_entry_payment_summary():
 	try:
 		import time
+
 		start_time = time.time()
-		frappe.logger().info(f"📊 Payment Summary Performance - Starting payment summary fetch")
 
 		# Step 1: Resolve the current open POS Opening Entry across profiles
 		current_opening_entry = get_current_pos_opening_entry()
@@ -128,8 +128,7 @@ def get_opening_entry_payment_summary():
 			}
 			result.append(data)
 
-		total_time = time.time() - start_time
-		frappe.logger().info(f"📊 Payment Summary Performance - TOTAL TIME: {total_time*1000:.2f}ms")
+		_total_time = time.time() - start_time
 
 		return {
 			"success": True,

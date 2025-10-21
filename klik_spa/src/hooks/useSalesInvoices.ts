@@ -86,7 +86,7 @@ export function useSalesInvoices(searchTerm: string = "") {
           const itemsWithAvailableQty = items.filter((item: any) => item.available_qty > 0);
           canReturn = itemsWithAvailableQty.length > 0;
 
-         
+
         } else {
           // For all other invoices (Paid, Draft, etc.), show return button by default
           canReturn = true;

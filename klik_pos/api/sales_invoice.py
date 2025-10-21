@@ -45,12 +45,15 @@ def get_sales_invoices(limit=100, start=0, search=""):
 	"""
 	try:
 		import time
+
 		start_time = time.time()
 
 		# Get current user's POS opening entry
 		current_opening_entry = get_current_pos_opening_entry()
 		opening_entry_time = time.time()
-		frappe.logger().info(f"📊 Invoice History Performance - Opening Entry: {(opening_entry_time - start_time)*1000:.2f}ms")
+		frappe.logger().info(
+			f"📊 Invoice History Performance - Opening Entry: {(opening_entry_time - start_time)*1000:.2f}ms"
+		)
 
 		# Check if user is admin
 		user_roles = frappe.get_roles()
@@ -77,7 +80,9 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields
 		)
 		meta_check_time = time.time()
-		frappe.logger().info(f"📊 Invoice History Performance - Meta Check: {(meta_check_time - opening_entry_time)*1000:.2f}ms")
+		frappe.logger().info(
+			f"📊 Invoice History Performance - Meta Check: {(meta_check_time - opening_entry_time)*1000:.2f}ms"
+		)
 
 		# Build fields list
 		fields = [
@@ -121,7 +126,9 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			start=start,
 		)
 		invoices_fetch_time = time.time()
-		frappe.logger().info(f"📊 Invoice History Performance - Main Query: {(invoices_fetch_time - meta_check_time)*1000:.2f}ms")
+		frappe.logger().info(
+			f"📊 Invoice History Performance - Main Query: {(invoices_fetch_time - meta_check_time)*1000:.2f}ms"
+		)
 
 		# Get total count for pagination (supports or_filters via aggregate)
 		count_rows = frappe.get_all(
@@ -129,7 +136,9 @@ def get_sales_invoices(limit=100, start=0, search=""):
 		)
 		total_count = count_rows[0].total if count_rows else 0
 		count_time = time.time()
-		frappe.logger().info(f"📊 Invoice History Performance - Count Query: {(count_time - invoices_fetch_time)*1000:.2f}ms")
+		frappe.logger().info(
+			f"📊 Invoice History Performance - Count Query: {(count_time - invoices_fetch_time)*1000:.2f}ms"
+		)
 
 		# Optimized bulk processing
 		processing_start = time.time()
@@ -147,7 +156,9 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			cashier_names_map = {user.name: user.full_name or user.name for user in cashier_results}
 
 		cashier_fetch_time = time.time()
-		frappe.logger().info(f"📊 Invoice History Performance - Cashier batch fetch: {(cashier_fetch_time - processing_start)*1000:.2f}ms")
+		frappe.logger().info(
+			f"📊 Invoice History Performance - Cashier batch fetch: {(cashier_fetch_time - processing_start)*1000:.2f}ms"
+		)
 
 		# Batch fetch all payment methods
 		invoice_names = [inv.name for inv in invoices]
@@ -164,13 +175,14 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			for payment in payment_results:
 				if payment.parent not in payment_methods_map:
 					payment_methods_map[payment.parent] = []
-				payment_methods_map[payment.parent].append({
-					"mode_of_payment": payment.mode_of_payment,
-					"amount": payment.amount
-				})
+				payment_methods_map[payment.parent].append(
+					{"mode_of_payment": payment.mode_of_payment, "amount": payment.amount}
+				)
 
 		payment_fetch_time = time.time()
-		frappe.logger().info(f"📊 Invoice History Performance - Payment methods batch fetch: {(payment_fetch_time - cashier_fetch_time)*1000:.2f}ms")
+		frappe.logger().info(
+			f"📊 Invoice History Performance - Payment methods batch fetch: {(payment_fetch_time - cashier_fetch_time)*1000:.2f}ms"
+		)
 
 		# Batch fetch all items
 		items_map = {}
@@ -186,16 +198,20 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			for item in items_results:
 				if item.parent not in items_map:
 					items_map[item.parent] = []
-				items_map[item.parent].append({
-					"item_code": item.item_code,
-					"qty": item.qty,
-					"rate": item.rate,
-					"amount": item.amount,
-					"quantity": item.qty
-				})
+				items_map[item.parent].append(
+					{
+						"item_code": item.item_code,
+						"qty": item.qty,
+						"rate": item.rate,
+						"amount": item.amount,
+						"quantity": item.qty,
+					}
+				)
 
 		items_fetch_time = time.time()
-		frappe.logger().info(f"📊 Invoice History Performance - Items batch fetch: {(items_fetch_time - payment_fetch_time)*1000:.2f}ms")
+		frappe.logger().info(
+			f"📊 Invoice History Performance - Items batch fetch: {(items_fetch_time - payment_fetch_time)*1000:.2f}ms"
+		)
 
 		# Process invoices with pre-fetched data
 		credit_note_count = 0
@@ -253,7 +269,9 @@ def get_sales_invoices(limit=100, start=0, search=""):
 					returned_qty_map = {row.item_code: row.total_returned_qty for row in returns_data}
 
 					frappe.logger().info(f"📊 Credit Note {inv.name} - Returns data: {returns_data}")
-					frappe.logger().info(f"📊 Credit Note {inv.name} - Items: {[{'item_code': item['item_code'], 'qty': item['qty']} for item in items]}")
+					frappe.logger().info(
+						f"📊 Credit Note {inv.name} - Items: {[{'item_code': item['item_code'], 'qty': item['qty']} for item in items]}"
+					)
 
 					# Update items with return data
 					for item in items:
@@ -261,7 +279,9 @@ def get_sales_invoices(limit=100, start=0, search=""):
 						item["returned_qty"] = round(float(returned_qty_value), 6)
 						item["available_qty"] = round(item["qty"] - returned_qty_value, 6)
 
-						frappe.logger().info(f"📊 Credit Note Item {item['item_code']}: qty={item['qty']}, returned_qty={returned_qty_value}, available_qty={item['available_qty']}")
+						frappe.logger().info(
+							f"📊 Credit Note Item {item['item_code']}: qty={item['qty']}, returned_qty={returned_qty_value}, available_qty={item['available_qty']}"
+						)
 			else:
 				other_invoice_count += 1
 				# For non-credit-note invoices, set default values (no expensive calculations)
@@ -272,11 +292,17 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			inv["items"] = items
 
 		processing_end = time.time()
-		frappe.logger().info(f"📊 Invoice History Performance - Processing {len(invoices)} invoices: {(processing_end - processing_start)*1000:.2f}ms")
-		frappe.logger().info(f"📊 Invoice History Performance - Credit Note invoices processed: {credit_note_count}, Other invoices: {other_invoice_count}")
+		frappe.logger().info(
+			f"📊 Invoice History Performance - Processing {len(invoices)} invoices: {(processing_end - processing_start)*1000:.2f}ms"
+		)
+		frappe.logger().info(
+			f"📊 Invoice History Performance - Credit Note invoices processed: {credit_note_count}, Other invoices: {other_invoice_count}"
+		)
 
 		total_time = time.time() - start_time
-		frappe.logger().info(f"📊 Invoice History Performance - TOTAL TIME: {total_time*1000:.2f}ms for {len(invoices)} invoices (limit={limit}, start={start})")
+		frappe.logger().info(
+			f"📊 Invoice History Performance - TOTAL TIME: {total_time*1000:.2f}ms for {len(invoices)} invoices (limit={limit}, start={start})"
+		)
 
 		return {"success": True, "data": invoices, "total_count": total_count}
 

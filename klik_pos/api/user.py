@@ -37,8 +37,8 @@ def get_current_user_info():
 	"""
 	try:
 		import time
+
 		start_time = time.time()
-		frappe.logger().info(f"📊 User Info Performance - Starting user info fetch")
 
 		user = frappe.session.user
 		user_roles = frappe.get_roles(user)
@@ -55,8 +55,7 @@ def get_current_user_info():
 
 		pos_profile = get_current_pos_profile()
 
-		total_time = time.time() - start_time
-		frappe.logger().info(f"📊 User Info Performance - TOTAL TIME: {total_time*1000:.2f}ms")
+		_total_time = time.time() - start_time
 
 		return {
 			"success": True,

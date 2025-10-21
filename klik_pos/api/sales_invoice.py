@@ -44,8 +44,13 @@ def get_sales_invoices(limit=100, start=0, search=""):
 	Get sales invoices with proper filtering based on user role and POS opening entry.
 	"""
 	try:
+		import time
+		start_time = time.time()
+
 		# Get current user's POS opening entry
 		current_opening_entry = get_current_pos_opening_entry()
+		opening_entry_time = time.time()
+		frappe.logger().info(f"📊 Invoice History Performance - Opening Entry: {(opening_entry_time - start_time)*1000:.2f}ms")
 
 		# Check if user is admin
 		user_roles = frappe.get_roles()
@@ -71,6 +76,8 @@ def get_sales_invoices(limit=100, start=0, search=""):
 		has_zatca_status = any(
 			df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields
 		)
+		meta_check_time = time.time()
+		frappe.logger().info(f"📊 Invoice History Performance - Meta Check: {(meta_check_time - opening_entry_time)*1000:.2f}ms")
 
 		# Build fields list
 		fields = [
@@ -113,18 +120,90 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			limit=limit,
 			start=start,
 		)
+		invoices_fetch_time = time.time()
+		frappe.logger().info(f"📊 Invoice History Performance - Main Query: {(invoices_fetch_time - meta_check_time)*1000:.2f}ms")
 
 		# Get total count for pagination (supports or_filters via aggregate)
 		count_rows = frappe.get_all(
 			"Sales Invoice", filters=filters, or_filters=or_filters, fields=["count(name) as total"]
 		)
 		total_count = count_rows[0].total if count_rows else 0
+		count_time = time.time()
+		frappe.logger().info(f"📊 Invoice History Performance - Count Query: {(count_time - invoices_fetch_time)*1000:.2f}ms")
 
-		# Process each invoice
+		# Optimized bulk processing
+		processing_start = time.time()
+
+		# Batch fetch all cashier names
+		user_ids = list(set([inv.owner for inv in invoices]))
+		cashier_names_map = {}
+		if user_ids:
+			cashier_query = """
+				SELECT name, full_name
+				FROM `tabUser`
+				WHERE name IN ({})
+			""".format(",".join([f"'{uid}'" for uid in user_ids]))
+			cashier_results = frappe.db.sql(cashier_query, as_dict=True)
+			cashier_names_map = {user.name: user.full_name or user.name for user in cashier_results}
+
+		cashier_fetch_time = time.time()
+		frappe.logger().info(f"📊 Invoice History Performance - Cashier batch fetch: {(cashier_fetch_time - processing_start)*1000:.2f}ms")
+
+		# Batch fetch all payment methods
+		invoice_names = [inv.name for inv in invoices]
+		payment_methods_map = {}
+		if invoice_names:
+			payment_query = """
+				SELECT parent, mode_of_payment, amount
+				FROM `tabSales Invoice Payment`
+				WHERE parent IN ({})
+			""".format(",".join([f"'{name}'" for name in invoice_names]))
+			payment_results = frappe.db.sql(payment_query, as_dict=True)
+
+			# Group by parent invoice
+			for payment in payment_results:
+				if payment.parent not in payment_methods_map:
+					payment_methods_map[payment.parent] = []
+				payment_methods_map[payment.parent].append({
+					"mode_of_payment": payment.mode_of_payment,
+					"amount": payment.amount
+				})
+
+		payment_fetch_time = time.time()
+		frappe.logger().info(f"📊 Invoice History Performance - Payment methods batch fetch: {(payment_fetch_time - cashier_fetch_time)*1000:.2f}ms")
+
+		# Batch fetch all items
+		items_map = {}
+		if invoice_names:
+			items_query = """
+				SELECT parent, item_code, qty, rate, amount
+				FROM `tabSales Invoice Item`
+				WHERE parent IN ({})
+			""".format(",".join([f"'{name}'" for name in invoice_names]))
+			items_results = frappe.db.sql(items_query, as_dict=True)
+
+			# Group by parent invoice
+			for item in items_results:
+				if item.parent not in items_map:
+					items_map[item.parent] = []
+				items_map[item.parent].append({
+					"item_code": item.item_code,
+					"qty": item.qty,
+					"rate": item.rate,
+					"amount": item.amount,
+					"quantity": item.qty
+				})
+
+		items_fetch_time = time.time()
+		frappe.logger().info(f"📊 Invoice History Performance - Items batch fetch: {(items_fetch_time - payment_fetch_time)*1000:.2f}ms")
+
+		# Process invoices with pre-fetched data
+		credit_note_count = 0
+		other_invoice_count = 0
+
 		for inv in invoices:
-			# Get cashier full name
-			cashier_name = frappe.db.get_value("User", inv.owner, "full_name") or inv.owner
-			inv["cashier_name"] = cashier_name
+			# Set cashier name from pre-fetched data
+			inv["cashier_name"] = cashier_names_map.get(inv.owner, inv.owner)
 
 			# Format posting_time from timedelta to HH:MM:SS
 			if inv.get("posting_time"):
@@ -137,10 +216,8 @@ def get_sales_invoices(limit=100, start=0, search=""):
 				else:
 					inv["posting_time"] = str(inv["posting_time"])
 
-			# Get payment methods
-			payment_methods = frappe.get_all(
-				"Sales Invoice Payment", filters={"parent": inv.name}, fields=["mode_of_payment", "amount"]
-			)
+			# Set payment methods from pre-fetched data
+			payment_methods = payment_methods_map.get(inv.name, [])
 			inv["payment_methods"] = payment_methods
 
 			# Set backward-compatible mode_of_payment field
@@ -151,20 +228,55 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			else:
 				inv["mode_of_payment"] = "/".join([pm["mode_of_payment"] for pm in payment_methods])
 
-			# Get items for return logic
-			items = frappe.get_all(
-				"Sales Invoice Item",
-				filters={"parent": inv.name},
-				fields=["item_code", "qty", "rate", "amount"],
-			)
+			# Set items from pre-fetched data
+			items = items_map.get(inv.name, [])
 
-			# Calculate returned quantities for each item
-			for item in items:
-				returned_data = returned_qty(inv.customer, inv.name, item.item_code)
-				item["returned_qty"] = returned_data.get("total_returned_qty", 0)
-				item["quantity"] = item.qty
+			# Only calculate return data for Credit Note Issued invoices (performance optimization)
+			if inv.get("status") == "Credit Note Issued":
+				credit_note_count += 1
+				# Calculate return quantities for credit note invoices only
+				item_codes = [item["item_code"] for item in items]
+				if item_codes:
+					returns_query = """
+						SELECT sii.item_code, COALESCE(SUM(ABS(sii.qty)), 0) as total_returned_qty
+						FROM `tabSales Invoice` si
+						JOIN `tabSales Invoice Item` sii ON si.name = sii.parent
+						WHERE si.is_return = 1
+						  AND si.return_against = %s
+						  AND sii.item_code IN ({})
+						  AND si.docstatus = 1
+						  AND si.customer = %s
+						GROUP BY sii.item_code
+					""".format(",".join([f"'{code}'" for code in item_codes]))
+
+					returns_data = frappe.db.sql(returns_query, (inv.name, inv.customer), as_dict=True)
+					returned_qty_map = {row.item_code: row.total_returned_qty for row in returns_data}
+
+					frappe.logger().info(f"📊 Credit Note {inv.name} - Returns data: {returns_data}")
+					frappe.logger().info(f"📊 Credit Note {inv.name} - Items: {[{'item_code': item['item_code'], 'qty': item['qty']} for item in items]}")
+
+					# Update items with return data
+					for item in items:
+						returned_qty_value = returned_qty_map.get(item["item_code"], 0)
+						item["returned_qty"] = round(float(returned_qty_value), 6)
+						item["available_qty"] = round(item["qty"] - returned_qty_value, 6)
+
+						frappe.logger().info(f"📊 Credit Note Item {item['item_code']}: qty={item['qty']}, returned_qty={returned_qty_value}, available_qty={item['available_qty']}")
+			else:
+				other_invoice_count += 1
+				# For non-credit-note invoices, set default values (no expensive calculations)
+				for item in items:
+					item["returned_qty"] = 0
+					item["available_qty"] = item["qty"]
 
 			inv["items"] = items
+
+		processing_end = time.time()
+		frappe.logger().info(f"📊 Invoice History Performance - Processing {len(invoices)} invoices: {(processing_end - processing_start)*1000:.2f}ms")
+		frappe.logger().info(f"📊 Invoice History Performance - Credit Note invoices processed: {credit_note_count}, Other invoices: {other_invoice_count}")
+
+		total_time = time.time() - start_time
+		frappe.logger().info(f"📊 Invoice History Performance - TOTAL TIME: {total_time*1000:.2f}ms for {len(invoices)} invoices (limit={limit}, start={start})")
 
 		return {"success": True, "data": invoices, "total_count": total_count}
 

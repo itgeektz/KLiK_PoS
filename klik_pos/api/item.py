@@ -487,26 +487,22 @@ def get_stock_updates():
                 INNER JOIN `tabBin` b ON i.name = b.item_code
                 WHERE i.disabled = 0
                 AND i.is_stock_item = 1
-                AND b.warehouse = %(warehouse)s
+                AND b.warehouse = %s
                 AND b.actual_qty > 0
             """
 
 			# Add item group filter if specified in POS profile
+			params = [warehouse]
 			if pos_doc.item_groups:
 				item_group_names = [d.item_group for d in pos_doc.item_groups if d.item_group]
 				if item_group_names:
 					placeholders = ", ".join(["%s"] * len(item_group_names))
 					base_query += f" AND i.item_group IN ({placeholders})"
+					params.extend(item_group_names)
 
 			base_query += " ORDER BY i.modified DESC"
 
 			# Execute query
-			params = {"warehouse": warehouse}
-			if pos_doc.item_groups:
-				item_group_names = [d.item_group for d in pos_doc.item_groups if d.item_group]
-				if item_group_names:
-					params.update({f"group_{i}": group for i, group in enumerate(item_group_names)})
-
 			items = frappe.db.sql(base_query, params, as_dict=True)
 			item_codes = [item["name"] for item in items]
 		else:

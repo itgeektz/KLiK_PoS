@@ -19,7 +19,6 @@ import {
 
 
 } from "lucide-react"
-import { mockDashboardStats, mockSalesInvoices } from "../data/mockSalesData"
 import type { SalesInvoice, DashboardStats } from "../../types"
 
 import BottomNavigation from "../components/BottomNavigation"
@@ -72,7 +71,24 @@ export default function DashboardPage() {
   const [paymentFilter, setPaymentFilter] = useState("all")
   const [showFilters, setShowFilters] = useState(false)
   const [salesByHourGraphType, setSalesByHourGraphType] = useState<"bar" | "line">("bar")
-  const stats = mockDashboardStats
+
+  // Default stats for gift card and sales by day (not currently implemented)
+  const stats = {
+    giftCardUsage: {
+      totalRedeemed: 0,
+      totalTransactions: 0,
+      averageDiscount: 0
+    },
+    salesByDay: [
+      { day: "Mon", sales: 0 },
+      { day: "Tue", sales: 0 },
+      { day: "Wed", sales: 0 },
+      { day: "Thu", sales: 0 },
+      { day: "Fri", sales: 0 },
+      { day: "Sat", sales: 0 },
+      { day: "Sun", sales: 0 }
+    ]
+  }
 
   const uniqueCashiers = [...new Set(invoices.map((invoice: SalesInvoice) => invoice.cashier))]
 

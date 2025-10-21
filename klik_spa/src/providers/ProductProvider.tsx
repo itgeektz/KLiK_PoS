@@ -293,7 +293,6 @@ export function ProductProvider({ children }: ProductProviderProps) {
         window.dispatchEvent(new CustomEvent('batchQuantitiesUpdated', {
           detail: { updatedItems: validResults }
         }));
-        console.log('batchQuantitiesUpdated event dispatched successfully');
       } else {
         console.log('No valid batch results to dispatch');
       }

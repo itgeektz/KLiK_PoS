@@ -2,7 +2,9 @@
 
 import { useState } from "react"
 import { X, Check } from "lucide-react"
-import { categories } from "../data/mockData"
+
+// Empty categories array - replace with real data when available
+const categories = []
 
 interface FilterPanelProps {
   filterOptions: {

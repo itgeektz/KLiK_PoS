@@ -13,17 +13,11 @@ def clear_backend_cache():
 	try:
 		# Clear POS profile cache
 		clear_pos_profile_cache()
-  
+
 		frappe.logger().info("🧹 Backend cache cleared successfully")
 
-		return {
-			"success": True,
-			"message": "Backend cache cleared successfully"
-		}
+		return {"success": True, "message": "Backend cache cleared successfully"}
 
 	except Exception as e:
 		frappe.logger().error(f"Error clearing backend cache: {frappe.get_traceback()}")
-		return {
-			"success": False,
-			"error": str(e)
-		}
+		return {"success": False, "error": str(e)}

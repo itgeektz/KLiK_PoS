@@ -142,17 +142,17 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
               const uoms = data.message.uoms.map((uom: any) => uom.uom);
               setAvailableUOMs(uoms);
             } else {
-              setAvailableUOMs(['Nos']); 
+              setAvailableUOMs(['Nos']);
             }
           } else {
-            setAvailableUOMs(['Nos']); 
+            setAvailableUOMs(['Nos']);
           }
         } else {
           setAvailableUOMs(['Nos']);
         }
       } catch (error) {
         console.error('❌ Error loading item-specific UOMs:', error);
-        setAvailableUOMs(['Nos']); 
+        setAvailableUOMs(['Nos']);
       }
     };
 

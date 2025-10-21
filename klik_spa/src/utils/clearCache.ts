@@ -1,6 +1,5 @@
 import { useCartStore } from '../stores/cartStore';
 import { clearDraftInvoiceCache } from './draftInvoiceCache';
-import { clearPerformanceCache } from '../services/cacheService';
 
 // Cache keys used throughout the application
 const CACHE_KEYS = {
@@ -16,21 +15,11 @@ const CACHE_KEYS = {
  * - Product cache
  * - Cart cache
  * - Draft invoice cache
- * - Backend performance cache
  * - Any other localStorage items related to the app
  */
-export async function clearAllCache(): Promise<void> {
+export function clearAllCache(): void {
   try {
     console.log('🧹 Clearing all application cache...');
-
-    // Clear backend performance cache first
-    try {
-      await clearPerformanceCache();
-      console.log('✅ Backend performance cache cleared');
-    } catch (error) {
-      console.warn('⚠️ Failed to clear backend cache:', error);
-      // Continue with frontend cache clearing even if backend fails
-    }
 
     // Clear product cache
     localStorage.removeItem(CACHE_KEYS.PRODUCTS);

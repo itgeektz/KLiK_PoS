@@ -15,20 +15,6 @@ _cached_customer_data = {}
 _cached_item_accounts = {}
 
 
-@frappe.whitelist()
-def clear_performance_cache():
-	"""Clear all performance caches - useful when POS profile or company settings change"""
-	global _cached_pos_profile, _cached_company_data, _cached_customer_data, _cached_item_accounts
-	
-	_cached_pos_profile = None
-	_cached_company_data.clear()
-	_cached_customer_data.clear()
-	_cached_item_accounts.clear()
-	
-	frappe.logger().info("Performance cache cleared")
-	return {"success": True, "message": "Performance cache cleared successfully"}
-
-
 def get_current_pos_opening_entry():
 	"""
 	Get the latest active POS Opening Entry for the current user across ALL profiles.
@@ -416,7 +402,7 @@ def create_and_submit_invoice(data):
 				"currency": doc.currency,
 				"status": doc.status,
 				"is_pos": doc.is_pos,
-				"company": doc.company
+				"company": doc.company,
 			},
 			"payment_entry": payment_entry.name if payment_entry else None,
 			"processing_time": round(processing_time, 2),
@@ -588,7 +574,7 @@ def build_sales_invoice_doc(
 
 	# Batch fetch all required data at once
 	item_data_map = {}
-	account_data_map = {}
+	_account_data_map = {}
 
 	if item_codes:
 		# Batch fetch item data

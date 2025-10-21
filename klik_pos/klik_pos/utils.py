@@ -5,12 +5,6 @@ _cached_pos_profile = None
 _cached_company_data = {}
 
 
-def clear_pos_profile_cache():
-	"""Clear POS profile cache - useful when POS profile settings change"""
-	global _cached_pos_profile
-	_cached_pos_profile = None
-
-
 def get_current_pos_profile():
 	"""Optimized POS profile getter with caching"""
 	global _cached_pos_profile

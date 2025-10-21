@@ -33,7 +33,6 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
 			permitted_customer_names = [perm.get("doc") for perm in user_permitted["Customer"]]
 			has_customer_permissions = True
 
-
 		# If user has customer permissions configured but no customers are permitted, return empty result
 		if has_customer_permissions and not permitted_customer_names:
 			return {
@@ -57,7 +56,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
 			elif business_type == "B2C":
 				cust_type_filter = "AND c.customer_type = %s"
 				cust_type_params.append("Individual")
-
+			print("Busines type", business_type)
 			# Build optional customer_group filter
 			cust_group_filter = ""
 			cust_group_params = []

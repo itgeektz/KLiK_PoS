@@ -26,7 +26,7 @@ export default function ProductLineView({ items, onAddToCart, isMobile = false, 
   }
 
   return (
-    <div className={`${isMobile ? "p-4" : "p-6"} bg-gray-50 dark:bg-gray-900`}>
+    <div className={`${isMobile ? "p-4" : "p-2"} bg-gray-50 dark:bg-gray-900`}>
       {/* Header Row */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4 overflow-hidden">
         <div className={`${isMobile ? "grid grid-cols-8 gap-2 px-3 py-3" : "grid grid-cols-12 gap-4 px-4 py-3"} bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600`}>

@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react"
 import { Link } from "react-router-dom"
-import { useI18n } from "../hooks/useI18n"
 import { useAuth } from "../hooks/useAuth"
 import { useTheme } from "../hooks/useTheme"
 import { usePOSDetails } from "../hooks/usePOSProfile"
@@ -34,7 +33,6 @@ export default function MenuGrid({
   onScanBarcode,
   scannerOnly = false,
 }: MenuGridProps) {
-  const { t } = useI18n()
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { posDetails, loading: posLoading } = usePOSDetails()

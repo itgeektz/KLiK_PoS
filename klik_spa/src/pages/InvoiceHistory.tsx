@@ -879,7 +879,7 @@ const getStatusBadge = (status: string) => {
   // Mobile layout: full-width content and persistent bottom navigation
   if (isMobile) {
     return (
-      <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 font-inconsolata">
         {/* Mobile Header */}
         <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
           <div className="px-4 py-3">

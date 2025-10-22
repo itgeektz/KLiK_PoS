@@ -212,8 +212,8 @@ export default function RetailPOSLayout() {
         />
       </div>
 
-      {/* Order Summary - 30% width on medium and large screens */}
-      <div className="w-[30%] min-w-[380px] max-w-[500px] bg-white shadow-lg overflow-y-auto">
+      {/* Order Summary - 35% width on medium and large screens */}
+      <div className="w-[35%] min-w-[420px] max-w-[600px] bg-white shadow-lg overflow-y-auto">
         <OrderSummary
           cartItems={cartItems}
           onUpdateQuantity={handleUpdateQuantity}

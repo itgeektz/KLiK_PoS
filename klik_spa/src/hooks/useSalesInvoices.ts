@@ -35,7 +35,8 @@ export function useSalesInvoices(searchTerm: string = "") {
 
     try {
       const start = page * LIMIT;
-      // console.log(`Fetching sales invoices - page: ${page}, start: ${start}, limit: ${LIMIT}, search: ${searchTerm}`);
+      const frontendStartTime = performance.now();
+      console.log(`🚀 Frontend: Fetching sales invoices - page: ${page}, start: ${start}, limit: ${LIMIT}, search: ${debouncedSearchTerm}`);
 
       const searchParam = debouncedSearchTerm ? `&search=${encodeURIComponent(debouncedSearchTerm)}` : '';
       const response = await fetch(
@@ -50,17 +51,15 @@ export function useSalesInvoices(searchTerm: string = "") {
         }
       );
 
-      // console.log('Sales invoices response:', {
-      //   status: response.status,
-      //   statusText: response.statusText,
-      //   ok: response.ok
-      // });
+      const networkTime = performance.now();
+      console.log(`📊 Frontend: Network request completed in ${(networkTime - frontendStartTime).toFixed(2)}ms`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const resData = await response.json();
+      const parseTime = performance.now();
 
       if (!resData.message || !resData.message.success) {
         throw new Error(resData.message?.error || resData.error || "Failed to fetch invoices");
@@ -74,47 +73,77 @@ export function useSalesInvoices(searchTerm: string = "") {
       setHasMore(newInvoicesCount === LIMIT);
       setTotalCount(totalCountFromAPI);
 
-      const transformed: SalesInvoice[] = rawInvoices.map((invoice: Record<string, unknown>) => ({
-        id: invoice.name,
-        date: invoice.posting_date || new Date().toISOString().split("T")[0],
-        time: invoice.posting_time || "00:00:00",
-        cashier: invoice.cashier_name,
-        cashierId: invoice.owner || "",
-        customer: invoice.customer_name || "",
-        customerId: invoice.customer || "",
-        items: invoice.items || [],
-        subtotal:
-          (Number(invoice.base_grand_total) || 0) -
-          (Number(invoice.total_taxes_and_charges) || 0) +
-          (Number(invoice.discount_amount) || 0),
-        giftCardDiscount: Number(invoice.discount_amount) || 0,
-        giftCardCode: String(invoice.discount_code) || "",
-        taxAmount: Number(invoice.total_taxes_and_charges) || 0,
-        totalAmount: Number(invoice.base_grand_total) || 0,
-        paymentMethod: invoice.mode_of_payment || "-",
-        payment_methods: invoice.payment_methods || [],
-        amountPaid: Number(invoice.base_rounded_total) || 0,
-        changeGiven: Number(invoice.change_amount) || 0,
-        status:
-          (invoice.status as
-            | "Completed"
-            | "Pending"
-            | "Cancelled"
-            | "Refunded") || "Completed",
-        refundAmount:
-          invoice.status === "Refunded" ? Number(invoice.base_grand_total) || 0 : 0,
-        custom_zatca_submit_status:
-          (invoice.custom_zatca_submit_status as
-            | "Pending"
-            | "Reported"
-            | "Not Reported"
-            | "Cleared"
-            | "Not Cleared") || "Draft",
-        currency: invoice.currency || "USD",
-        notes: invoice.remarks || "",
-        posProfile: invoice.pos_profile || "",
-        custom_pos_opening_entry: invoice.custom_pos_opening_entry || "",
-      }));
+      const transformed: SalesInvoice[] = rawInvoices.map((invoice: Record<string, unknown>) => {
+        const status = invoice.status as string;
+        const items = invoice.items || [];
+
+        // Determine if invoice can be returned
+        let canReturn = true;
+
+        if (status === "Credit Note Issued") {
+          // For credit notes, only show return button if there are items that can still be returned
+          const itemsWithAvailableQty = items.filter((item: any) => item.available_qty > 0);
+          canReturn = itemsWithAvailableQty.length > 0;
+
+
+        } else {
+          // For all other invoices (Paid, Draft, etc.), show return button by default
+          canReturn = true;
+        }
+
+        return {
+          id: invoice.name,
+          date: invoice.posting_date || new Date().toISOString().split("T")[0],
+          time: invoice.posting_time || "00:00:00",
+          cashier: invoice.cashier_name,
+          cashierId: invoice.owner || "",
+          customer: invoice.customer_name || "",
+          customerId: invoice.customer || "",
+          items: items,
+          subtotal:
+            (Number(invoice.base_grand_total) || 0) -
+            (Number(invoice.total_taxes_and_charges) || 0) +
+            (Number(invoice.discount_amount) || 0),
+          giftCardDiscount: Number(invoice.discount_amount) || 0,
+          giftCardCode: String(invoice.discount_code) || "",
+          taxAmount: Number(invoice.total_taxes_and_charges) || 0,
+          totalAmount: Number(invoice.base_grand_total) || 0,
+          paymentMethod: invoice.mode_of_payment || "-",
+          payment_methods: invoice.payment_methods || [],
+          amountPaid: Number(invoice.base_rounded_total) || 0,
+          changeGiven: Number(invoice.change_amount) || 0,
+          status:
+            (status as
+              | "Draft"
+              | "Unpaid"
+              | "Partly Paid"
+              | "Paid"
+              | "Overdue"
+              | "Cancelled"
+              | "Return"
+              | "Credit Note Issued"
+              | "Completed"
+              | "Pending"
+              | "Refunded") || "Completed",
+          refundAmount:
+            status === "Refunded" ? Number(invoice.base_grand_total) || 0 : 0,
+          custom_zatca_submit_status:
+            (invoice.custom_zatca_submit_status as
+              | "Pending"
+              | "Reported"
+              | "Not Reported"
+              | "Cleared"
+              | "Not Cleared") || "Draft",
+          currency: invoice.currency || "USD",
+          notes: invoice.remarks || "",
+          posProfile: invoice.pos_profile || "",
+          custom_pos_opening_entry: invoice.custom_pos_opening_entry || "",
+          canReturn: canReturn,
+        };
+      });
+
+      const transformTime = performance.now();
+      console.log(`📊 Frontend: Data transformation completed in ${(transformTime - parseTime).toFixed(2)}ms`);
 
       if (append) {
         setInvoices(prev => [...prev, ...transformed]);
@@ -123,6 +152,9 @@ export function useSalesInvoices(searchTerm: string = "") {
         setInvoices(transformed);
         setTotalLoaded(newInvoicesCount);
       }
+
+      const totalFrontendTime = performance.now() - frontendStartTime;
+      console.log(`📊 Frontend: TOTAL TIME: ${totalFrontendTime.toFixed(2)}ms for ${newInvoicesCount} invoices (page ${page})`);
 
       setCurrentPage(page);
       setError(null);

@@ -25,7 +25,11 @@ export function useUserInfo(): UseUserInfoReturn {
 
   const fetchUserInfo = async () => {
     setIsLoading(true);
+    const frontendStartTime = performance.now();
+    console.log(`🚀 Frontend: Fetching user info`);
+
     try {
+      const networkStartTime = performance.now();
       const response = await fetch("/api/method/klik_pos.api.user.get_current_user_info", {
         method: "GET",
         headers: {
@@ -33,14 +37,21 @@ export function useUserInfo(): UseUserInfoReturn {
         },
         credentials: "include",
       });
+      const networkTime = performance.now();
 
+      const parseStartTime = performance.now();
       const data = await response.json();
+      const parseTime = performance.now();
+
       if (response.ok && data.message?.success) {
         setUserInfo(data.message.data);
         setError(null);
       } else {
         throw new Error(data.message?.error || "Failed to fetch user info");
       }
+
+      // const totalFrontendTime = performance.now() - frontendStartTime;
+
     } catch (err: any) {
       console.error("Error loading user info:", err);
       setError(err.message || "Unknown error");

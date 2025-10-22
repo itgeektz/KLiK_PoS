@@ -1,6 +1,39 @@
 // errorExtraction.ts
 // Utility functions to extract meaningful error messages from ERPNext API responses
 
+/**
+ * Clean HTML formatting from error messages to make them readable
+ */
+function cleanHtmlFromErrorMessage(message: string): string {
+  if (!message || typeof message !== 'string') {
+    return message;
+  }
+
+  // Remove HTML tags but preserve the text content
+  let cleanedMessage = message
+    // Remove <strong> tags but keep the content
+    .replace(/<strong>(.*?)<\/strong>/gi, '$1')
+    // Remove <a> tags but keep the content
+    .replace(/<a[^>]*>(.*?)<\/a>/gi, '$1')
+    // Remove other common HTML tags
+    .replace(/<[^>]*>/g, '')
+    // Clean up extra whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Special handling for warehouse/stock error messages
+  if (cleanedMessage.includes('units of') && cleanedMessage.includes('needed in') && cleanedMessage.includes('to complete this transaction')) {
+    // Extract the key information from the error message
+    const match = cleanedMessage.match(/(\d+(?:\.\d+)?)\s+units?\s+of\s+(.+?)\s+needed\s+in\s+(.+?)\s+to\s+complete\s+this\s+transaction/i);
+    if (match) {
+      const [, quantity, itemName, warehouseName] = match;
+      cleanedMessage = `${quantity} units of ${itemName} needed in ${warehouseName} to complete this transaction.`;
+    }
+  }
+
+  return cleanedMessage;
+}
+
 export function extractErrorMessage(result: any, defaultMessage: string = 'Operation failed'): string {
   let errorMessage = defaultMessage;
 
@@ -27,7 +60,8 @@ export function extractErrorMessage(result: any, defaultMessage: string = 'Opera
     }
   }
 
-  return errorMessage;
+  // Clean HTML formatting from the error message
+  return cleanHtmlFromErrorMessage(errorMessage);
 }
 
 export function extractErrorFromException(err: any, defaultMessage: string = 'Operation failed'): string {
@@ -51,5 +85,6 @@ export function extractErrorFromException(err: any, defaultMessage: string = 'Op
     }
   }
 
-  return errorMessage;
+  // Clean HTML formatting from the error message
+  return cleanHtmlFromErrorMessage(errorMessage);
 }

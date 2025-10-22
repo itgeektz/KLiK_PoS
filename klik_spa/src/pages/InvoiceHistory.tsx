@@ -663,6 +663,12 @@ const getStatusBadge = (status: string) => {
       return false;
     }
 
+    // Use the canReturn property set by background return data loading
+    if (invoice.canReturn !== undefined) {
+      return invoice.canReturn;
+    }
+
+    // Fallback to old logic if canReturn is not set yet
     const hasReturnable = invoice.items.some(item => {
       const soldQty = item.qty || item.quantity || 0;
       const returnedQty = item.returned_qty || 0;
@@ -873,7 +879,7 @@ const getStatusBadge = (status: string) => {
   // Mobile layout: full-width content and persistent bottom navigation
   if (isMobile) {
     return (
-      <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 font-inconsolata">
         {/* Mobile Header */}
         <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
           <div className="px-4 py-3">

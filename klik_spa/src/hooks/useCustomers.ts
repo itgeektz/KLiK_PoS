@@ -40,6 +40,7 @@ export function useCustomers(searchQuery?: string) {
 
   const fetchCustomers = async (search?: string, append = false) => {
     setIsLoading(true);
+
     try {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
@@ -47,6 +48,7 @@ export function useCustomers(searchQuery?: string) {
       params.set('limit', '100');
       params.set('start', String(append ? start : 0));
       const searchParam = `?${params.toString()}`;
+
       const response = await fetch(`/api/method/klik_pos.api.customer.get_customers${searchParam}`);
       const resData = await response.json();
 
@@ -92,6 +94,7 @@ export function useCustomers(searchQuery?: string) {
       const nextStart = (append ? start : 0) + enhanced.length;
       setStart(nextStart);
       setHasMore(nextStart < total);
+
     } catch (err) {
       setError(err as Error);
     } finally {

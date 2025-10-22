@@ -3,7 +3,9 @@
 import { useState } from "react"
 import { X, Tag, Check } from "lucide-react"
 import type { GiftCoupon } from "../../types"
-import { availableCoupons } from "../data/mockData"
+
+// Empty coupons array - replace with real data when available
+const availableCoupons: GiftCoupon[] = []
 
 interface GiftCouponSelectorProps {
   onClose: () => void

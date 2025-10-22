@@ -6,7 +6,7 @@ import { useTheme } from "../hooks/useTheme"
 import { useCartStore } from "../stores/cartStore"
 import { formatCurrency } from "../utils/currency"
 import { usePOSDetails } from "../hooks/usePOSProfile"
-import { ShoppingCart, Menu, X, Search, Settings, LogOut, Moon, Sun, Mail, Scan, Grid3X3, List, Store, RefreshCw } from "lucide-react"
+import { ShoppingCart, Search, Settings, LogOut, Moon, Sun, Scan, Grid3X3, List, Store, RefreshCw } from "lucide-react"
 import { clearCacheAndReload } from "../utils/clearCache"
 import CategoryTabs from "./CategoryTabs"
 import ProductGrid from "./ProductGrid"
@@ -92,7 +92,6 @@ export default function MobilePOSLayout({
 
   const displayName = user?.full_name || user?.name || "Guest User"
   const posProfileName = posDetails?.name || "POS Profile"
-  const userRole = user?.role || "User"
   const initials = getInitials(displayName)
 
   const totalItems = cartItems.reduce((sum: number, item: CartItem) => sum + item.quantity, 0)
@@ -183,8 +182,8 @@ export default function MobilePOSLayout({
                   </button>
 
                   <button
-                    onClick={() => {
-                      clearCacheAndReload()
+                    onClick={async () => {
+                      await clearCacheAndReload()
                       setShowUserMenu(false)
                     }}
                     className="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

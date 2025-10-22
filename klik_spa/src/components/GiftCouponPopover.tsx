@@ -3,8 +3,10 @@
 import { useState, useRef, useEffect } from "react"
 import { Tag, X, Check, Gift } from "lucide-react"
 import type { GiftCoupon } from "../../types"
-import { availableCoupons } from "../data/mockData"
 import { usePOSDetails } from "../hooks/usePOSProfile"
+
+// Empty coupons array - replace with real data when available
+const availableCoupons: GiftCoupon[] = []
 
 
 interface GiftCouponPopoverProps {

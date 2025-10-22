@@ -72,11 +72,44 @@ export function clearAllCache(): void {
 }
 
 /**
+ * Clears backend cache via API call
+ */
+async function clearBackendCache(): Promise<void> {
+  try {
+    console.log('🧹 Clearing backend cache...');
+
+    const response = await fetch('/api/method/klik_pos.api.cache.clear_backend_cache', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+
+    if (data.message?.success) {
+      console.log('✅ Backend cache cleared successfully');
+    } else {
+      console.warn('⚠️ Backend cache clear failed:', data.message?.error || 'Unknown error');
+    }
+  } catch (error) {
+    console.error('❌ Error clearing backend cache:', error);
+    // Don't throw - we still want to clear frontend cache
+  }
+}
+
+/**
  * Clears cache and reloads the page to ensure fresh data
  */
-export function clearCacheAndReload(): void {
+export async function clearCacheAndReload(): Promise<void> {
   try {
+    // Clear frontend cache first
     clearAllCache();
+
+    // Clear backend cache
+    await clearBackendCache();
 
     // Show a brief message before reload
     console.log('🔄 Reloading page with fresh data...');

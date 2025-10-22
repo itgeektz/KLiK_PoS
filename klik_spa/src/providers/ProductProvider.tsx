@@ -69,7 +69,6 @@ export function ProductProvider({ children }: ProductProviderProps) {
       const expiryTime = new Date(Date.now() + CACHE_DURATION);
       localStorage.setItem(CACHE_KEY, JSON.stringify(products));
       localStorage.setItem(CACHE_EXPIRY_KEY, expiryTime.toISOString());
-      console.log(`Cached ${products.length} products until ${expiryTime.toLocaleTimeString()}`);
     } catch (error) {
       console.error('Error saving products to cache:', error);
     }
@@ -179,7 +178,6 @@ export function ProductProvider({ children }: ProductProviderProps) {
       const cachedProducts = loadFromCache();
       if (cachedProducts) {
         setProducts(cachedProducts);
-        console.log('Using cached products as fallback');
       }
     } finally {
       setIsLoading(false);
@@ -293,7 +291,6 @@ export function ProductProvider({ children }: ProductProviderProps) {
         window.dispatchEvent(new CustomEvent('batchQuantitiesUpdated', {
           detail: { updatedItems: validResults }
         }));
-        console.log('batchQuantitiesUpdated event dispatched successfully');
       } else {
         console.log('No valid batch results to dispatch');
       }

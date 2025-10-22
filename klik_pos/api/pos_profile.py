@@ -64,7 +64,6 @@ def get_pos_details():
 			"customer_group": customer_doc.customer_group,
 			"default_currency": customer_doc.default_currency,
 		}
-
 	details = {
 		"name": pos.name,
 		"business_type": business_type,

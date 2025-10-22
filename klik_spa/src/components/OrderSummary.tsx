@@ -11,7 +11,6 @@ import {
   Building,
 } from "lucide-react";
 import type { CartItem, GiftCoupon } from "../../types";
-// import GiftCouponPopover from "./GiftCouponPopover";
 import PaymentDialog from "./PaymentDialog";
 import { type Customer } from "../types/customer"
 import AddCustomerModal from "./AddCustomerModal";
@@ -117,7 +116,7 @@ interface UOMSelectFieldProps {
 }
 
 const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSelectFieldProps) => {
-  const [availableUOMs, setAvailableUOMs] = useState<string[]>(['Nos']); // Start with Nos as default
+  const [availableUOMs, setAvailableUOMs] = useState<string[]>(['Nos']);
   const [selectedUOM, setSelectedUOM] = useState<string>(item.uom || 'Nos'); //Mania: Local state for selected UOM
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
@@ -143,17 +142,17 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
               const uoms = data.message.uoms.map((uom: any) => uom.uom);
               setAvailableUOMs(uoms);
             } else {
-              setAvailableUOMs(['Nos']); // Fallback to base UOM
+              setAvailableUOMs(['Nos']);
             }
           } else {
-            setAvailableUOMs(['Nos']); // Fallback to base UOM
+            setAvailableUOMs(['Nos']);
           }
         } else {
-          setAvailableUOMs(['Nos']); // Fallback to base UOM
+          setAvailableUOMs(['Nos']);
         }
       } catch (error) {
         console.error('❌ Error loading item-specific UOMs:', error);
-        setAvailableUOMs(['Nos']); // Fallback to base UOM
+        setAvailableUOMs(['Nos']);
       }
     };
 
@@ -889,18 +888,13 @@ export default function OrderSummary({
 
   // Set default customer from POS profile when available
   useEffect(() => {
-    // Only auto-select default customer if:
-    // 1. POS details are loaded
-    // 2. There's a default customer configured
-    // 3. No customer is currently selected
-    // 4. User hasn't manually removed the default customer
+
     if (posDetails?.default_customer && !selectedCustomer && !posLoading && !userRemovedDefaultCustomer) {
       const defaultCustomer = posDetails.default_customer;
 
       // Use the new API to check if user has permission to access the default customer
       checkCustomerPermission(defaultCustomer.id).then((result) => {
         if (result.success && result.has_permission) {
-          console.log("Default customer permission check passed:", defaultCustomer.id);
           // Transform the default customer data to match the Customer interface
           const transformedCustomer: Customer = {
             id: defaultCustomer.id,

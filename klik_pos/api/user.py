@@ -36,6 +36,10 @@ def get_current_user_info():
 	Get comprehensive current user information including roles and POS profile.
 	"""
 	try:
+		import time
+
+		start_time = time.time()
+
 		user = frappe.session.user
 		user_roles = frappe.get_roles(user)
 
@@ -50,6 +54,8 @@ def get_current_user_info():
 		from klik_pos.klik_pos.utils import get_current_pos_profile
 
 		pos_profile = get_current_pos_profile()
+
+		_total_time = time.time() - start_time
 
 		return {
 			"success": True,

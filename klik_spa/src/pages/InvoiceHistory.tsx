@@ -665,7 +665,6 @@ const getStatusBadge = (status: string) => {
 
     // Use the canReturn property set by background return data loading
     if (invoice.canReturn !== undefined) {
-      // console.log(`🔄 Return Button: Invoice ${invoice.id} canReturn: ${invoice.canReturn}`);
       return invoice.canReturn;
     }
 
@@ -674,11 +673,9 @@ const getStatusBadge = (status: string) => {
       const soldQty = item.qty || item.quantity || 0;
       const returnedQty = item.returned_qty || 0;
       const canReturn = returnedQty < soldQty;
-      // console.log(`🔄 Return Button: Item ${item.item_code} - sold: ${soldQty}, returned: ${returnedQty}, canReturn: ${canReturn}`);
       return canReturn;
     });
 
-    // console.log(`🔄 Return Button: Invoice ${invoice.id} hasReturnable (fallback): ${hasReturnable}`);
     return hasReturnable;
   };
 

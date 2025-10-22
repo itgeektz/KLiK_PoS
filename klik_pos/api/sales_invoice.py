@@ -6,10 +6,9 @@ from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from frappe import _
 from frappe.utils import flt
 
-from klik_pos.klik_pos.utils import get_current_pos_profile, get_user_default_company
+from klik_pos.klik_pos.utils import get_current_pos_profile
 
 # Performance optimization: Cache frequently accessed data
-_cached_pos_profile = None
 _cached_company_data = {}
 _cached_customer_data = {}
 _cached_item_accounts = {}
@@ -44,78 +43,13 @@ def get_sales_invoices(limit=100, start=0, search=""):
 	Get sales invoices with proper filtering based on user role and POS opening entry.
 	"""
 	try:
-		import time
+		# Build filters and fields
+		filters, fields = _build_filters_and_fields()
 
-		start_time = time.time()
+		# Build search filters
+		or_filters = _build_search_filters(search)
 
-		# Get current user's POS opening entry
-		current_opening_entry = get_current_pos_opening_entry()
-		opening_entry_time = time.time()
-		frappe.logger().info(
-			f"📊 Invoice History Performance - Opening Entry: {(opening_entry_time - start_time)*1000:.2f}ms"
-		)
-
-		# Check if user is admin
-		user_roles = frappe.get_roles()
-		is_admin_user = "Administrator" in user_roles or "System Manager" in user_roles
-		print("user roles", search)
-		# Base filters - ALWAYS filter to only show POS-created invoices
-		filters = {
-			"custom_pos_opening_entry": ["!=", ""]  # Only show invoices with POS opening entry
-		}
-
-		if is_admin_user:
-			frappe.logger().info(
-				f"Admin user {frappe.session.user} with roles {user_roles} - showing all POS invoices"
-			)
-		elif current_opening_entry:
-			filters["custom_pos_opening_entry"] = current_opening_entry
-			frappe.logger().info(f"Filtering invoices by POS opening entry: {current_opening_entry}")
-		else:
-			frappe.logger().info("No active POS opening entry found, showing all POS invoices")
-
-		# Check if ZATCA status field exists
-		sales_invoice_meta = frappe.get_meta("Sales Invoice")
-		has_zatca_status = any(
-			df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields
-		)
-		meta_check_time = time.time()
-		frappe.logger().info(
-			f"📊 Invoice History Performance - Meta Check: {(meta_check_time - opening_entry_time)*1000:.2f}ms"
-		)
-
-		# Build fields list
-		fields = [
-			"name",
-			"posting_date",
-			"posting_time",
-			"owner",
-			"customer",
-			"customer_name",
-			"base_grand_total",
-			"base_rounded_total",
-			"status",
-			"discount_amount",
-			"total_taxes_and_charges",
-			"custom_pos_opening_entry",
-			"pos_profile",
-			"currency",
-		]
-
-		if has_zatca_status:
-			fields.append("custom_zatca_submit_status")
-
-		# Build optional OR filters for search
-		or_filters = None
-		if search and search.strip():
-			search_term = search.strip()
-			or_filters = [
-				["name", "like", f"%{search_term}%"],
-				["customer_name", "like", f"%{search_term}%"],
-				["customer", "like", f"%{search_term}%"],
-			]
-
-		# Get invoices
+		# Fetch invoices and total count
 		invoices = frappe.get_all(
 			"Sales Invoice",
 			filters=filters,
@@ -125,190 +59,448 @@ def get_sales_invoices(limit=100, start=0, search=""):
 			limit=limit,
 			start=start,
 		)
-		invoices_fetch_time = time.time()
-		frappe.logger().info(
-			f"📊 Invoice History Performance - Main Query: {(invoices_fetch_time - meta_check_time)*1000:.2f}ms"
-		)
 
-		# Get total count for pagination (supports or_filters via aggregate)
 		count_rows = frappe.get_all(
 			"Sales Invoice", filters=filters, or_filters=or_filters, fields=["count(name) as total"]
 		)
 		total_count = count_rows[0].total if count_rows else 0
-		count_time = time.time()
-		frappe.logger().info(
-			f"📊 Invoice History Performance - Count Query: {(count_time - invoices_fetch_time)*1000:.2f}ms"
-		)
 
-		# Optimized bulk processing
-		processing_start = time.time()
-
-		# Batch fetch all cashier names
-		user_ids = list(set([inv.owner for inv in invoices]))
-		cashier_names_map = {}
-		if user_ids:
-			cashier_query = """
-				SELECT name, full_name
-				FROM `tabUser`
-				WHERE name IN ({})
-			""".format(",".join([f"'{uid}'" for uid in user_ids]))
-			cashier_results = frappe.db.sql(cashier_query, as_dict=True)
-			cashier_names_map = {user.name: user.full_name or user.name for user in cashier_results}
-
-		cashier_fetch_time = time.time()
-		frappe.logger().info(
-			f"📊 Invoice History Performance - Cashier batch fetch: {(cashier_fetch_time - processing_start)*1000:.2f}ms"
-		)
-
-		# Batch fetch all payment methods
+		# Batch fetch related data
 		invoice_names = [inv.name for inv in invoices]
-		payment_methods_map = {}
-		if invoice_names:
-			payment_query = """
-				SELECT parent, mode_of_payment, amount
-				FROM `tabSales Invoice Payment`
-				WHERE parent IN ({})
-			""".format(",".join([f"'{name}'" for name in invoice_names]))
-			payment_results = frappe.db.sql(payment_query, as_dict=True)
+		user_ids = list(set([inv.owner for inv in invoices]))
 
-			# Group by parent invoice
-			for payment in payment_results:
-				if payment.parent not in payment_methods_map:
-					payment_methods_map[payment.parent] = []
-				payment_methods_map[payment.parent].append(
-					{"mode_of_payment": payment.mode_of_payment, "amount": payment.amount}
-				)
+		cashier_names_map = _batch_fetch_cashier_names(user_ids)
+		payment_methods_map = _batch_fetch_payment_methods(invoice_names)
+		items_map = _batch_fetch_items(invoice_names)
 
-		payment_fetch_time = time.time()
-		frappe.logger().info(
-			f"📊 Invoice History Performance - Payment methods batch fetch: {(payment_fetch_time - cashier_fetch_time)*1000:.2f}ms"
-		)
-
-		# Batch fetch all items
-		items_map = {}
-		if invoice_names:
-			items_query = """
-				SELECT parent, item_code, qty, rate, amount
-				FROM `tabSales Invoice Item`
-				WHERE parent IN ({})
-			""".format(",".join([f"'{name}'" for name in invoice_names]))
-			items_results = frappe.db.sql(items_query, as_dict=True)
-
-			# Group by parent invoice
-			for item in items_results:
-				if item.parent not in items_map:
-					items_map[item.parent] = []
-				items_map[item.parent].append(
-					{
-						"item_code": item.item_code,
-						"qty": item.qty,
-						"rate": item.rate,
-						"amount": item.amount,
-						"quantity": item.qty,
-					}
-				)
-
-		items_fetch_time = time.time()
-		frappe.logger().info(
-			f"📊 Invoice History Performance - Items batch fetch: {(items_fetch_time - payment_fetch_time)*1000:.2f}ms"
-		)
-
-		# Process invoices with pre-fetched data
-		credit_note_count = 0
-		other_invoice_count = 0
-
-		for inv in invoices:
-			# Set cashier name from pre-fetched data
-			inv["cashier_name"] = cashier_names_map.get(inv.owner, inv.owner)
-
-			# Format posting_time from timedelta to HH:MM:SS
-			if inv.get("posting_time"):
-				if hasattr(inv["posting_time"], "total_seconds"):
-					total_seconds = int(inv["posting_time"].total_seconds())
-					hours = total_seconds // 3600
-					minutes = (total_seconds % 3600) // 60
-					seconds = total_seconds % 60
-					inv["posting_time"] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-				else:
-					inv["posting_time"] = str(inv["posting_time"])
-
-			# Set payment methods from pre-fetched data
-			payment_methods = payment_methods_map.get(inv.name, [])
-			inv["payment_methods"] = payment_methods
-
-			# Set backward-compatible mode_of_payment field
-			if len(payment_methods) == 0:
-				inv["mode_of_payment"] = "-"
-			elif len(payment_methods) == 1:
-				inv["mode_of_payment"] = payment_methods[0]["mode_of_payment"]
-			else:
-				inv["mode_of_payment"] = "/".join([pm["mode_of_payment"] for pm in payment_methods])
-
-			# Set items from pre-fetched data
-			items = items_map.get(inv.name, [])
-
-			# Only calculate return data for Credit Note Issued invoices (performance optimization)
-			if inv.get("status") == "Credit Note Issued":
-				credit_note_count += 1
-				# Calculate return quantities for credit note invoices only
-				item_codes = [item["item_code"] for item in items]
-				if item_codes:
-					returns_query = """
-						SELECT sii.item_code, COALESCE(SUM(ABS(sii.qty)), 0) as total_returned_qty
-						FROM `tabSales Invoice` si
-						JOIN `tabSales Invoice Item` sii ON si.name = sii.parent
-						WHERE si.is_return = 1
-						  AND si.return_against = %s
-						  AND sii.item_code IN ({})
-						  AND si.docstatus = 1
-						  AND si.customer = %s
-						GROUP BY sii.item_code
-					""".format(",".join([f"'{code}'" for code in item_codes]))
-
-					returns_data = frappe.db.sql(returns_query, (inv.name, inv.customer), as_dict=True)
-					returned_qty_map = {row.item_code: row.total_returned_qty for row in returns_data}
-
-					frappe.logger().info(f"📊 Credit Note {inv.name} - Returns data: {returns_data}")
-					frappe.logger().info(
-						f"📊 Credit Note {inv.name} - Items: {[{'item_code': item['item_code'], 'qty': item['qty']} for item in items]}"
-					)
-
-					# Update items with return data
-					for item in items:
-						returned_qty_value = returned_qty_map.get(item["item_code"], 0)
-						item["returned_qty"] = round(float(returned_qty_value), 6)
-						item["available_qty"] = round(item["qty"] - returned_qty_value, 6)
-
-						frappe.logger().info(
-							f"📊 Credit Note Item {item['item_code']}: qty={item['qty']}, returned_qty={returned_qty_value}, available_qty={item['available_qty']}"
-						)
-			else:
-				other_invoice_count += 1
-				# For non-credit-note invoices, set default values (no expensive calculations)
-				for item in items:
-					item["returned_qty"] = 0
-					item["available_qty"] = item["qty"]
-
-			inv["items"] = items
-
-		processing_end = time.time()
-		frappe.logger().info(
-			f"📊 Invoice History Performance - Processing {len(invoices)} invoices: {(processing_end - processing_start)*1000:.2f}ms"
-		)
-		frappe.logger().info(
-			f"📊 Invoice History Performance - Credit Note invoices processed: {credit_note_count}, Other invoices: {other_invoice_count}"
-		)
-
-		total_time = time.time() - start_time
-		frappe.logger().info(
-			f"📊 Invoice History Performance - TOTAL TIME: {total_time*1000:.2f}ms for {len(invoices)} invoices (limit={limit}, start={start})"
-		)
+		# Process and enrich invoices
+		_process_invoices(invoices, cashier_names_map, payment_methods_map, items_map)
 
 		return {"success": True, "data": invoices, "total_count": total_count}
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Error fetching sales invoices")
 		return {"success": False, "error": str(e)}
+
+
+def _build_filters_and_fields():
+	"""Build filters and fields list based on user role and metadata."""
+	# Get current user's POS opening entry
+	current_opening_entry = get_current_pos_opening_entry()
+
+	# Check if user is admin
+	user_roles = frappe.get_roles()
+	is_admin_user = "Administrator" in user_roles or "System Manager" in user_roles
+
+	# Base filters - ALWAYS filter to only show POS-created invoices
+	filters = {"custom_pos_opening_entry": ["!=", ""]}
+
+	if is_admin_user:
+		frappe.logger().info(
+			f"Admin user {frappe.session.user} with roles {user_roles} - showing all POS invoices"
+		)
+	elif current_opening_entry:
+		filters["custom_pos_opening_entry"] = current_opening_entry
+		frappe.logger().info(f"Filtering invoices by POS opening entry: {current_opening_entry}")
+	else:
+		frappe.logger().info("No active POS opening entry found, showing all POS invoices")
+
+	# Check if ZATCA status field exists
+	sales_invoice_meta = frappe.get_meta("Sales Invoice")
+	has_zatca_status = any(df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields)
+
+	# Build fields list
+	fields = [
+		"name",
+		"posting_date",
+		"posting_time",
+		"owner",
+		"customer",
+		"customer_name",
+		"base_grand_total",
+		"base_rounded_total",
+		"status",
+		"discount_amount",
+		"total_taxes_and_charges",
+		"custom_pos_opening_entry",
+		"pos_profile",
+		"currency",
+	]
+
+	if has_zatca_status:
+		fields.append("custom_zatca_submit_status")
+
+	return filters, fields
+
+
+def _build_search_filters(search):
+	"""Build OR filters for search functionality."""
+	if not search or not search.strip():
+		return None
+
+	search_term = search.strip()
+	return [
+		["name", "like", f"%{search_term}%"],
+		["customer_name", "like", f"%{search_term}%"],
+		["customer", "like", f"%{search_term}%"],
+	]
+
+
+def _batch_fetch_cashier_names(user_ids):
+	"""Batch fetch cashier names for given user IDs."""
+	if not user_ids:
+		return {}
+
+	cashier_query = """
+		SELECT name, full_name
+		FROM `tabUser`
+		WHERE name IN ({})
+	""".format(",".join([f"'{uid}'" for uid in user_ids]))
+	cashier_results = frappe.db.sql(cashier_query, as_dict=True)
+	return {user.name: user.full_name or user.name for user in cashier_results}
+
+
+def _batch_fetch_payment_methods(invoice_names):
+	"""Batch fetch payment methods for given invoices."""
+	if not invoice_names:
+		return {}
+
+	payment_query = """
+		SELECT parent, mode_of_payment, amount
+		FROM `tabSales Invoice Payment`
+		WHERE parent IN ({})
+	""".format(",".join([f"'{name}'" for name in invoice_names]))
+	payment_results = frappe.db.sql(payment_query, as_dict=True)
+
+	# Group by parent invoice
+	payment_methods_map = {}
+	for payment in payment_results:
+		if payment.parent not in payment_methods_map:
+			payment_methods_map[payment.parent] = []
+		payment_methods_map[payment.parent].append(
+			{"mode_of_payment": payment.mode_of_payment, "amount": payment.amount}
+		)
+
+	return payment_methods_map
+
+
+def _batch_fetch_items(invoice_names):
+	"""Batch fetch items for given invoices."""
+	if not invoice_names:
+		return {}
+
+	items_query = """
+		SELECT parent, item_code, qty, rate, amount
+		FROM `tabSales Invoice Item`
+		WHERE parent IN ({})
+	""".format(",".join([f"'{name}'" for name in invoice_names]))
+	items_results = frappe.db.sql(items_query, as_dict=True)
+
+	# Group by parent invoice
+	items_map = {}
+	for item in items_results:
+		if item.parent not in items_map:
+			items_map[item.parent] = []
+		items_map[item.parent].append(
+			{
+				"item_code": item.item_code,
+				"qty": item.qty,
+				"rate": item.rate,
+				"amount": item.amount,
+				"quantity": item.qty,
+			}
+		)
+
+	return items_map
+
+
+def _process_invoices(invoices, cashier_names_map, payment_methods_map, items_map):
+	"""Process and enrich invoices with related data."""
+	for inv in invoices:
+		# Set cashier name
+		inv["cashier_name"] = cashier_names_map.get(inv.owner, inv.owner)
+
+		# Format posting_time
+		if inv.get("posting_time"):
+			if hasattr(inv["posting_time"], "total_seconds"):
+				total_seconds = int(inv["posting_time"].total_seconds())
+				hours = total_seconds // 3600
+				minutes = (total_seconds % 3600) // 60
+				seconds = total_seconds % 60
+				inv["posting_time"] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+			else:
+				inv["posting_time"] = str(inv["posting_time"])
+
+		# Set payment methods
+		payment_methods = payment_methods_map.get(inv.name, [])
+		inv["payment_methods"] = payment_methods
+
+		# Set backward-compatible mode_of_payment field
+		if len(payment_methods) == 0:
+			inv["mode_of_payment"] = "-"
+		elif len(payment_methods) == 1:
+			inv["mode_of_payment"] = payment_methods[0]["mode_of_payment"]
+		else:
+			inv["mode_of_payment"] = "/".join([pm["mode_of_payment"] for pm in payment_methods])
+
+		# Set items and calculate return data
+		items = items_map.get(inv.name, [])
+
+		# Only calculate return data for Credit Note Issued invoices
+		if inv.get("status") == "Credit Note Issued":
+			_calculate_return_quantities(inv, items)
+		else:
+			# For non-credit-note invoices, set default values
+			for item in items:
+				item["returned_qty"] = 0
+				item["available_qty"] = item["qty"]
+
+		inv["items"] = items
+
+
+def _calculate_return_quantities(invoice, items):
+	"""Calculate return quantities for credit note invoices."""
+	item_codes = [item["item_code"] for item in items]
+	if not item_codes:
+		return
+
+	returns_query = """
+		SELECT sii.item_code, COALESCE(SUM(ABS(sii.qty)), 0) as total_returned_qty
+		FROM `tabSales Invoice` si
+		JOIN `tabSales Invoice Item` sii ON si.name = sii.parent
+		WHERE si.is_return = 1
+		  AND si.return_against = %s
+		  AND sii.item_code IN ({})
+		  AND si.docstatus = 1
+		  AND si.customer = %s
+		GROUP BY sii.item_code
+	""".format(",".join([f"'{code}'" for code in item_codes]))
+
+	returns_data = frappe.db.sql(returns_query, (invoice.name, invoice.customer), as_dict=True)
+	returned_qty_map = {row.item_code: row.total_returned_qty for row in returns_data}
+
+	# Update items with return data
+	for item in items:
+		returned_qty_value = returned_qty_map.get(item["item_code"], 0)
+		item["returned_qty"] = round(float(returned_qty_value), 6)
+		item["available_qty"] = round(item["qty"] - returned_qty_value, 6)
+
+
+# @frappe.whitelist(allow_guest=True)
+# def get_sales_invoices(limit=100, start=0, search=""):
+# 	"""
+# 	Get sales invoices with proper filtering based on user role and POS opening entry.
+# 	"""
+# 	try:
+
+# 		# Get current user's POS opening entry
+# 		current_opening_entry = get_current_pos_opening_entry()
+
+# 		# Check if user is admin
+# 		user_roles = frappe.get_roles()
+# 		is_admin_user = "Administrator" in user_roles or "System Manager" in user_roles
+# 		# Base filters - ALWAYS filter to only show POS-created invoices
+# 		filters = {
+# 			"custom_pos_opening_entry": ["!=", ""]
+# 		}
+
+# 		if is_admin_user:
+# 			frappe.logger().info(
+# 				f"Admin user {frappe.session.user} with roles {user_roles} - showing all POS invoices"
+# 			)
+# 		elif current_opening_entry:
+# 			filters["custom_pos_opening_entry"] = current_opening_entry
+# 			frappe.logger().info(f"Filtering invoices by POS opening entry: {current_opening_entry}")
+# 		else:
+# 			frappe.logger().info("No active POS opening entry found, showing all POS invoices")
+
+# 		# Check if ZATCA status field exists
+# 		sales_invoice_meta = frappe.get_meta("Sales Invoice")
+# 		has_zatca_status = any(
+# 			df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields
+# 		)
+
+# 		# Build fields list
+# 		fields = [
+# 			"name",
+# 			"posting_date",
+# 			"posting_time",
+# 			"owner",
+# 			"customer",
+# 			"customer_name",
+# 			"base_grand_total",
+# 			"base_rounded_total",
+# 			"status",
+# 			"discount_amount",
+# 			"total_taxes_and_charges",
+# 			"custom_pos_opening_entry",
+# 			"pos_profile",
+# 			"currency",
+# 		]
+
+# 		if has_zatca_status:
+# 			fields.append("custom_zatca_submit_status")
+
+# 		# Build optional OR filters for search
+# 		or_filters = None
+# 		if search and search.strip():
+# 			search_term = search.strip()
+# 			or_filters = [
+# 				["name", "like", f"%{search_term}%"],
+# 				["customer_name", "like", f"%{search_term}%"],
+# 				["customer", "like", f"%{search_term}%"],
+# 			]
+
+# 		# Get invoices
+# 		invoices = frappe.get_all(
+# 			"Sales Invoice",
+# 			filters=filters,
+# 			or_filters=or_filters,
+# 			fields=fields,
+# 			order_by="modified desc",
+# 			limit=limit,
+# 			start=start,
+# 		)
+
+# 		# Get total count for pagination (supports or_filters via aggregate)
+# 		count_rows = frappe.get_all(
+# 			"Sales Invoice", filters=filters, or_filters=or_filters, fields=["count(name) as total"]
+# 		)
+# 		total_count = count_rows[0].total if count_rows else 0
+
+# 		# Batch fetch all cashier names
+# 		user_ids = list(set([inv.owner for inv in invoices]))
+# 		cashier_names_map = {}
+# 		if user_ids:
+# 			cashier_query = """
+# 				SELECT name, full_name
+# 				FROM `tabUser`
+# 				WHERE name IN ({})
+# 			""".format(",".join([f"'{uid}'" for uid in user_ids]))
+# 			cashier_results = frappe.db.sql(cashier_query, as_dict=True)
+# 			cashier_names_map = {user.name: user.full_name or user.name for user in cashier_results}
+
+# 		# Batch fetch all payment methods
+# 		invoice_names = [inv.name for inv in invoices]
+# 		payment_methods_map = {}
+# 		if invoice_names:
+# 			payment_query = """
+# 				SELECT parent, mode_of_payment, amount
+# 				FROM `tabSales Invoice Payment`
+# 				WHERE parent IN ({})
+# 			""".format(",".join([f"'{name}'" for name in invoice_names]))
+# 			payment_results = frappe.db.sql(payment_query, as_dict=True)
+
+# 			# Group by parent invoice
+# 			for payment in payment_results:
+# 				if payment.parent not in payment_methods_map:
+# 					payment_methods_map[payment.parent] = []
+# 				payment_methods_map[payment.parent].append(
+# 					{"mode_of_payment": payment.mode_of_payment, "amount": payment.amount}
+# 				)
+
+
+# 		# Batch fetch all items
+# 		items_map = {}
+# 		if invoice_names:
+# 			items_query = """
+# 				SELECT parent, item_code, qty, rate, amount
+# 				FROM `tabSales Invoice Item`
+# 				WHERE parent IN ({})
+# 			""".format(",".join([f"'{name}'" for name in invoice_names]))
+# 			items_results = frappe.db.sql(items_query, as_dict=True)
+
+# 			# Group by parent invoice
+# 			for item in items_results:
+# 				if item.parent not in items_map:
+# 					items_map[item.parent] = []
+# 				items_map[item.parent].append(
+# 					{
+# 						"item_code": item.item_code,
+# 						"qty": item.qty,
+# 						"rate": item.rate,
+# 						"amount": item.amount,
+# 						"quantity": item.qty,
+# 					}
+# 				)
+
+# 		# Process invoices with pre-fetched data
+# 		credit_note_count = 0
+# 		other_invoice_count = 0
+
+# 		for inv in invoices:
+# 			# Set cashier name from pre-fetched data
+# 			inv["cashier_name"] = cashier_names_map.get(inv.owner, inv.owner)
+
+# 			# Format posting_time from timedelta to HH:MM:SS
+# 			if inv.get("posting_time"):
+# 				if hasattr(inv["posting_time"], "total_seconds"):
+# 					total_seconds = int(inv["posting_time"].total_seconds())
+# 					hours = total_seconds // 3600
+# 					minutes = (total_seconds % 3600) // 60
+# 					seconds = total_seconds % 60
+# 					inv["posting_time"] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+# 				else:
+# 					inv["posting_time"] = str(inv["posting_time"])
+
+# 			# Set payment methods from pre-fetched data
+# 			payment_methods = payment_methods_map.get(inv.name, [])
+# 			inv["payment_methods"] = payment_methods
+
+# 			# Set backward-compatible mode_of_payment field
+# 			if len(payment_methods) == 0:
+# 				inv["mode_of_payment"] = "-"
+# 			elif len(payment_methods) == 1:
+# 				inv["mode_of_payment"] = payment_methods[0]["mode_of_payment"]
+# 			else:
+# 				inv["mode_of_payment"] = "/".join([pm["mode_of_payment"] for pm in payment_methods])
+
+# 			# Set items from pre-fetched data
+# 			items = items_map.get(inv.name, [])
+
+# 			# Only calculate return data for Credit Note Issued invoices (performance optimization)
+# 			if inv.get("status") == "Credit Note Issued":
+# 				credit_note_count += 1
+# 				# Calculate return quantities for credit note invoices only
+# 				item_codes = [item["item_code"] for item in items]
+# 				if item_codes:
+# 					returns_query = """
+# 						SELECT sii.item_code, COALESCE(SUM(ABS(sii.qty)), 0) as total_returned_qty
+# 						FROM `tabSales Invoice` si
+# 						JOIN `tabSales Invoice Item` sii ON si.name = sii.parent
+# 						WHERE si.is_return = 1
+# 						  AND si.return_against = %s
+# 						  AND sii.item_code IN ({})
+# 						  AND si.docstatus = 1
+# 						  AND si.customer = %s
+# 						GROUP BY sii.item_code
+# 					""".format(",".join([f"'{code}'" for code in item_codes]))
+
+# 					returns_data = frappe.db.sql(returns_query, (inv.name, inv.customer), as_dict=True)
+# 					returned_qty_map = {row.item_code: row.total_returned_qty for row in returns_data}
+
+# 					# Update items with return data
+# 					for item in items:
+# 						returned_qty_value = returned_qty_map.get(item["item_code"], 0)
+# 						item["returned_qty"] = round(float(returned_qty_value), 6)
+# 						item["available_qty"] = round(item["qty"] - returned_qty_value, 6)
+
+
+# 			else:
+# 				other_invoice_count += 1
+# 				# For non-credit-note invoices, set default values (no expensive calculations)
+# 				for item in items:
+# 					item["returned_qty"] = 0
+# 					item["available_qty"] = item["qty"]
+
+# 			inv["items"] = items
+
+
+# 		return {"success": True, "data": invoices, "total_count": total_count}
+
+# 	except Exception as e:
+# 		frappe.log_error(frappe.get_traceback(), "Error fetching sales invoices")
+# 		return {"success": False, "error": str(e)}
 
 
 @frappe.whitelist(allow_guest=True)

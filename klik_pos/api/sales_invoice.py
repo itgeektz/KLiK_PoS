@@ -37,19 +37,18 @@ def get_current_pos_opening_entry():
 		return None
 
 
+
 @frappe.whitelist(allow_guest=True)
 def get_sales_invoices(limit=100, start=0, search=""):
 	"""
 	Get sales invoices with proper filtering based on user role and POS opening entry.
 	"""
 	try:
-		# Build filters and fields
 		filters, fields = _build_filters_and_fields()
 
 		# Build search filters
 		or_filters = _build_search_filters(search)
 
-		# Fetch invoices and total count
 		invoices = frappe.get_all(
 			"Sales Invoice",
 			filters=filters,
@@ -85,14 +84,12 @@ def get_sales_invoices(limit=100, start=0, search=""):
 
 def _build_filters_and_fields():
 	"""Build filters and fields list based on user role and metadata."""
-	# Get current user's POS opening entry
 	current_opening_entry = get_current_pos_opening_entry()
 
 	# Check if user is admin
 	user_roles = frappe.get_roles()
 	is_admin_user = "Administrator" in user_roles or "System Manager" in user_roles
 
-	# Base filters - ALWAYS filter to only show POS-created invoices
 	filters = {"custom_pos_opening_entry": ["!=", ""]}
 
 	if is_admin_user:
@@ -287,84 +284,19 @@ def _calculate_return_quantities(invoice, items):
 @frappe.whitelist(allow_guest=True)
 def get_invoice_details(invoice_id):
 	"""
-	Optimized invoice details fetching with batch queries for items and returns.
+	Main function to fetch complete invoice details.
 	"""
 	try:
 		invoice = frappe.get_doc("Sales Invoice", invoice_id)
 		invoice_data = invoice.as_dict()
 
-		# Batch fetch all items for this invoice
-		items_query = """
-			SELECT item_code, item_name, qty, rate, amount, description
-			FROM `tabSales Invoice Item`
-			WHERE parent = %s
-		"""
-		items_data = frappe.db.sql(items_query, (invoice_id,), as_dict=True)
+		# Get items with return data
+		items = _get_invoice_items_with_returns(invoice_id, invoice.customer)
 
-		# Batch fetch return quantities for all items at once
-		item_codes = [item.item_code for item in items_data]
-		returned_qty_map = {}
+		# Get address and customer information
+		address_data = _get_address_and_customer_info(invoice)
 
-		if item_codes:
-			returns_query = """
-				SELECT sii.item_code, COALESCE(SUM(ABS(sii.qty)), 0) as total_returned_qty
-				FROM `tabSales Invoice` si
-				JOIN `tabSales Invoice Item` sii ON si.name = sii.parent
-				WHERE si.is_return = 1
-				  AND si.return_against = %s
-				  AND sii.item_code IN ({})
-				  AND si.docstatus = 1
-				  AND si.customer = %s
-				GROUP BY sii.item_code
-			""".format(",".join([f"'{code}'" for code in item_codes]))
-
-			returns_data = frappe.db.sql(returns_query, (invoice_id, invoice.customer), as_dict=True)
-			returned_qty_map = {row.item_code: row.total_returned_qty for row in returns_data}
-
-		# Build items list with batch-fetched return data
-		items = []
-		for item in items_data:
-			returned_qty_value = returned_qty_map.get(item.item_code, 0)
-			available_qty = round(
-				item.qty - returned_qty_value, 6
-			)  # Round to 6 decimal places to avoid precision issues
-
-			items.append(
-				{
-					"item_code": item.item_code,
-					"item_name": item.item_name,
-					"qty": item.qty,
-					"rate": item.rate,
-					"amount": item.amount,
-					"description": item.description,
-					"returned_qty": returned_qty_value,
-					"available_qty": available_qty,
-				}
-			)
-
-		# Get full company address doc
-		company_address_doc = None
-		if invoice.company_address:
-			company_address_doc = frappe.get_doc("Address", invoice.company_address).as_dict()
-
-		# Get full customer address doc
-		customer_address_doc = None
-		if invoice.customer_address:
-			customer_address_doc = frappe.get_doc("Address", invoice.customer_address).as_dict()
-		else:
-			primary_address = frappe.db.get_value(
-				"Dynamic Link",
-				{
-					"link_doctype": "Customer",
-					"link_name": invoice.customer,
-					"parenttype": "Address",
-				},
-				"parent",
-			)
-			if primary_address:
-				customer_address_doc = frappe.get_doc("Address", primary_address).as_dict()
-
-		# Format posting_time from timedelta to HH:MM:SS
+		# Format posting time
 		if invoice_data.get("posting_time"):
 			if hasattr(invoice_data["posting_time"], "total_seconds"):
 				total_seconds = int(invoice_data["posting_time"].total_seconds())
@@ -375,54 +307,139 @@ def get_invoice_details(invoice_id):
 			else:
 				invoice_data["posting_time"] = str(invoice_data["posting_time"])
 
-		# Get cashier full name from document owner
+		# Get cashier full name
 		cashier_name = frappe.db.get_value(
 			"User", invoice_data.get("owner"), "full_name"
 		) or invoice_data.get("owner")
 		invoice_data["cashier_name"] = cashier_name
-
-		# Get customer contact information
-		customer_email = ""
-		customer_mobile_no = ""
-		customer_address_line1 = ""
-		customer_city = ""
-		customer_state = ""
-		customer_pincode = ""
-		customer_country = ""
-
-		if invoice.customer:
-			customer_doc = frappe.get_doc("Customer", invoice.customer)
-			customer_email = customer_doc.email_id or ""
-			customer_mobile_no = customer_doc.mobile_no or ""
-
-			# Get address information from customer_address_doc
-			if customer_address_doc:
-				customer_address_line1 = customer_address_doc.get("address_line1", "")
-				customer_city = customer_address_doc.get("city", "")
-				customer_state = customer_address_doc.get("state", "")
-				customer_pincode = customer_address_doc.get("pincode", "")
-				customer_country = customer_address_doc.get("country", "")
 
 		return {
 			"success": True,
 			"data": {
 				**invoice_data,
 				"items": items,
-				"company_address_doc": company_address_doc,
-				"customer_address_doc": customer_address_doc,
-				"customer_email": customer_email,
-				"customer_mobile_no": customer_mobile_no,
-				"customer_address_line1": customer_address_line1,
-				"customer_city": customer_city,
-				"customer_state": customer_state,
-				"customer_pincode": customer_pincode,
-				"customer_country": customer_country,
+				**address_data,
 			},
 		}
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), f"Error fetching invoice {invoice_id}")
 		return {"success": False, "error": str(e)}
+
+
+def _get_invoice_items_with_returns(invoice_id, customer):
+	"""
+	Fetch invoice items and calculate returned/available quantities.
+	"""
+	# Batch fetch all items for this invoice
+	items_query = """
+		SELECT item_code, item_name, qty, rate, amount, description
+		FROM `tabSales Invoice Item`
+		WHERE parent = %s
+	"""
+	items_data = frappe.db.sql(items_query, (invoice_id,), as_dict=True)
+
+	# Batch fetch return quantities for all items at once
+	item_codes = [item.item_code for item in items_data]
+	returned_qty_map = {}
+
+	if item_codes:
+		returns_query = """
+			SELECT sii.item_code, COALESCE(SUM(ABS(sii.qty)), 0) as total_returned_qty
+			FROM `tabSales Invoice` si
+			JOIN `tabSales Invoice Item` sii ON si.name = sii.parent
+			WHERE si.is_return = 1
+			  AND si.return_against = %s
+			  AND sii.item_code IN ({})
+			  AND si.docstatus = 1
+			  AND si.customer = %s
+			GROUP BY sii.item_code
+		""".format(",".join([f"'{code}'" for code in item_codes]))
+
+		returns_data = frappe.db.sql(returns_query, (invoice_id, customer), as_dict=True)
+		returned_qty_map = {row.item_code: row.total_returned_qty for row in returns_data}
+
+	# Build items list with return data
+	items = []
+	for item in items_data:
+		returned_qty_value = returned_qty_map.get(item.item_code, 0)
+		available_qty = round(item.qty - returned_qty_value, 6)
+
+		items.append(
+			{
+				"item_code": item.item_code,
+				"item_name": item.item_name,
+				"qty": item.qty,
+				"rate": item.rate,
+				"amount": item.amount,
+				"description": item.description,
+				"returned_qty": returned_qty_value,
+				"available_qty": available_qty,
+			}
+		)
+
+	return items
+
+
+def _get_address_and_customer_info(invoice):
+	"""
+	Fetch company address, customer address, and customer contact information.
+	"""
+	# Get company address
+	company_address_doc = None
+	if invoice.company_address:
+		company_address_doc = frappe.get_doc("Address", invoice.company_address).as_dict()
+
+	# Get customer address
+	customer_address_doc = None
+	if invoice.customer_address:
+		customer_address_doc = frappe.get_doc("Address", invoice.customer_address).as_dict()
+	else:
+		primary_address = frappe.db.get_value(
+			"Dynamic Link",
+			{
+				"link_doctype": "Customer",
+				"link_name": invoice.customer,
+				"parenttype": "Address",
+			},
+			"parent",
+		)
+		if primary_address:
+			customer_address_doc = frappe.get_doc("Address", primary_address).as_dict()
+
+	# Get customer contact information
+	customer_email = ""
+	customer_mobile_no = ""
+	customer_address_line1 = ""
+	customer_city = ""
+	customer_state = ""
+	customer_pincode = ""
+	customer_country = ""
+
+	if invoice.customer:
+		customer_doc = frappe.get_doc("Customer", invoice.customer)
+		customer_email = customer_doc.email_id or ""
+		customer_mobile_no = customer_doc.mobile_no or ""
+
+		# Extract address fields
+		if customer_address_doc:
+			customer_address_line1 = customer_address_doc.get("address_line1", "")
+			customer_city = customer_address_doc.get("city", "")
+			customer_state = customer_address_doc.get("state", "")
+			customer_pincode = customer_address_doc.get("pincode", "")
+			customer_country = customer_address_doc.get("country", "")
+
+	return {
+		"company_address_doc": company_address_doc,
+		"customer_address_doc": customer_address_doc,
+		"customer_email": customer_email,
+		"customer_mobile_no": customer_mobile_no,
+		"customer_address_line1": customer_address_line1,
+		"customer_city": customer_city,
+		"customer_state": customer_state,
+		"customer_pincode": customer_pincode,
+		"customer_country": customer_country,
+	}
 
 
 @frappe.whitelist()
@@ -479,7 +496,6 @@ def create_and_submit_invoice(data):
 			should_create_payment_entry = True
 		elif business_type == "B2B & B2C":
 			# For B2B & B2C, only create payment entry for company customers
-			# Use cached customer data
 			global _cached_customer_data
 			if customer not in _cached_customer_data:
 				_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
@@ -598,6 +614,206 @@ def parse_invoice_data(data):
 	)
 
 
+# def build_sales_invoice_doc(
+# 	customer,
+# 	items,
+# 	amount_paid,
+# 	sales_and_tax_charges,
+# 	mode_of_payment,
+# 	business_type,
+# 	roundoff_amount=0.0,
+# 	include_payments=False,
+# ):
+# 	doc = frappe.new_doc("Sales Invoice")
+# 	doc.customer = customer
+# 	doc.due_date = frappe.utils.nowdate()
+# 	doc.custom_delivery_date = frappe.utils.nowdate()
+
+# 	# Set company and currency from POS Profile
+# 	# Prefer the POS Profile from the current open POS Opening Entry (active session)
+# 	selected_pos_profile_name = None
+# 	try:
+# 		current_opening_entry = get_current_pos_opening_entry()
+# 		if current_opening_entry:
+# 			opening_doc = frappe.get_doc("POS Opening Entry", current_opening_entry)
+# 			selected_pos_profile_name = opening_doc.pos_profile
+# 	except Exception:
+# 		# Fallback handled below
+# 		pass
+
+# 	if selected_pos_profile_name:
+# 		pos_profile = frappe.get_doc("POS Profile", selected_pos_profile_name)
+# 	else:
+# 		pos_profile = get_current_pos_profile()
+
+# 	doc.pos_profile = pos_profile.name  # Set the POS profile on the invoice
+# 	doc.company = pos_profile.company
+# 	doc.currency = get_customer_billing_currency(customer)
+# 	doc.conversion_rate = 1.0  # Set conversion rate to 1 for same currency
+
+# 	# Determine if this should be a POS invoice based on business type and customer type
+# 	if business_type == "B2C":
+# 		doc.is_pos = 1
+# 	elif business_type == "B2B":
+# 		doc.is_pos = 0
+# 	elif business_type == "B2B & B2C":
+# 		# Use cached customer data
+# 		global _cached_customer_data
+# 		if customer not in _cached_customer_data:
+# 			_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
+
+# 		customer_doc = _cached_customer_data[customer]
+# 		if customer_doc.customer_type == "Individual":
+# 			doc.is_pos = 1
+# 		else:
+# 			doc.is_pos = 0
+# 	else:
+# 		doc.is_pos = 0
+
+# 	doc.update_stock = 1
+# 	doc.warehouse = pos_profile.warehouse
+
+# 	# Set additional required fields
+# 	doc.posting_date = frappe.utils.nowdate()
+# 	doc.posting_time = frappe.utils.nowtime()
+# 	doc.set_posting_time = 1
+
+# 	# Set the current POS opening entry
+# 	current_opening_entry = get_current_pos_opening_entry()
+# 	if current_opening_entry:
+# 		doc.custom_pos_opening_entry = current_opening_entry
+
+# 	# Set round-off fields only if roundoff_amount is not zero
+# 	if roundoff_amount != 0:
+# 		doc.custom_roundoff_amount = flt(abs(roundoff_amount))
+# 		doc.custom_roundoff_account = get_writeoff_account()
+# 		conversion_rate = doc.conversion_rate or 1
+# 		doc.custom_base_roundoff_amount = flt(abs(roundoff_amount) * conversion_rate)
+
+# 	# Set taxes and charges template
+# 	if sales_and_tax_charges:
+# 		doc.taxes_and_charges = sales_and_tax_charges
+# 	else:
+# 		doc.taxes_and_charges = pos_profile.taxes_and_charges
+
+# 	# Optimize item processing with batch queries
+# 	item_codes = [item.get("id") for item in items]
+
+# 	# Batch fetch all required data at once
+# 	item_data_map = {}
+# 	_account_data_map = {}
+
+# 	if item_codes:
+# 		# Batch fetch item data
+# 		item_query = """
+# 			SELECT name, has_batch_no, has_serial_no
+# 			FROM `tabItem`
+# 			WHERE name IN ({})
+# 		""".format(",".join([f"'{code}'" for code in item_codes]))
+
+# 		item_results = frappe.db.sql(item_query, as_dict=True)
+# 		item_data_map = {item.name: item for item in item_results}
+
+# 		# Pre-calculate all income and expense accounts
+# 		pos_profile = get_current_pos_profile()
+# 		company = pos_profile.company
+
+# 		# Cache company data
+# 		if company not in _cached_company_data:
+# 			_cached_company_data[company] = frappe.get_doc("Company", company)
+
+# 		company_doc = _cached_company_data[company]
+# 		income_account = company_doc.default_income_account
+# 		expense_account = company_doc.default_expense_account
+
+# 		# Pre-populate account cache for all items
+# 		for item_code in item_codes:
+# 			_cached_item_accounts[item_code] = income_account
+# 			_cached_item_accounts[f"{item_code}_expense"] = expense_account
+
+# 	# Populate items
+# 	for item in items:
+# 		item_code = item.get("id")
+# 		income_account = get_income_accounts(item_code)
+# 		expense_account = get_expense_accounts(item_code)
+
+# 		# Ensure we have valid accounts
+# 		if not income_account:
+# 			frappe.throw(
+# 				f"Income account not found for item {item_code}. Please check item defaults or company settings."
+# 			)
+# 		if not expense_account:
+# 			frappe.throw(
+# 				f"Expense account not found for item {item_code}. Please check item defaults or company settings."
+# 			)
+
+# 		# Get item data from batch query
+# 		item_data = item_data_map.get(item_code, {})
+# 		has_batch_no = item_data.get("has_batch_no", 0)
+
+# 		# Prepare item data
+# 		item_data = {
+# 			"item_code": item.get("id"),
+# 			"qty": item.get("quantity"),
+# 			"rate": item.get("price"),
+# 			"income_account": income_account,
+# 			"expense_account": expense_account,
+# 			"warehouse": pos_profile.warehouse,
+# 			"cost_center": pos_profile.cost_center,
+# 		}
+
+# 		# Handle UOM if provided
+# 		selected_uom = item.get("uom")
+# 		if selected_uom and selected_uom != "Nos":
+# 			item_data["uom"] = selected_uom
+
+# 		# Handle batch information if item has batch tracking
+# 		if has_batch_no:
+# 			batch_number = item.get("batchNumber")
+# 			if batch_number:
+# 				item_data["use_serial_batch_fields"] = 1
+# 				item_data["batch_no"] = batch_number
+
+# 		# Handle serial number if provided
+# 		serial_number = item.get("serialNumber")
+# 		if serial_number:
+# 			item_data["use_serial_batch_fields"] = 1
+# 			item_data["serial_no"] = serial_number
+
+# 		doc.append("items", item_data)
+
+# 	# If taxes_and_charges is set, populate taxes manually
+# 	if doc.taxes_and_charges:
+# 		tax_doc = get_tax_template(doc.taxes_and_charges)
+# 		if tax_doc:
+# 			for tax in tax_doc.taxes:
+# 				doc.append(
+# 					"taxes",
+# 					{
+# 						"charge_type": tax.charge_type,
+# 						"account_head": tax.account_head,
+# 						"description": tax.description,
+# 						"cost_center": tax.cost_center,
+# 						"rate": tax.rate,
+# 						"row_id": tax.row_id,
+# 						"tax_amount": tax.tax_amount,
+# 						"included_in_print_rate": tax.included_in_print_rate,
+# 					},
+# 				)
+
+# 	if roundoff_amount != 0:
+# 		conversion_rate = doc.conversion_rate or 1
+
+# 	# Add payments if required
+# 	if include_payments and isinstance(mode_of_payment, list):
+# 		for payment in mode_of_payment:
+# 			doc.append(
+# 				"payments",
+# 				{"mode_of_payment": payment["method"], "amount": payment["amount"]},
+# 			)
+
+# 	return doc
+
 def build_sales_invoice_doc(
 	customer,
 	items,
@@ -608,195 +824,278 @@ def build_sales_invoice_doc(
 	roundoff_amount=0.0,
 	include_payments=False,
 ):
+	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
 	doc.customer = customer
 	doc.due_date = frappe.utils.nowdate()
 	doc.custom_delivery_date = frappe.utils.nowdate()
 
-	# Set company and currency from POS Profile
-	# Prefer the POS Profile from the current open POS Opening Entry (active session)
+	# Configure POS profile and company settings
+	pos_profile = _get_active_pos_profile()
+	_set_pos_profile_fields(doc, pos_profile, customer, business_type)
+	
+	# Set posting details
+	_set_posting_fields(doc)
+	
+	# Set POS opening entry
+	_set_pos_opening_entry(doc)
+	
+	# Handle round-off
+	_set_roundoff_fields(doc, roundoff_amount)
+	
+	# Set taxes and charges
+	_set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile)
+	
+	# Add items to invoice
+	_populate_invoice_items(doc, items, pos_profile)
+	
+	# Populate tax details
+	_populate_tax_details(doc)
+	
+	# Add payment information
+	if include_payments:
+		_add_payment_entries(doc, mode_of_payment)
+	
+	return doc
+
+
+def _get_active_pos_profile():
+	"""Get the active POS profile from current session or fallback to default."""
 	selected_pos_profile_name = None
+	
 	try:
 		current_opening_entry = get_current_pos_opening_entry()
 		if current_opening_entry:
 			opening_doc = frappe.get_doc("POS Opening Entry", current_opening_entry)
 			selected_pos_profile_name = opening_doc.pos_profile
 	except Exception:
-		# Fallback handled below
 		pass
 
 	if selected_pos_profile_name:
-		pos_profile = frappe.get_doc("POS Profile", selected_pos_profile_name)
+		return frappe.get_doc("POS Profile", selected_pos_profile_name)
 	else:
-		pos_profile = get_current_pos_profile()
+		return get_current_pos_profile()
 
-	doc.pos_profile = pos_profile.name  # Set the POS profile on the invoice
+
+def _set_pos_profile_fields(doc, pos_profile, customer, business_type):
+	"""Set POS profile, company, currency and POS-specific fields."""
+	doc.pos_profile = pos_profile.name
 	doc.company = pos_profile.company
 	doc.currency = get_customer_billing_currency(customer)
-	doc.conversion_rate = 1.0  # Set conversion rate to 1 for same currency
-
-	# Determine if this should be a POS invoice based on business type and customer type
-	if business_type == "B2C":
-		doc.is_pos = 1
-	elif business_type == "B2B":
-		doc.is_pos = 0
-	elif business_type == "B2B & B2C":
-		# Use cached customer data
-		global _cached_customer_data
-		if customer not in _cached_customer_data:
-			_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
-
-		customer_doc = _cached_customer_data[customer]
-		if customer_doc.customer_type == "Individual":
-			doc.is_pos = 1
-		else:
-			doc.is_pos = 0
-	else:
-		doc.is_pos = 0
-
+	doc.conversion_rate = 1.0
 	doc.update_stock = 1
 	doc.warehouse = pos_profile.warehouse
+	
+	# Determine if this is a POS invoice
+	doc.is_pos = _determine_is_pos(customer, business_type)
 
-	# Set additional required fields
+
+def _determine_is_pos(customer, business_type):
+	"""Determine if the invoice should be marked as POS based on business type."""
+	if business_type == "B2C":
+		return 1
+	elif business_type == "B2B":
+		return 0
+	elif business_type == "B2B & B2C":
+		return _check_customer_type_for_pos(customer)
+	else:
+		return 0
+
+
+def _check_customer_type_for_pos(customer):
+	"""Check if customer is an individual for B2B & B2C business type."""
+	global _cached_customer_data
+	if customer not in _cached_customer_data:
+		_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
+	
+	customer_doc = _cached_customer_data[customer]
+	return 1 if customer_doc.customer_type == "Individual" else 0
+
+
+def _set_posting_fields(doc):
+	"""Set posting date, time and related fields."""
 	doc.posting_date = frappe.utils.nowdate()
 	doc.posting_time = frappe.utils.nowtime()
 	doc.set_posting_time = 1
 
-	# Set the current POS opening entry
+
+def _set_pos_opening_entry(doc):
+	"""Set the current POS opening entry on the document."""
 	current_opening_entry = get_current_pos_opening_entry()
 	if current_opening_entry:
 		doc.custom_pos_opening_entry = current_opening_entry
 
-	# Set round-off fields only if roundoff_amount is not zero
+
+def _set_roundoff_fields(doc, roundoff_amount):
+	"""Set round-off amount and account if roundoff is non-zero."""
 	if roundoff_amount != 0:
+		conversion_rate = doc.conversion_rate or 1
 		doc.custom_roundoff_amount = flt(abs(roundoff_amount))
 		doc.custom_roundoff_account = get_writeoff_account()
-		conversion_rate = doc.conversion_rate or 1
 		doc.custom_base_roundoff_amount = flt(abs(roundoff_amount) * conversion_rate)
 
-	# Set taxes and charges template
+
+def _set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile):
+	"""Set the taxes and charges template."""
 	if sales_and_tax_charges:
 		doc.taxes_and_charges = sales_and_tax_charges
 	else:
 		doc.taxes_and_charges = pos_profile.taxes_and_charges
 
-	# Optimize item processing with batch queries
+
+def _populate_invoice_items(doc, items, pos_profile):
+	"""Add all items to the invoice."""
 	item_codes = [item.get("id") for item in items]
-
-	# Batch fetch all required data at once
-	item_data_map = {}
-	_account_data_map = {}
-
-	if item_codes:
-		# Batch fetch item data
-		item_query = """
-			SELECT name, has_batch_no, has_serial_no
-			FROM `tabItem`
-			WHERE name IN ({})
-		""".format(",".join([f"'{code}'" for code in item_codes]))
-
-		item_results = frappe.db.sql(item_query, as_dict=True)
-		item_data_map = {item.name: item for item in item_results}
-
-		# Pre-calculate all income and expense accounts
-		pos_profile = get_current_pos_profile()
-		company = pos_profile.company
-
-		# Cache company data
-		if company not in _cached_company_data:
-			_cached_company_data[company] = frappe.get_doc("Company", company)
-
-		company_doc = _cached_company_data[company]
-		income_account = company_doc.default_income_account
-		expense_account = company_doc.default_expense_account
-
-		# Pre-populate account cache for all items
-		for item_code in item_codes:
-			_cached_item_accounts[item_code] = income_account
-			_cached_item_accounts[f"{item_code}_expense"] = expense_account
-
-	# Populate items
+	
+	# Batch fetch item data and pre-cache accounts
+	item_data_map = _batch_fetch_item_data(item_codes)
+	_precache_item_accounts(item_codes, pos_profile.company)
+	
+	# Add each item to the invoice
 	for item in items:
-		item_code = item.get("id")
-		income_account = get_income_accounts(item_code)
-		expense_account = get_expense_accounts(item_code)
-
-		# Ensure we have valid accounts
-		if not income_account:
-			frappe.throw(
-				f"Income account not found for item {item_code}. Please check item defaults or company settings."
-			)
-		if not expense_account:
-			frappe.throw(
-				f"Expense account not found for item {item_code}. Please check item defaults or company settings."
-			)
-
-		# Get item data from batch query
-		item_data = item_data_map.get(item_code, {})
-		has_batch_no = item_data.get("has_batch_no", 0)
-
-		# Prepare item data
-		item_data = {
-			"item_code": item.get("id"),
-			"qty": item.get("quantity"),
-			"rate": item.get("price"),
-			"income_account": income_account,
-			"expense_account": expense_account,
-			"warehouse": pos_profile.warehouse,
-			"cost_center": pos_profile.cost_center,
-		}
-
-		# Handle UOM if provided
-		selected_uom = item.get("uom")
-		if selected_uom and selected_uom != "Nos":
-			item_data["uom"] = selected_uom
-
-		# Handle batch information if item has batch tracking
-		if has_batch_no:
-			batch_number = item.get("batchNumber")
-			if batch_number:
-				item_data["use_serial_batch_fields"] = 1
-				item_data["batch_no"] = batch_number
-
-		# Handle serial number if provided
-		serial_number = item.get("serialNumber")
-		if serial_number:
-			item_data["use_serial_batch_fields"] = 1
-			item_data["serial_no"] = serial_number
-
+		item_data = _prepare_item_data(item, item_data_map, pos_profile)
 		doc.append("items", item_data)
 
-	# If taxes_and_charges is set, populate taxes manually
-	if doc.taxes_and_charges:
-		tax_doc = get_tax_template(doc.taxes_and_charges)
-		if tax_doc:
-			for tax in tax_doc.taxes:
-				doc.append(
-					"taxes",
-					{
-						"charge_type": tax.charge_type,
-						"account_head": tax.account_head,
-						"description": tax.description,
-						"cost_center": tax.cost_center,
-						"rate": tax.rate,
-						"row_id": tax.row_id,
-						"tax_amount": tax.tax_amount,
-						"included_in_print_rate": tax.included_in_print_rate,
-					},
-				)
 
-	if roundoff_amount != 0:
-		conversion_rate = doc.conversion_rate or 1
+def _batch_fetch_item_data(item_codes):
+	"""Batch fetch item data for all items."""
+	if not item_codes:
+		return {}
+	
+	item_query = """
+		SELECT name, has_batch_no, has_serial_no
+		FROM `tabItem`
+		WHERE name IN ({})
+	""".format(",".join([f"'{code}'" for code in item_codes]))
+	
+	item_results = frappe.db.sql(item_query, as_dict=True)
+	return {item.name: item for item in item_results}
 
-	# Add payments if required
-	if include_payments and isinstance(mode_of_payment, list):
-		for payment in mode_of_payment:
-			doc.append(
-				"payments",
-				{"mode_of_payment": payment["method"], "amount": payment["amount"]},
-			)
 
-	return doc
+def _precache_item_accounts(item_codes, company):
+	"""Pre-cache income and expense accounts for all items."""
+	if not item_codes:
+		return
+	
+	# Cache company data
+	if company not in _cached_company_data:
+		_cached_company_data[company] = frappe.get_doc("Company", company)
+	
+	company_doc = _cached_company_data[company]
+	income_account = company_doc.default_income_account
+	expense_account = company_doc.default_expense_account
+	
+	# Pre-populate account cache
+	for item_code in item_codes:
+		_cached_item_accounts[item_code] = income_account
+		_cached_item_accounts[f"{item_code}_expense"] = expense_account
+
+
+def _prepare_item_data(item, item_data_map, pos_profile):
+	"""Prepare item data dictionary for invoice line."""
+	item_code = item.get("id")
+	
+	# Get accounts and validate
+	income_account = get_income_accounts(item_code)
+	expense_account = get_expense_accounts(item_code)
+	_validate_item_accounts(item_code, income_account, expense_account)
+	
+	# Build base item data
+	item_data = {
+		"item_code": item_code,
+		"qty": item.get("quantity"),
+		"rate": item.get("price"),
+		"income_account": income_account,
+		"expense_account": expense_account,
+		"warehouse": pos_profile.warehouse,
+		"cost_center": pos_profile.cost_center,
+	}
+	
+	# Add optional fields
+	_add_uom_to_item(item_data, item)
+	_add_batch_to_item(item_data, item, item_data_map.get(item_code, {}))
+	_add_serial_to_item(item_data, item)
+	
+	return item_data
+
+
+def _validate_item_accounts(item_code, income_account, expense_account):
+	"""Validate that required accounts exist for the item."""
+	if not income_account:
+		frappe.throw(
+			f"Income account not found for item {item_code}. "
+			"Please check item defaults or company settings."
+		)
+	if not expense_account:
+		frappe.throw(
+			f"Expense account not found for item {item_code}. "
+			"Please check item defaults or company settings."
+		)
+
+
+def _add_uom_to_item(item_data, item):
+	"""Add UOM to item data if specified and not default."""
+	selected_uom = item.get("uom")
+	if selected_uom and selected_uom != "Nos":
+		item_data["uom"] = selected_uom
+
+
+def _add_batch_to_item(item_data, item, item_db_data):
+	"""Add batch information if item has batch tracking."""
+	has_batch_no = item_db_data.get("has_batch_no", 0)
+	batch_number = item.get("batchNumber")
+	
+	if has_batch_no and batch_number:
+		item_data["use_serial_batch_fields"] = 1
+		item_data["batch_no"] = batch_number
+
+
+def _add_serial_to_item(item_data, item):
+	"""Add serial number if provided."""
+	serial_number = item.get("serialNumber")
+	if serial_number:
+		item_data["use_serial_batch_fields"] = 1
+		item_data["serial_no"] = serial_number
+
+
+def _populate_tax_details(doc):
+	"""Populate tax details from the taxes and charges template."""
+	if not doc.taxes_and_charges:
+		return
+	
+	tax_doc = get_tax_template(doc.taxes_and_charges)
+	if not tax_doc:
+		return
+	
+	for tax in tax_doc.taxes:
+		doc.append(
+			"taxes",
+			{
+				"charge_type": tax.charge_type,
+				"account_head": tax.account_head,
+				"description": tax.description,
+				"cost_center": tax.cost_center,
+				"rate": tax.rate,
+				"row_id": tax.row_id,
+				"tax_amount": tax.tax_amount,
+				"included_in_print_rate": tax.included_in_print_rate,
+			},
+		)
+
+
+def _add_payment_entries(doc, mode_of_payment):
+	"""Add payment entries to the invoice."""
+	if not isinstance(mode_of_payment, list):
+		return
+	
+	for payment in mode_of_payment:
+		doc.append(
+			"payments",
+			{
+				"mode_of_payment": payment["method"],
+				"amount": payment["amount"]
+			},
+		)
 
 
 def get_tax_template(template_name):
@@ -1401,7 +1700,7 @@ def get_valid_sales_invoices(doctype, txt, searchfield, start, page_len, filters
 	conditions = [
 		"si.docstatus = 1",
 		"si.is_return = 0",
-		"si.custom_pos_opening_entry IS NOT NULL AND si.custom_pos_opening_entry != ''",  # Only POS-created invoices
+		"si.custom_pos_opening_entry IS NOT NULL AND si.custom_pos_opening_entry != ''",  
 	]
 	query_params = {
 		"txt": f"%{txt}%",
@@ -1462,7 +1761,7 @@ def get_customer_invoices_for_return(customer, start_date=None, end_date=None, s
 			"docstatus": 1,
 			"is_return": 0,
 			"status": ["!=", "Cancelled"],
-			"custom_pos_opening_entry": ["!=", ""],  # Only show POS-created invoices
+			"custom_pos_opening_entry": ["!=", ""], 
 		}
 
 		if start_date:

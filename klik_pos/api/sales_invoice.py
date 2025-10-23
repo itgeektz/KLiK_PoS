@@ -37,7 +37,6 @@ def get_current_pos_opening_entry():
 		return None
 
 
-
 @frappe.whitelist(allow_guest=True)
 def get_sales_invoices(limit=100, start=0, search=""):
 	"""
@@ -814,6 +813,7 @@ def parse_invoice_data(data):
 
 # 	return doc
 
+
 def build_sales_invoice_doc(
 	customer,
 	items,
@@ -833,36 +833,36 @@ def build_sales_invoice_doc(
 	# Configure POS profile and company settings
 	pos_profile = _get_active_pos_profile()
 	_set_pos_profile_fields(doc, pos_profile, customer, business_type)
-	
+
 	# Set posting details
 	_set_posting_fields(doc)
-	
+
 	# Set POS opening entry
 	_set_pos_opening_entry(doc)
-	
+
 	# Handle round-off
 	_set_roundoff_fields(doc, roundoff_amount)
-	
+
 	# Set taxes and charges
 	_set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile)
-	
+
 	# Add items to invoice
 	_populate_invoice_items(doc, items, pos_profile)
-	
+
 	# Populate tax details
 	_populate_tax_details(doc)
-	
+
 	# Add payment information
 	if include_payments:
 		_add_payment_entries(doc, mode_of_payment)
-	
+
 	return doc
 
 
 def _get_active_pos_profile():
 	"""Get the active POS profile from current session or fallback to default."""
 	selected_pos_profile_name = None
-	
+
 	try:
 		current_opening_entry = get_current_pos_opening_entry()
 		if current_opening_entry:
@@ -885,7 +885,7 @@ def _set_pos_profile_fields(doc, pos_profile, customer, business_type):
 	doc.conversion_rate = 1.0
 	doc.update_stock = 1
 	doc.warehouse = pos_profile.warehouse
-	
+
 	# Determine if this is a POS invoice
 	doc.is_pos = _determine_is_pos(customer, business_type)
 
@@ -907,7 +907,7 @@ def _check_customer_type_for_pos(customer):
 	global _cached_customer_data
 	if customer not in _cached_customer_data:
 		_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
-	
+
 	customer_doc = _cached_customer_data[customer]
 	return 1 if customer_doc.customer_type == "Individual" else 0
 
@@ -946,11 +946,11 @@ def _set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile):
 def _populate_invoice_items(doc, items, pos_profile):
 	"""Add all items to the invoice."""
 	item_codes = [item.get("id") for item in items]
-	
+
 	# Batch fetch item data and pre-cache accounts
 	item_data_map = _batch_fetch_item_data(item_codes)
 	_precache_item_accounts(item_codes, pos_profile.company)
-	
+
 	# Add each item to the invoice
 	for item in items:
 		item_data = _prepare_item_data(item, item_data_map, pos_profile)
@@ -961,13 +961,13 @@ def _batch_fetch_item_data(item_codes):
 	"""Batch fetch item data for all items."""
 	if not item_codes:
 		return {}
-	
+
 	item_query = """
 		SELECT name, has_batch_no, has_serial_no
 		FROM `tabItem`
 		WHERE name IN ({})
 	""".format(",".join([f"'{code}'" for code in item_codes]))
-	
+
 	item_results = frappe.db.sql(item_query, as_dict=True)
 	return {item.name: item for item in item_results}
 
@@ -976,15 +976,15 @@ def _precache_item_accounts(item_codes, company):
 	"""Pre-cache income and expense accounts for all items."""
 	if not item_codes:
 		return
-	
+
 	# Cache company data
 	if company not in _cached_company_data:
 		_cached_company_data[company] = frappe.get_doc("Company", company)
-	
+
 	company_doc = _cached_company_data[company]
 	income_account = company_doc.default_income_account
 	expense_account = company_doc.default_expense_account
-	
+
 	# Pre-populate account cache
 	for item_code in item_codes:
 		_cached_item_accounts[item_code] = income_account
@@ -994,12 +994,12 @@ def _precache_item_accounts(item_codes, company):
 def _prepare_item_data(item, item_data_map, pos_profile):
 	"""Prepare item data dictionary for invoice line."""
 	item_code = item.get("id")
-	
+
 	# Get accounts and validate
 	income_account = get_income_accounts(item_code)
 	expense_account = get_expense_accounts(item_code)
 	_validate_item_accounts(item_code, income_account, expense_account)
-	
+
 	# Build base item data
 	item_data = {
 		"item_code": item_code,
@@ -1010,12 +1010,12 @@ def _prepare_item_data(item, item_data_map, pos_profile):
 		"warehouse": pos_profile.warehouse,
 		"cost_center": pos_profile.cost_center,
 	}
-	
+
 	# Add optional fields
 	_add_uom_to_item(item_data, item)
 	_add_batch_to_item(item_data, item, item_data_map.get(item_code, {}))
 	_add_serial_to_item(item_data, item)
-	
+
 	return item_data
 
 
@@ -1044,7 +1044,7 @@ def _add_batch_to_item(item_data, item, item_db_data):
 	"""Add batch information if item has batch tracking."""
 	has_batch_no = item_db_data.get("has_batch_no", 0)
 	batch_number = item.get("batchNumber")
-	
+
 	if has_batch_no and batch_number:
 		item_data["use_serial_batch_fields"] = 1
 		item_data["batch_no"] = batch_number
@@ -1062,11 +1062,11 @@ def _populate_tax_details(doc):
 	"""Populate tax details from the taxes and charges template."""
 	if not doc.taxes_and_charges:
 		return
-	
+
 	tax_doc = get_tax_template(doc.taxes_and_charges)
 	if not tax_doc:
 		return
-	
+
 	for tax in tax_doc.taxes:
 		doc.append(
 			"taxes",
@@ -1087,14 +1087,11 @@ def _add_payment_entries(doc, mode_of_payment):
 	"""Add payment entries to the invoice."""
 	if not isinstance(mode_of_payment, list):
 		return
-	
+
 	for payment in mode_of_payment:
 		doc.append(
 			"payments",
-			{
-				"mode_of_payment": payment["method"],
-				"amount": payment["amount"]
-			},
+			{"mode_of_payment": payment["method"], "amount": payment["amount"]},
 		)
 
 
@@ -1700,7 +1697,7 @@ def get_valid_sales_invoices(doctype, txt, searchfield, start, page_len, filters
 	conditions = [
 		"si.docstatus = 1",
 		"si.is_return = 0",
-		"si.custom_pos_opening_entry IS NOT NULL AND si.custom_pos_opening_entry != ''",  
+		"si.custom_pos_opening_entry IS NOT NULL AND si.custom_pos_opening_entry != ''",
 	]
 	query_params = {
 		"txt": f"%{txt}%",
@@ -1761,7 +1758,7 @@ def get_customer_invoices_for_return(customer, start_date=None, end_date=None, s
 			"docstatus": 1,
 			"is_return": 0,
 			"status": ["!=", "Cancelled"],
-			"custom_pos_opening_entry": ["!=", ""], 
+			"custom_pos_opening_entry": ["!=", ""],
 		}
 
 		if start_date:

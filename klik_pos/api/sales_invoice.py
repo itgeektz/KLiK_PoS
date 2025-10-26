@@ -613,7 +613,6 @@ def parse_invoice_data(data):
 	)
 
 
-
 def build_sales_invoice_doc(
 	customer,
 	items,

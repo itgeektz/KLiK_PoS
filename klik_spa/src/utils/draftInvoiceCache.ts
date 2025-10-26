@@ -109,6 +109,6 @@ export function hasCachedDraftInvoiceItems(): boolean {
 
 export function getOriginalDraftInvoiceId(): string | null {
   const cachedData = getCachedDraftInvoiceItems();
-  
+
   return cachedData?.originalDraftInvoiceId || null;
 }

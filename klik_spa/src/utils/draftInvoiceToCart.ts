@@ -2,7 +2,7 @@ import { getDraftInvoiceItems } from '../services/salesInvoice';
 import { toast } from 'react-toastify';
 import { extractErrorFromException } from './errorExtraction';
 import { cacheDraftInvoiceItems } from './draftInvoiceCache';
-import type { Customer } from '../types/customer';
+import type { Customer } from '../../types';
 
 export interface InvoiceItem {
   item_code: string;
@@ -49,9 +49,15 @@ export async function addDraftInvoiceToCart(invoiceId: string): Promise<boolean>
     const customer: Customer | null = invoiceData.customer ? {
       id: invoiceData.customer,
       name: invoiceData.customer_name || invoiceData.customer,
-      type: 'individual' as const,
+      customer_name: invoiceData.customer_name || invoiceData.customer,
       email: invoiceData.customer_email || '',
+      email_id: invoiceData.customer_email || '',
       phone: invoiceData.customer_mobile_no || '',
+      mobile_no: invoiceData.customer_mobile_no || '',
+      territory: '',
+      customer_group: '',
+      customer_type: 'individual',
+      type: 'individual' as const,
       address: {
         addressType: 'Billing' as const,
         street: invoiceData.customer_address_line1 || '',

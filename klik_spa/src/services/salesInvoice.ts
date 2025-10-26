@@ -106,6 +106,7 @@ export async function getInvoiceDetails(invoiceName: string) {
       success: true,
       data: data.message
     };
+          //eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error('Error getting invoice details:', error);
     return {

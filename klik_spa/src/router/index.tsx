@@ -6,7 +6,6 @@ import ClosingShiftPage from "../pages/ClosingShiftPage";
 import SettingsPage from "../components/SettingsPage";
 import PaymentPage from "../pages/PaymentPage";
 import CustomersPage from "../components/CustomersPage";
-import CustomerDetailPage from "../components/CustomerDetailPage";
 import CartPage from "../components/CartPage";
 import MobileCustomersPage from "../components/MobileCustomersPage";
 import MobileAddCustomerPage from "../components/MobileAddCustomerPage";

@@ -136,4 +136,3 @@ export function handlePrintInvoice(invoiceData: Invoice | null) {
     window.removeEventListener('afterprint', handleAfterPrint);
   }, 2000);
 }
-

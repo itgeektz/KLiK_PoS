@@ -12,9 +12,37 @@ interface LoginResponse {
     email: string;
     full_name: string;
     role?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   sid?: string;
+}
+
+interface ImportMetaEnv {
+  VITE_ERPNEXT_BASE_URL?: string;
+  VITE_API_KEY?: string;
+  VITE_API_SECRET?: string;
+  DEV?: boolean;
+  [key: string]: unknown;
+}
+
+interface ImportMeta {
+  env: ImportMetaEnv;
+}
+
+interface UserProfile {
+  name?: string;
+  email?: string;
+  full_name?: string;
+  first_name?: string;
+  last_name?: string;
+  role?: string;
+  role_profile_name?: string;
+  user_image?: string;
+  [key: string]: unknown;
+}
+
+interface DocData {
+  [key: string]: unknown;
 }
 
 class ERPNextAPI {
@@ -24,15 +52,15 @@ class ERPNextAPI {
   constructor() {
     // When served from Frappe itself (production), use empty baseUrl for same-origin requests
     // In development with Vite dev server, use full URL
-    const isDevelopment = (import.meta as any).env?.DEV;
+    const isDevelopment = (import.meta as ImportMeta).env?.DEV;
     const isServedFromFrappe = !isDevelopment && window.location.pathname.startsWith('/klik_pos');
 
     this.config = {
       baseUrl: isServedFromFrappe
         ? '' // Use relative URL for same-origin requests when served from Frappe
-        : ((import.meta as any).env?.VITE_ERPNEXT_BASE_URL || 'http://localhost:8000'),
-      apiKey: (import.meta as any).env?.VITE_API_KEY || '',
-      apiSecret: (import.meta as any).env?.VITE_API_SECRET || ''
+        : ((import.meta as ImportMeta).env?.VITE_ERPNEXT_BASE_URL || 'http://localhost:8000'),
+      apiKey: (import.meta as ImportMeta).env?.VITE_API_KEY || '',
+      apiSecret: (import.meta as ImportMeta).env?.VITE_API_SECRET || ''
     };
 
     // console.log('ERPNext API Config:', {
@@ -114,7 +142,7 @@ class ERPNextAPI {
           } else if (errorData.exc) {
             errorMessage = errorData.exc;
           }
-        } catch (parseError) {
+        } catch {
           // If not JSON, use the text as is
           if (errorText && errorText.trim()) {
             errorMessage = errorText;
@@ -136,7 +164,7 @@ class ERPNextAPI {
         const setCookieHeader = response.headers.get('set-cookie');
         if (setCookieHeader) {
           const sidMatch = setCookieHeader.match(/sid=([^;]+)/);
-          if (sidMatch) {
+          if (sidMatch && sidMatch[1]) {
             this.sessionId = sidMatch[1];
             localStorage.setItem('erpnext_sid', this.sessionId);
             console.log('Session ID stored:', this.sessionId);
@@ -254,7 +282,7 @@ class ERPNextAPI {
     }
   }
 
-  async getCurrentUser(): Promise<any> {
+  async getCurrentUser(): Promise<unknown> {
     try {
       const response = await fetch(`${this.config.baseUrl}/api/method/frappe.auth.get_logged_user`, {
         method: 'GET',
@@ -270,7 +298,7 @@ class ERPNextAPI {
     }
   }
 
-  async getCurrentUserProfile(): Promise<any> {
+  async getCurrentUserProfile(): Promise<UserProfile | null> {
     try {
       // Try to get user profile using the frappe.auth.get_logged_user method first
       const response = await fetch(`${this.config.baseUrl}/api/method/frappe.auth.get_logged_user`, {
@@ -311,7 +339,7 @@ class ERPNextAPI {
   }
 
   // Test connection to ERPNext server
-  async testConnection(): Promise<{ success: boolean; message: string; details?: any }> {
+  async testConnection(): Promise<{ success: boolean; message: string; details?: unknown }> {
     try {
       console.log('Testing connection to:', this.config.baseUrl);
 
@@ -410,7 +438,7 @@ class ERPNextAPI {
     }
   }
 
-  async apiCall(method: string, params: any = {}): Promise<any> {
+  async apiCall(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     try {
       const response = await this.makeAPICall(`${this.config.baseUrl}/api/method/${method}`, {
         method: 'POST',
@@ -425,7 +453,7 @@ class ERPNextAPI {
     }
   }
 
-  async getDocList(doctype: string, fields: string[] = ['*'], filters: any = {}): Promise<any> {
+  async getDocList(doctype: string, fields: string[] = ['*'], filters: Record<string, unknown> = {}): Promise<DocData[]> {
     try {
       const response = await fetch(`${this.config.baseUrl}/api/resource/${doctype}?${new URLSearchParams({
         fields: JSON.stringify(fields),
@@ -444,7 +472,7 @@ class ERPNextAPI {
     }
   }
 
-  async getDoc(doctype: string, name: string): Promise<any> {
+  async getDoc(doctype: string, name: string): Promise<DocData> {
     try {
       const response = await fetch(`${this.config.baseUrl}/api/resource/${doctype}/${name}`, {
         method: 'GET',
@@ -460,7 +488,7 @@ class ERPNextAPI {
     }
   }
 
-  async createDoc(doctype: string, doc: any): Promise<any> {
+  async createDoc(doctype: string, doc: DocData): Promise<DocData> {
     try {
       const response = await fetch(`${this.config.baseUrl}/api/resource/${doctype}`, {
         method: 'POST',
@@ -477,7 +505,7 @@ class ERPNextAPI {
     }
   }
 
-  async updateDoc(doctype: string, name: string, doc: any): Promise<any> {
+  async updateDoc(doctype: string, name: string, doc: DocData): Promise<DocData> {
     try {
       const response = await fetch(`${this.config.baseUrl}/api/resource/${doctype}/${name}`, {
         method: 'PUT',

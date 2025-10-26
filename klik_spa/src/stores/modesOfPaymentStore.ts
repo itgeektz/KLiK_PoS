@@ -1,5 +1,10 @@
 import { useFrappeGetDocList } from "frappe-react-sdk";
-import { usePOSProfile } from "./usePOSProfile";
+import { usePOSProfile } from "../hooks/usePOSProfile";
+
+interface PaymentMode {
+  mode_of_payment: string;
+  default?: 0 | 1;
+}
 
 interface ModeOfPayment {
   name: string;
@@ -43,17 +48,17 @@ export function useModeOfPayment(posProfileName: string): UseModeOfPaymentReturn
 
   // Filter to only include modes enabled in POS Profile
   const enabledModes = allPaymentModes?.filter(mode =>
-    posPaymentMethods.some(pm => pm.mode_of_payment === mode.name)
+    posPaymentMethods.some((pm: PaymentMode) => pm.mode_of_payment === mode.name)
   ) || [];
 
   // Find default mode
   const defaultMode = enabledModes.find(mode => mode.default === 1)?.name ||
-                     posPaymentMethods.find(pm => pm.default === 1)?.mode_of_payment;
+                     posPaymentMethods.find((pm: PaymentMode) => pm.default === 1)?.mode_of_payment;
 
   return {
     modes: enabledModes,
     isLoading: profileLoading || modesLoading,
-    error: profileError || modesError,
+    error: profileError || (modesError ? (modesError instanceof Error ? modesError : new Error(String(modesError))) : null),
     refetch: () => {
       refetchProfile();
       mutate();

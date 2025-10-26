@@ -64,6 +64,7 @@ export async function getAllUOMs(): Promise<string[]> {
     }
 
     if (data?.message) {
+            //eslint-disable-next-line @typescript-eslint/no-explicit-any
       return data.message.map((uom: any) => uom.name).sort();
     }
 

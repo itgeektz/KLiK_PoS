@@ -1,12 +1,12 @@
-interface StockUpdate {
+export interface StockUpdate {
   item_code: string;
   available: number;
   timestamp: number;
 }
 
 interface WebSocketMessage {
-  type: 'stock_update' | 'connection_status' | 'error';
-  data: any;
+  type: 'stock_update' | 'connection_status' | 'error' | 'pong';
+  data: unknown;
 }
 
 class WebSocketService {
@@ -15,7 +15,7 @@ class WebSocketService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000; // Start with 1 second
   private isConnecting = false;
-  private listeners: Map<string, ((data: any) => void)[]> = new Map();
+  private listeners: Map<string, ((data: unknown) => void)[]> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private lastHeartbeat = 0;
 
@@ -131,7 +131,7 @@ class WebSocketService {
     }
   }
 
-  private emit(event: string, data: any): void {
+  private emit(event: string, data: unknown): void {
     const listeners = this.listeners.get(event);
     if (listeners) {
       listeners.forEach(listener => {
@@ -144,14 +144,14 @@ class WebSocketService {
     }
   }
 
-  public on(event: string, callback: (data: any) => void): void {
+  public on(event: string, callback: (data: unknown) => void): void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
     this.listeners.get(event)!.push(callback);
   }
 
-  public off(event: string, callback: (data: any) => void): void {
+  public off(event: string, callback: (data: unknown) => void): void {
     const listeners = this.listeners.get(event);
     if (listeners) {
       const index = listeners.indexOf(callback);
@@ -161,7 +161,7 @@ class WebSocketService {
     }
   }
 
-  public send(data: any): void {
+  public send(data: unknown): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
     } else {

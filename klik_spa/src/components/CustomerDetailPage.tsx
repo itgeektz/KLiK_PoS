@@ -11,7 +11,6 @@ import {
   CreditCard,
   ShoppingBag,
   Edit,
-  MoreVertical,
   User,
   Gift,
   Clock,

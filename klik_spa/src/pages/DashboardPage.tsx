@@ -139,7 +139,7 @@ export default function DashboardPage() {
 
   // Inline debug logs (no hooks added)
   try {
-    // eslint-disable-next-line no-console
+     
     const summary = filteredInvoices.map((inv: SalesInvoice) => ({
       id: inv.id,
       date: inv.date,
@@ -148,7 +148,7 @@ export default function DashboardPage() {
       total: inv.totalAmount,
       paymentMethod: inv.paymentMethod,
     }))
-    // eslint-disable-next-line no-console
+     
   } catch {}
 
   const filteredStats = (() => {
@@ -244,7 +244,7 @@ export default function DashboardPage() {
   // Inline debug: log the exact invoices used for metrics (respects current opening entry when timeRange is blank)
   try {
     // Summarize to keep console readable
-    // eslint-disable-next-line no-console
+     
     const summary = filteredInvoices.map((inv: SalesInvoice) => ({
       id: inv.id,
       date: inv.date,

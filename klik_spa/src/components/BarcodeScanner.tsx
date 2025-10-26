@@ -56,6 +56,7 @@ export default function BarcodeScannerModal({ onBarcodeDetected, onClose, isOpen
       stopCamera()
       stopDetection()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
   const startCamera = async () => {
@@ -107,9 +108,19 @@ export default function BarcodeScannerModal({ onBarcodeDetected, onClose, isOpen
     }
 
           try {
-        const barcodeDetector = new (window as any).BarcodeDetector({
+        interface BarcodeDetectorOptions {
+          formats: string[]
+        }
+        interface BarcodeDetectorConstructor {
+          new (options: BarcodeDetectorOptions): BarcodeDetector
+          detect(image: HTMLCanvasElement): Promise<Array<{ rawValue: string }>>
+        }
+        interface WindowWithBarcodeDetector extends Window {
+          BarcodeDetector: BarcodeDetectorConstructor
+        }
+        const barcodeDetector = new (window as WindowWithBarcodeDetector).BarcodeDetector({
           formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code']
-        } as any)
+        })
 
       // Start detection loop
       detectionIntervalRef.current = setInterval(async () => {

@@ -2,7 +2,7 @@ import { getDraftInvoiceItems } from '../services/salesInvoice';
 import { toast } from 'react-toastify';
 import { extractErrorFromException } from './errorExtraction';
 import { cacheDraftInvoiceItems } from './draftInvoiceCache';
-import type { Customer } from '../../types';
+import type { Customer } from '../types/customer';
 
 export interface InvoiceItem {
   item_code: string;
@@ -74,7 +74,7 @@ export async function addDraftInvoiceToCart(invoiceId: string): Promise<boolean>
 
     return true;
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error caching draft invoice items:', error);
     const errorMessage = extractErrorFromException(error, 'Failed to cache draft invoice items');
     toast.error(errorMessage);

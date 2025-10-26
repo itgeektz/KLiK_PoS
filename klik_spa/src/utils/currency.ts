@@ -128,8 +128,8 @@ export const formatCurrency = (amount: number, currency?: string): string => {
 
 /**
  * Format amount with currency symbol (compact version)
- * @param amount - Amount to format
- * @param currency - Currency code
+ * @param amount 
+ * @param currency 
  * @returns Formatted string (e.g., "SAR100.00", "$50.00")
  */
 export const formatCurrencyCompact = (amount: number, currency?: string): string => {

@@ -7,16 +7,9 @@ const CACHE_KEYS = {
   PRODUCTS_EXPIRY: 'klik_pos_products_cache_expiry',
   DRAFT_INVOICE: 'draft-invoice-cache',
   CART: 'beveren-cart-storage',
-  // Add other cache keys as needed
 };
 
-/**
- * Clears all application cache including:
- * - Product cache
- * - Cart cache
- * - Draft invoice cache
- * - Any other localStorage items related to the app
- */
+
 export function clearAllCache(): void {
   try {
     console.log('🧹 Clearing all application cache...');
@@ -47,7 +40,6 @@ export function clearAllCache(): void {
       'i18n',
       'auth-token',
       'user-session',
-      // Add other keys to preserve
     ];
 
     const allKeys = Object.keys(localStorage);
@@ -96,7 +88,6 @@ async function clearBackendCache(): Promise<void> {
     }
   } catch (error) {
     console.error('❌ Error clearing backend cache:', error);
-    // Don't throw - we still want to clear frontend cache
   }
 }
 
@@ -105,10 +96,8 @@ async function clearBackendCache(): Promise<void> {
  */
 export async function clearCacheAndReload(): Promise<void> {
   try {
-    // Clear frontend cache first
     clearAllCache();
 
-    // Clear backend cache
     await clearBackendCache();
 
     // Show a brief message before reload
@@ -121,7 +110,6 @@ export async function clearCacheAndReload(): Promise<void> {
 
   } catch (error) {
     console.error('❌ Error during cache clear and reload:', error);
-    // Still reload even if there was an error
     window.location.reload();
   }
 }

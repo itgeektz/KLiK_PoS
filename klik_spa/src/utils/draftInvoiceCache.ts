@@ -28,10 +28,8 @@ export function cacheDraftInvoiceItems(invoiceId: string, items: CartItem[], cus
 export function getCachedDraftInvoiceItems(): DraftInvoiceCache | null {
   try {
     const cached = localStorage.getItem(CACHE_KEY);
-    // console.log("getCachedDraftInvoiceItems - raw cached data:", cached);
 
     if (!cached) {
-      // console.log("getCachedDraftInvoiceItems - no cached data found");
       return null;
     }
 
@@ -41,7 +39,6 @@ export function getCachedDraftInvoiceItems(): DraftInvoiceCache | null {
     // Check if cache is expired
     const now = Date.now();
     const age = now - cache.timestamp;
-    // console.log("getCachedDraftInvoiceItems - cache age:", age, "ms, max age:", CACHE_DURATION, "ms");
 
     if (age > CACHE_DURATION) {
       clearDraftInvoiceCache();
@@ -112,7 +109,6 @@ export function hasCachedDraftInvoiceItems(): boolean {
 
 export function getOriginalDraftInvoiceId(): string | null {
   const cachedData = getCachedDraftInvoiceItems();
-  // console.log("getOriginalDraftInvoiceId - cachedData:", cachedData);
-  // console.log("getOriginalDraftInvoiceId - originalDraftInvoiceId:", cachedData?.originalDraftInvoiceId);
+  
   return cachedData?.originalDraftInvoiceId || null;
 }

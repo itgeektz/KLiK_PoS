@@ -29,7 +29,7 @@ export default function CustomersPage() {
   const [globalTotals, setGlobalTotals] = useState<{ total_customers: number; total_invoices: number } | null>(null)
 
   // Use the customers hook with search to fetch from server when searching
-  const { customers, isLoading, error, addCustomer, hasMore, totalCount, loadMore } = useCustomers(searchQuery)
+  const { customers, isLoading, error, totalCount, loadMore } = useCustomers(searchQuery)
 
   useEffect(() => {
     // Fetch global totals for accurate cards
@@ -40,7 +40,9 @@ export default function CustomersPage() {
         if (data?.message?.success) {
           setGlobalTotals({ total_customers: data.message.total_customers, total_invoices: data.message.total_invoices })
         }
-      } catch {}
+      } catch {
+        // Silently handle errors
+      }
     })()
   }, [])
 
@@ -59,7 +61,7 @@ export default function CustomersPage() {
       const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0
       return dateB - dateA
     })
-  }, [customers, searchQuery, isLoading, error])
+  }, [customers, isLoading, error])
 
   // Stats calculation
   const stats = useMemo(() => {

@@ -81,7 +81,11 @@ export async function makeAPICall(url: string, options: APICallOptions = {}): Pr
   throw lastError;
 }
 
-export async function apiCall(method: string, params: any = {}, options: APICallOptions = {}): Promise<any> {
+export async function apiCall<T = Record<string, unknown>>(
+  method: string,
+  params: Record<string, unknown> = {},
+  options: APICallOptions = {}
+): Promise<T> {
   try {
     const url = `/api/method/${method}`;
     const response = await makeAPICall(url, {
@@ -90,10 +94,14 @@ export async function apiCall(method: string, params: any = {}, options: APICall
       ...options
     });
 
-    const data = await response.json();
+    const data = await response.json() as T;
 
     if (!response.ok) {
-      throw new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`);
+      throw new Error(
+        (data as { message?: string; error?: string })?.message ||
+        (data as { message?: string; error?: string })?.error ||
+        `HTTP ${response.status}: ${response.statusText}`
+      );
     }
 
     return data;
@@ -103,17 +111,24 @@ export async function apiCall(method: string, params: any = {}, options: APICall
   }
 }
 
-export async function getAPICall(url: string, options: APICallOptions = {}): Promise<any> {
+export async function getAPICall<T = Record<string, unknown>>(
+  url: string,
+  options: APICallOptions = {}
+): Promise<T> {
   try {
     const response = await makeAPICall(url, {
       method: 'GET',
       ...options
     });
 
-    const data = await response.json();
+    const data = await response.json() as T;
 
     if (!response.ok) {
-      throw new Error(data.message || data.error || `HTTP ${response.status}: ${response.statusText}`);
+      throw new Error(
+        (data as { message?: string; error?: string })?.message ||
+        (data as { message?: string; error?: string })?.error ||
+        `HTTP ${response.status}: ${response.statusText}`
+      );
     }
 
     return data;

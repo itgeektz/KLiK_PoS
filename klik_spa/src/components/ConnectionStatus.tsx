@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Wifi, WifiOff, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
+import { WifiOff, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
 import websocketService from '../services/websocketService';
 import backgroundSyncService from '../services/backgroundSyncService';
 
@@ -12,11 +12,11 @@ export default function ConnectionStatus({ className = '' }: ConnectionStatusPro
   const [syncStatus, setSyncStatus] = useState(backgroundSyncService.getStatus());
 
   useEffect(() => {
-    const handleWsStatusChange = (data: { connected: boolean }) => {
+    const handleWsStatusChange = () => {
       setWsStatus(websocketService.getConnectionStatus());
     };
 
-    const handleSyncStatusChange = (status: any) => {
+    const handleSyncStatusChange = (status: { isOnline: boolean; isSyncing: boolean; lastSync: Date | null; pendingUpdates: number }) => {
       setSyncStatus(status);
     };
 

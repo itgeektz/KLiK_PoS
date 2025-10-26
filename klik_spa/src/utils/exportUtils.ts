@@ -87,13 +87,14 @@ export function formatDateForExport(dateString: string): string {
       month: '2-digit',
       day: '2-digit'
     });
-  } catch (error) {
+  } catch {
     return dateString;
   }
 }
 
 export function getExportFilename(prefix: string = 'invoices', extension: string = 'csv'): string {
   const timestamp = new Date().toISOString().split('T')[0];
-  const time = new Date().toTimeString().split(' ')[0].replace(/:/g, '-');
+  const timeParts = new Date().toTimeString().split(' ');
+  const time = timeParts[0]?.replace(/:/g, '-') || '00-00-00';
   return `${prefix}_export_${timestamp}_${time}.${extension}`;
 }

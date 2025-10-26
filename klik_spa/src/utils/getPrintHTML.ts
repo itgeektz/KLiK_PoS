@@ -1,7 +1,7 @@
 type Invoice = {
   doctype: string;
   name: string;
-  [key: string]: any; // to allow other properties
+  [key: string]: unknown; // to allow other properties
 };
 
 type PrintHTMLResponse = {

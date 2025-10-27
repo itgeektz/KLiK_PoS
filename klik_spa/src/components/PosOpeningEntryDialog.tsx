@@ -78,13 +78,26 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
   // Handle profile selection change
   const handleProfileChange = (profileName: string) => {
     setSelectedProfile(profileName);
-    // Reset payment methods when profile changes
-    setPaymentMethods([]);
+    // Don't reset payment methods here - let the useEffect handle it
+    // when new payment modes arrive
   };
 
   // Update payment methods when payment modes are loaded
   useEffect(() => {
-    if (paymentModes && paymentModes.length > 0) {
+    console.log('[POS Opening] Payment Modes Effect:', {
+      selectedProfile,
+      paymentModesCount: paymentModes?.length || 0,
+      isLoading: paymentModesLoading
+    });
+
+    if (selectedProfile && paymentModesLoading) {
+      // Clear payment methods while loading
+      console.log('[POS Opening] Clearing payment methods while loading...');
+      setPaymentMethods([]);
+    }
+
+    if (paymentModes && paymentModes.length > 0 && !paymentModesLoading) {
+      console.log('[POS Opening] Setting payment methods:', paymentModes);
       // Sort payment modes to put default payment method first
       const sortedPaymentModes = [...paymentModes].sort((a, b) => {
         // Default payment method (default === 1) should come first
@@ -99,9 +112,10 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
         type: payment.type || 'General',
         account: payment.default_account || payment.account
       }));
+      console.log('[POS Opening] Final methods set:', methods);
       setPaymentMethods(methods);
     }
-  }, [paymentModes]);
+  }, [paymentModes, paymentModesLoading, selectedProfile]);
 
   // Handle payment modes error
   useEffect(() => {

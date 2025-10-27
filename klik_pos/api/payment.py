@@ -8,7 +8,13 @@ from klik_pos.klik_pos.utils import get_current_pos_profile
 @frappe.whitelist()
 def get_payment_modes():
 	try:
-		pos_doc = get_current_pos_profile()
+		# Get pos_profile from query params if provided, otherwise use current profile
+		pos_profile = frappe.form_dict.get("pos_profile")
+		if pos_profile:
+			pos_doc = frappe.get_doc("POS Profile", pos_profile)
+		else:
+			pos_doc = get_current_pos_profile()
+
 		payment_modes = frappe.get_all(
 			"POS Payment Method",
 			filters={"parent": pos_doc.name},

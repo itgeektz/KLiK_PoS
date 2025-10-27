@@ -40,7 +40,7 @@ export default function SingleInvoiceReturn({
   const currencySymbol = getCurrencySymbol(currency);
 
   // Payment modes from POS profile
-  const { modes: paymentModes, isLoading: paymentModesLoading } = usePaymentModes(posDetails?.name || 'Test POS Profile');
+  const { modes: paymentModes, isLoading: paymentModesLoading } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
 
   // Payment method states
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");

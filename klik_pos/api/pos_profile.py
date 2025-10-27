@@ -13,8 +13,9 @@ def get_pos_profiles_for_user():
 	"""
 	user = frappe.session.user
 	profiles_with_default = []
+	pos_profiles = []
 
-	# Get POS Profiles assigned to the user via User Permissions
+	# Get POS Profiles assigned to the user via User Permissions (First Level Permission)
 	user_permissions = frappe.get_all(
 		"User Permission",
 		filters={"user": user, "allow": "POS Profile"},
@@ -23,8 +24,51 @@ def get_pos_profiles_for_user():
 
 	pos_profiles = [p["for_value"] for p in user_permissions]
 
-	# Fallback: if no user permissions exist, return all POS Profiles where user is in the 'users' table
-	if not pos_profiles:
+	# If User Permissions exist, only return those profiles (respect first-level permission restriction)
+	if pos_profiles:
+		# User has explicit User Permissions - respect this restriction
+		# Get details for each permitted profile
+		all_profiles = frappe.get_all("POS Profile", filters={"name": ["in", pos_profiles]}, fields=["name", "disabled"])
+		# Filter to only enabled profiles
+		enabled_profiles = [p.name for p in all_profiles if not p.disabled]
+		pos_profiles = enabled_profiles
+
+	# Get default flag for User Permission profiles
+		# Also verify user is in Applicable Users table
+		for profile_name in pos_profiles:
+			try:
+				# Check if user exists in Applicable Users table for this profile
+				user_in_applicable = frappe.get_all(
+					"POS Profile User",
+					filters={"parent": profile_name, "user": user},
+					fields=["default"],
+					limit=1
+				)
+
+				# If user is not in Applicable Users table, skip this profile
+				if not user_in_applicable or len(user_in_applicable) == 0:
+					frappe.logger().info(f"User {user} has User Permission for {profile_name} but is not in Applicable Users - skipping")
+					continue
+
+				# Check if this is the default
+				is_default = False
+				if user_in_applicable and len(user_in_applicable) > 0:
+					default_value = user_in_applicable[0].get("default")
+					is_default = default_value == 1 or default_value is True
+				# If not set, consider first remaining profile as default
+				elif not profiles_with_default:
+					is_default = True
+
+				profiles_with_default.append({
+					"name": profile_name,
+					"is_default": is_default
+				})
+			except Exception as e:
+				frappe.logger().error(f"Error getting details for POS Profile {profile_name}: {e}")
+
+		return profiles_with_default
+	else:
+		# No User Permissions - fall back to second level permission (Applicable Users table)
 		all_profiles = frappe.get_all("POS Profile", filters={}, fields=["name", "disabled"])
 		for p in all_profiles:
 			if not p.disabled:
@@ -36,30 +80,34 @@ def get_pos_profiles_for_user():
 				if user_list:
 					pos_profiles.append(p.name)
 
-	# Now get details for each profile and check if it's default
-	for profile_name in pos_profiles:
-		try:
-			# Get the POS Profile User entry to check if this is the default
-			default_user_entry = frappe.get_all(
-				"POS Profile User",
-				filters={"parent": profile_name, "user": user},
-				fields=["default"],
-				limit=1
-			)
+		# Now get details for each profile and check if it's default
+		for profile_name in pos_profiles:
+			try:
+				# Get the POS Profile User entry to check if this is the default
+				default_user_entry = frappe.get_all(
+					"POS Profile User",
+					filters={"parent": profile_name, "user": user},
+					fields=["default"],
+					limit=1
+				)
 
-			is_default = default_user_entry[0].get("default", 0) == 1 if default_user_entry else False
+				is_default = False
+				if default_user_entry and len(default_user_entry) > 0:
+					default_value = default_user_entry[0].get("default")
+					# Handle both integer (0/1) and boolean values
+					is_default = default_value == 1 or default_value is True
 
-			profiles_with_default.append({
-				"name": profile_name,
-				"is_default": is_default
-			})
-		except Exception as e:
-			frappe.logger().error(f"Error getting details for POS Profile {profile_name}: {e}")
-			# Add profile without is_default if there's an error
-			profiles_with_default.append({
-				"name": profile_name,
-				"is_default": False
-			})
+				profiles_with_default.append({
+					"name": profile_name,
+					"is_default": is_default
+				})
+			except Exception as e:
+				frappe.logger().error(f"Error getting details for POS Profile {profile_name}: {e}")
+				# Add profile without is_default if there's an error
+				profiles_with_default.append({
+					"name": profile_name,
+					"is_default": False
+				})
 
 	return profiles_with_default
 

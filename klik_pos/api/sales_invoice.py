@@ -667,13 +667,21 @@ def _get_active_pos_profile():
 		if current_opening_entry:
 			opening_doc = frappe.get_doc("POS Opening Entry", current_opening_entry)
 			selected_pos_profile_name = opening_doc.pos_profile
-	except Exception:
+	except Exception as e:
+		frappe.logger().error(f"Error getting POS Opening Entry: {frappe.get_traceback()}")
 		pass
 
-	if selected_pos_profile_name:
-		return frappe.get_doc("POS Profile", selected_pos_profile_name)
-	else:
-		return get_current_pos_profile()
+	try:
+		if selected_pos_profile_name:
+			pos_profile_doc = frappe.get_doc("POS Profile", selected_pos_profile_name)
+			return pos_profile_doc
+		else:
+			fallback_profile = get_current_pos_profile()
+			return fallback_profile
+	except Exception as e:
+		frappe.logger().error(f"Error getting POS Profile: {frappe.get_traceback()}")
+		frappe.logger().error(f"Attempted to get profile: {selected_pos_profile_name}")
+		raise
 
 
 def _set_pos_profile_fields(doc, pos_profile, customer, business_type):

@@ -46,12 +46,19 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
   const { profiles: posProfiles, loading: profilesLoading, error: profilesError } = usePOSProfiles();
   const { posDetails, loading: posDetailsLoading } = usePOSDetails();
 
+  // Get the active POS profile from the opening entry
+  const activeProfileName = posDetails?.name as string | undefined;
+
   // Use payment modes hook - will fetch when selectedProfile changes
+  // Use selectedProfile when opening the dialog, but activeProfileName if already open
+  // This ensures users can change profiles and see the correct payment modes
+  const profileForPaymentModes = selectedProfile || activeProfileName;
   const {
     modes: paymentModes,
     isLoading: paymentModesLoading,
     error: paymentModesError
-  } = usePaymentModes(selectedProfile);
+  } = usePaymentModes(profileForPaymentModes);
+
 
   // Payment method icons
   const getPaymentIcon = (type: string) => {
@@ -68,21 +75,39 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
   // Set default profile when profiles are loaded
   useEffect(() => {
     if (posProfiles && posProfiles.length > 0 && !selectedProfile) {
-      // Set default profile - first one from the list
-      setSelectedProfile(posProfiles[0]);
+      // First, try to use the active profile from the opening entry
+      let profileToUse = null;
+
+      if (activeProfileName) {
+        // Find the active profile in the list
+        profileToUse = posProfiles.find(p => p.name === activeProfileName);
+      }
+
+      // If no active profile, use the default or first one
+      if (!profileToUse) {
+        const defaultProfile = posProfiles.find(p => p.is_default);
+        profileToUse = defaultProfile || posProfiles[0];
+      }
+
+      setSelectedProfile(profileToUse.name);
     }
-  }, [posProfiles, selectedProfile]);
+  }, [posProfiles, selectedProfile, activeProfileName]);
 
   // Handle profile selection change
   const handleProfileChange = (profileName: string) => {
     setSelectedProfile(profileName);
-    // Reset payment methods when profile changes
-    setPaymentMethods([]);
+    // Don't reset payment methods here - let the useEffect handle it
+    // when new payment modes arrive
   };
 
   // Update payment methods when payment modes are loaded
   useEffect(() => {
-    if (paymentModes && paymentModes.length > 0) {
+    if (selectedProfile && paymentModesLoading) {
+      // Clear payment methods while loading
+      setPaymentMethods([]);
+    }
+
+    if (paymentModes && paymentModes.length > 0 && !paymentModesLoading) {
       // Sort payment modes to put default payment method first
       const sortedPaymentModes = [...paymentModes].sort((a, b) => {
         // Default payment method (default === 1) should come first
@@ -99,7 +124,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
       }));
       setPaymentMethods(methods);
     }
-  }, [paymentModes]);
+  }, [paymentModes, paymentModesLoading, selectedProfile]);
 
   // Handle payment modes error
   useEffect(() => {
@@ -207,9 +232,10 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
                     </option>
                   )}
                   {posProfiles && Array.isArray(posProfiles) && posProfiles.map((profile, index) => {
-                    // Handle both string arrays and object arrays
-                    const profileName = typeof profile === 'string' ? profile : profile?.name;
-                    const profileDisplay = typeof profile === 'string' ? profile : (profile?.name || `Profile ${index + 1}`);
+                    const profileName = profile.name;
+                    const profileDisplay = profile.is_default
+                      ? `${profileName} (Default)`
+                      : profileName;
 
                     return (
                       <option key={profileName || index} value={profileName}>

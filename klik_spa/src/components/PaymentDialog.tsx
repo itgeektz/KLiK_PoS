@@ -170,9 +170,9 @@ export default function PaymentDialog({
   const [isEditingEmail, setIsEditingEmail] = useState(false);
 
   // Hooks
-  const { modes, isLoading, error } = usePaymentModes("Test POS Profile");
-  const { salesTaxCharges, defaultTax } = useSalesTaxCharges();
   const { posDetails, loading: posLoading } = usePOSDetails();
+  const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
+  const { salesTaxCharges, defaultTax } = useSalesTaxCharges();
   const navigate = useNavigate();
 
   // Determine if this is B2B business type

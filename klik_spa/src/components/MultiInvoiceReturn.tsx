@@ -64,7 +64,7 @@ export default function MultiInvoiceReturn({
   // Use the customers hook with search to fetch from server when searching
   const { customers: searchableCustomers, isLoading: customersLoading } = useCustomers(customerSearchQuery);
   const { posDetails } = usePOSDetails();
-  const { modes: paymentModes } = usePaymentModes(posDetails?.name || 'Test POS Profile');
+  const { modes: paymentModes } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
   const currency = posDetails?.currency || 'USD';
   const currencySymbol = getCurrencySymbol(currency);
 

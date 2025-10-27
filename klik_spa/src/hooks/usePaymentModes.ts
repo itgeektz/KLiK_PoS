@@ -15,18 +15,22 @@ export function usePaymentModes(posProfile: string) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!posProfile) return;
+    if (!posProfile) {
+      return;
+    }
 
     const fetchPaymentModes = async () => {
       setIsLoading(true);
       try {
         const res = await fetch(`/api/method/klik_pos.api.payment.get_payment_modes?pos_profile=${encodeURIComponent(posProfile)}`);
         const data = await res.json();
+
         if (!data.message.success) {
           throw new Error(data.message.error || "Failed to fetch payment modes");
         }
 
-        setModes(data.message.data || []);
+        const modesData = data.message.data || [];
+        setModes(modesData);
         setError(null);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {

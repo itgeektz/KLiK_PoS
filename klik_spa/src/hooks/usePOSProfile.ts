@@ -58,8 +58,13 @@ export function usePOSProfile(profileName: string): UsePOSProfileReturn {
 }
 
 
+interface POSProfileOption {
+  name: string;
+  is_default: boolean;
+}
+
 export function usePOSProfiles() {
-  const [profiles, setProfiles] = useState<string[]>([])
+  const [profiles, setProfiles] = useState<POSProfileOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -83,9 +88,9 @@ export function usePOSProfiles() {
         } else {
           throw new Error(data._server_messages || "Failed to fetch POS Profiles")
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error loading POS Profiles:", err)
-        setError(err.message || "Unknown error")
+        setError(err instanceof Error ? err.message : "Unknown error")
       } finally {
         setLoading(false)
       }
@@ -99,7 +104,7 @@ export function usePOSProfiles() {
 
 
 export function usePOSDetails() {
-  const [posDetails, setPOSDetails] = useState<any>(null)
+  const [posDetails, setPOSDetails] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -119,21 +124,16 @@ export function usePOSDetails() {
         const data = await response.json()
         if (response.ok && data.message) {
           // Debug: log active POS profile and current opening entry
-          try {
-            console.log()
-            // console.log(
-            //   "[POS] Active Profile:", data.message?.name,
-            //   "| Opening Entry:", data.message?.current_opening_entry,
-            //   "| Currency:", data.message?.currency
-            // );
-          } catch (_) {}
+          console.log('[POS] Active Profile:', data.message?.name,
+            "| Opening Entry:", data.message?.current_opening_entry,
+            "| Currency:", data.message?.currency);
           setPOSDetails(data.message)
         } else {
           throw new Error(data._server_messages || "Failed to fetch POS details")
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error loading POS details:", err)
-        setError(err.message || "Unknown error")
+        setError(err instanceof Error ? err.message : "Unknown error")
       } finally {
         setLoading(false)
       }

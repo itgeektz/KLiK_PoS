@@ -56,6 +56,7 @@ export function useCreatePOSClosingEntry(): UseCreateClosingReturn {
       } else {
         throw new Error(data._server_messages || "Failed to create closing entry");
       }
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error("Error creating POS Closing Entry:", err);
       setError(err.message || "Unexpected error occurred");

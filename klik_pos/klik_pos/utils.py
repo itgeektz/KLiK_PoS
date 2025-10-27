@@ -16,6 +16,7 @@ def get_current_pos_profile():
 		return _cached_pos_profiles[user]
 
 	from klik_pos.api.sales_invoice import get_current_pos_opening_entry
+
 	current_opening_entry = get_current_pos_opening_entry()
 
 	if current_opening_entry:

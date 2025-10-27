@@ -108,6 +108,8 @@ export async function getWhatsAppTemplate(templateName: string): Promise<WhatsAp
 /**
  * Process template with parameters
  */
+
+//eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function processTemplate(template: string, parameters: Record<string, any> = {}): string {
   let processedTemplate = template;
 

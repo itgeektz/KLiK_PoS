@@ -133,7 +133,7 @@ class BackgroundSyncService {
 
     this.emit('status_change', status);
   }
-
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   private emit(event: string, data: any): void {
     const listeners = this.listeners.get(event);
     if (listeners) {
@@ -146,7 +146,7 @@ class BackgroundSyncService {
       });
     }
   }
-
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   public on(event: string, callback: (data: any) => void): void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
@@ -154,6 +154,7 @@ class BackgroundSyncService {
     this.listeners.get(event)!.push(callback);
   }
 
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   public off(event: string, callback: (data: any) => void): void {
     const listeners = this.listeners.get(event);
     if (listeners) {

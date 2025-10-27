@@ -49,9 +49,15 @@ export async function addDraftInvoiceToCart(invoiceId: string): Promise<boolean>
     const customer: Customer | null = invoiceData.customer ? {
       id: invoiceData.customer,
       name: invoiceData.customer_name || invoiceData.customer,
-      type: 'individual' as const,
+      customer_name: invoiceData.customer_name || invoiceData.customer,
       email: invoiceData.customer_email || '',
+      email_id: invoiceData.customer_email || '',
       phone: invoiceData.customer_mobile_no || '',
+      mobile_no: invoiceData.customer_mobile_no || '',
+      territory: '',
+      customer_group: '',
+      customer_type: 'individual',
+      type: 'individual' as const,
       address: {
         addressType: 'Billing' as const,
         street: invoiceData.customer_address_line1 || '',
@@ -74,7 +80,7 @@ export async function addDraftInvoiceToCart(invoiceId: string): Promise<boolean>
 
     return true;
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error caching draft invoice items:', error);
     const errorMessage = extractErrorFromException(error, 'Failed to cache draft invoice items');
     toast.error(errorMessage);

@@ -25,6 +25,7 @@ export function useCreatePOSOpeningEntry(): UseCreateOpeningReturn {
     const csrfToken = window.csrf_token;
 
     try {
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
       const requestBody: any = { opening_balance: openingBalance };
       if (posProfile) {
         requestBody.pos_profile = posProfile;
@@ -47,6 +48,7 @@ export function useCreatePOSOpeningEntry(): UseCreateOpeningReturn {
       } else {
         throw new Error(data._server_messages || "Failed to create opening entry");
       }
+            //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error("Error creating POS Opening Entry:", err);
       setError(err.message || "Unexpected error occurred");

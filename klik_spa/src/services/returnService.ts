@@ -55,6 +55,7 @@ export async function getReturnedQty(customer: string, salesInvoice: string, ite
       success: true,
       data: data.message
     };
+          //eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error('Error getting returned quantity:', error);
     return {
@@ -89,6 +90,7 @@ export async function getCustomerInvoicesForReturn(
       success: true,
       data: data.message.data
     };
+          //eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error('Error fetching customer invoices for return:', error);
     return {
@@ -141,6 +143,7 @@ export async function createPartialReturn(
       returnInvoice: result.return_invoice,
       message: result.message
     };
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error('Error creating partial return:', error);
     return {
@@ -186,6 +189,8 @@ export async function createMultiInvoiceReturn(
       createdReturns: result.created_returns,
       message: result.message
     };
+
+          //eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error('Error creating multi-invoice return:', error);
     return {
@@ -230,6 +235,8 @@ export async function getValidSalesInvoices(
       success: true,
       data: data.message
     };
+
+          //eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error('Error fetching valid sales invoices:', error);
     return {

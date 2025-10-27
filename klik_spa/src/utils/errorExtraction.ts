@@ -34,28 +34,37 @@ function cleanHtmlFromErrorMessage(message: string): string {
   return cleanedMessage;
 }
 
-export function extractErrorMessage(result: any, defaultMessage: string = 'Operation failed'): string {
+export function extractErrorMessage(result: unknown, defaultMessage: string = 'Operation failed'): string {
   let errorMessage = defaultMessage;
 
-  // Try to extract the actual error message from _server_messages
-  if (result._server_messages) {
-    try {
-      const serverMessages = JSON.parse(result._server_messages);
-      if (serverMessages && serverMessages.length > 0) {
-        const firstMessage = JSON.parse(serverMessages[0]);
-        if (firstMessage.message) {
-          errorMessage = firstMessage.message;
-        }
-      }
-    } catch (parseError) {
-      console.error('Error parsing server messages:', parseError);
-      // Fallback to the original logic
+  // Check if result is an object with _server_messages property
+  if (result && typeof result === 'object' && '_server_messages' in result) {
+    const serverMessagesValue = (result as { _server_messages?: unknown })._server_messages;
+
+    if (serverMessagesValue && typeof serverMessagesValue === 'string') {
       try {
-        const serverMsg = JSON.parse(result._server_messages)[0];
-        errorMessage = serverMsg;
-      } catch (fallbackError) {
-        console.error('Fallback error parsing failed:', fallbackError);
-        errorMessage = defaultMessage;
+        const serverMessages = JSON.parse(serverMessagesValue) as unknown[];
+        if (Array.isArray(serverMessages) && serverMessages.length > 0) {
+          const firstMessageStr = serverMessages[0];
+          if (typeof firstMessageStr === 'string') {
+            const firstMessage = JSON.parse(firstMessageStr) as { message?: unknown };
+            if (firstMessage && typeof firstMessage.message === 'string') {
+              errorMessage = firstMessage.message;
+            }
+          }
+        }
+      } catch (parseError) {
+        console.error('Error parsing server messages:', parseError);
+        // Fallback to the original logic
+        try {
+          const serverMsg = JSON.parse(serverMessagesValue)[0];
+          if (typeof serverMsg === 'string') {
+            errorMessage = serverMsg;
+          }
+        } catch (fallbackError) {
+          console.error('Fallback error parsing failed:', fallbackError);
+          errorMessage = defaultMessage;
+        }
       }
     }
   }
@@ -64,24 +73,26 @@ export function extractErrorMessage(result: any, defaultMessage: string = 'Opera
   return cleanHtmlFromErrorMessage(errorMessage);
 }
 
-export function extractErrorFromException(err: any, defaultMessage: string = 'Operation failed'): string {
+export function extractErrorFromException(err: unknown, defaultMessage: string = 'Operation failed'): string {
   let errorMessage = defaultMessage;
 
-  // Try to get the actual error message from the error object
-  if (err?.message) {
+  // Check if error has a message property
+  if (err && typeof err === 'object' && 'message' in err) {
+    const errorMessageObj = (err as { message: unknown }).message;
+
     // If the error message is a JSON string, parse it
-    if (typeof err.message === 'string' && err.message.includes('{')) {
+    if (typeof errorMessageObj === 'string' && errorMessageObj.includes('{')) {
       try {
-        const parsedError = JSON.parse(err.message);
-        if (parsedError.message) {
+        const parsedError = JSON.parse(errorMessageObj) as { message?: unknown };
+        if (parsedError && typeof parsedError.message === 'string') {
           errorMessage = parsedError.message;
         }
-      } catch (parseError) {
+      } catch {
         // If parsing fails, use the original message
-        errorMessage = err.message;
+        errorMessage = errorMessageObj;
       }
-    } else {
-      errorMessage = err.message;
+    } else if (typeof errorMessageObj === 'string') {
+      errorMessage = errorMessageObj;
     }
   }
 

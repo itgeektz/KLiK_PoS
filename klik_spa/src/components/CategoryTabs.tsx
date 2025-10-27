@@ -2,7 +2,6 @@
 "use client";
 
 import { itemGroupIconMap } from "../utils/iconMap";
-import { useI18n } from "../hooks/useI18n";
 import { useItemGroups } from "../hooks/useItemGroups";
 
 interface CategoryTabsProps {
@@ -16,13 +15,12 @@ export default function CategoryTabs({
   onCategoryChange,
   isMobile = false,
 }: CategoryTabsProps) {
-  const { isRTL } = useI18n();
+  // const { isRTL } = useI18n();
 
  const {
   itemGroups,
   isLoading: isValidating,
   error,
-  count,
   total_item_count,
 } = useItemGroups();
 

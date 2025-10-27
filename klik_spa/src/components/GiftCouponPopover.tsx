@@ -93,7 +93,7 @@ const currency_symbol = posDetails?.currency_symbol
   const validateAndShowAmount = (code: string, type: 'coupon' | 'giftcard') => {
     if (!code.trim()) return null
 
-    let coupon = availableCoupons.find((c) => c.code.toLowerCase() === code.toLowerCase())
+    const coupon = availableCoupons.find((c) => c.code.toLowerCase() === code.toLowerCase())
 
     if (!coupon && type === 'giftcard') {
       const giftCardValue = parseFloat(code.replace(/[^0-9.]/g, '')) || 0

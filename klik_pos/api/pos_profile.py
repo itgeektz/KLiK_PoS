@@ -9,8 +9,10 @@ from klik_pos.klik_pos.utils import get_current_pos_profile
 def get_pos_profiles_for_user():
 	"""
 	Return a list of POS Profiles assigned to the current user via User Permissions or directly.
+	Returns profiles with an 'is_default' flag.
 	"""
 	user = frappe.session.user
+	profiles_with_default = []
 
 	# Get POS Profiles assigned to the user via User Permissions
 	user_permissions = frappe.get_all(
@@ -23,18 +25,43 @@ def get_pos_profiles_for_user():
 
 	# Fallback: if no user permissions exist, return all POS Profiles where user is in the 'users' table
 	if not pos_profiles:
-		profiles = frappe.get_all("POS Profile", filters={}, fields=["name", "disabled"])
-		for p in profiles:
+		all_profiles = frappe.get_all("POS Profile", filters={}, fields=["name", "disabled"])
+		for p in all_profiles:
 			if not p.disabled:
 				user_list = frappe.get_all(
 					"POS Profile User",
 					filters={"parent": p.name, "user": user},
-					fields=["user"],
+					fields=["user", "default"],
 				)
 				if user_list:
 					pos_profiles.append(p.name)
 
-	return pos_profiles
+	# Now get details for each profile and check if it's default
+	for profile_name in pos_profiles:
+		try:
+			# Get the POS Profile User entry to check if this is the default
+			default_user_entry = frappe.get_all(
+				"POS Profile User",
+				filters={"parent": profile_name, "user": user},
+				fields=["default"],
+				limit=1
+			)
+
+			is_default = default_user_entry[0].get("default", 0) == 1 if default_user_entry else False
+
+			profiles_with_default.append({
+				"name": profile_name,
+				"is_default": is_default
+			})
+		except Exception as e:
+			frappe.logger().error(f"Error getting details for POS Profile {profile_name}: {e}")
+			# Add profile without is_default if there's an error
+			profiles_with_default.append({
+				"name": profile_name,
+				"is_default": False
+			})
+
+	return profiles_with_default
 
 
 @frappe.whitelist()

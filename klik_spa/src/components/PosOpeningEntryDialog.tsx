@@ -68,8 +68,10 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
   // Set default profile when profiles are loaded
   useEffect(() => {
     if (posProfiles && posProfiles.length > 0 && !selectedProfile) {
-      // Set default profile - first one from the list
-      setSelectedProfile(posProfiles[0]);
+      // Find the default profile or use the first one
+      const defaultProfile = posProfiles.find(p => p.is_default);
+      const profileToUse = defaultProfile || posProfiles[0];
+      setSelectedProfile(profileToUse.name);
     }
   }, [posProfiles, selectedProfile]);
 
@@ -207,9 +209,10 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
                     </option>
                   )}
                   {posProfiles && Array.isArray(posProfiles) && posProfiles.map((profile, index) => {
-                    // Handle both string arrays and object arrays
-                    const profileName = typeof profile === 'string' ? profile : profile?.name;
-                    const profileDisplay = typeof profile === 'string' ? profile : (profile?.name || `Profile ${index + 1}`);
+                    const profileName = profile.name;
+                    const profileDisplay = profile.is_default
+                      ? `${profileName} (Default)`
+                      : profileName;
 
                     return (
                       <option key={profileName || index} value={profileName}>

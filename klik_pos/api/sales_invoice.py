@@ -667,7 +667,7 @@ def _get_active_pos_profile():
 		if current_opening_entry:
 			opening_doc = frappe.get_doc("POS Opening Entry", current_opening_entry)
 			selected_pos_profile_name = opening_doc.pos_profile
-	except Exception as e:
+	except Exception:
 		frappe.logger().error(f"Error getting POS Opening Entry: {frappe.get_traceback()}")
 		pass
 
@@ -678,7 +678,7 @@ def _get_active_pos_profile():
 		else:
 			fallback_profile = get_current_pos_profile()
 			return fallback_profile
-	except Exception as e:
+	except Exception:
 		frappe.logger().error(f"Error getting POS Profile: {frappe.get_traceback()}")
 		frappe.logger().error(f"Attempted to get profile: {selected_pos_profile_name}")
 		raise

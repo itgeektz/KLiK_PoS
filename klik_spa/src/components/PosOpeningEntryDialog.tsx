@@ -4,6 +4,7 @@ import { formatCurrency } from '../utils/currency';
 import { useCreatePOSOpeningEntry } from '../services/opeiningEntry';
 import { usePaymentModes } from "../hooks/usePaymentModes"
 import { usePOSProfiles, usePOSDetails } from '../hooks/usePOSProfile';
+import { clearAllCache } from '../utils/clearCache';
 
 interface PaymentMethod {
   mode_of_payment: string;
@@ -154,6 +155,25 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
       console.log("Opening balance data:", openingBalance, "Selected profile:", selectedProfile);
       await createOpeningEntry(openingBalance, selectedProfile);
 
+      // Clear all caches after creating opening entry for fresh start
+      clearAllCache();
+      console.log("🧹 Cache cleared after creating new opening entry");
+
+      // Clear backend cache as well
+      try {
+        await fetch('/api/method/klik_pos.api.cache.clear_backend_cache', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          credentials: 'include'
+        });
+        console.log("✅ Backend cache cleared after creating new opening entry");
+      } catch (e) {
+        console.warn('⚠️ Failed to clear backend cache after opening entry:', e);
+      }
+
     } catch (err: any) {
       console.error('Error creating opening entry:', err);
       setError(err.message || 'Failed to create opening entry');
@@ -169,10 +189,11 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
     if (success && step === 'creating') {
       setStep('success');
       setTimeout(() => {
-        onSuccess();
+        // Reload the page to ensure fresh data is loaded
+        window.location.reload();
       }, 1500);
     }
-  }, [success, step, onSuccess]);
+  }, [success, step]);
 
   // Handle creation error
   useEffect(() => {

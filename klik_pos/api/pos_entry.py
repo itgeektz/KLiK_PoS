@@ -5,7 +5,10 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime, today
 
-from klik_pos.klik_pos.utils import get_current_pos_profile
+from klik_pos.klik_pos.utils import get_current_pos_profile, clear_pos_profile_cache
+
+# Import for clearing cache
+from klik_pos.api.cache import clear_backend_cache
 
 
 @frappe.whitelist()
@@ -93,6 +96,14 @@ def create_opening_entry():
 
 		doc.insert()
 		doc.submit()
+
+		# Clear POS profile cache after creating opening entry to ensure fresh data
+		try:
+			clear_pos_profile_cache(user=user)
+			frappe.logger().info(f"🧹 POS Profile cache cleared after creating opening entry for user: {user}")
+		except Exception as e:
+			# Do not block opening if cache clear fails; log and continue
+			frappe.logger().warning(f"Failed to clear POS profile cache after opening entry: {frappe.get_traceback()}")
 
 		return {
 			"name": doc.name,
@@ -294,5 +305,12 @@ def _create_and_submit_closing_doc(opening_entry, data, payment_data, user):
 	# Submit and link back to opening entry
 	doc.submit()
 	frappe.db.set_value("POS Opening Entry", opening_entry.name, "pos_closing_entry", doc.name)
+
+	# Clear POS profile cache for the current user to ensure fresh data on next session
+	try:
+		clear_pos_profile_cache(user=user)
+	except Exception:
+		# Do not block closing if cache clear fails; log and continue
+		frappe.logger().warning("Failed to clear POS profile cache after closing entry", exc_info=True)
 
 	return doc

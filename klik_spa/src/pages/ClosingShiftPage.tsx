@@ -26,7 +26,7 @@ import { deleteDraftInvoice } from "../services/salesInvoice";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { formatCurrency } from "../utils/currency";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
-import { clearCacheAndReload } from "../utils/clearCache";
+import { clearAllCache } from "../utils/clearCache";
 
 export default function ClosingShiftPage() {
   const navigate = useNavigate();
@@ -354,10 +354,24 @@ export default function ClosingShiftPage() {
       await createClosingEntry(closingBalanceArray);
       setShowCloseModal(false);
 
-      // Clear all cache when closing shift for a fresh start
-      console.log("Closing shift - clearing all cache for fresh session");
+      // Clear frontend caches
+      clearAllCache();
 
-      // Navigate to POS home page after successful closing
+      // Clear backend cache
+      try {
+        await fetch('/api/method/klik_pos.api.cache.clear_backend_cache', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          credentials: 'include'
+        });
+      } catch (e) {
+        console.warn('Failed to clear backend cache after close:', e);
+      }
+
+      // Navigate to POS home for a fresh start without full reload
       navigate('/pos');
     } catch (err) {
       console.error("Error closing shift:", err);

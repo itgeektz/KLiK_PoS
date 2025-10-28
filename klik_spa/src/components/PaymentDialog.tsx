@@ -28,7 +28,8 @@ import {
   Pencil,
   CheckCircle
 } from "lucide-react";
-import type { CartItem, GiftCoupon, Customer } from "../../types";
+import type { CartItem, GiftCoupon } from "../../types";
+import type { Customer } from "../types/customer";
 import { toast } from "react-toastify";
 import { usePaymentModes } from "../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../hooks/useSalesTaxCharges";
@@ -40,7 +41,7 @@ import DisplayPrintPreview from "../utils/invoicePrint";
 import { handlePrintInvoice } from "../utils/printHandler";
 import { sendEmails, sendWhatsAppMessage, sendSMSMessage } from "../services/useSharing";
 import { clearDraftInvoiceCache, getOriginalDraftInvoiceId } from "../utils/draftInvoiceCache";
-import { deleteDraftInvoice } from "../services/salesInvoice";
+// import { deleteDraftInvoice } from "../services/salesInvoice";
 import {
   fetchWhatsAppTemplates,
   getDefaultWhatsAppTemplate,
@@ -143,7 +144,9 @@ export default function PaymentDialog({
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isHoldingOrder, setIsHoldingOrder] = useState(false);
   const [invoiceSubmitted, setInvoiceSubmitted] = useState(false);
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [submittedInvoice, setSubmittedInvoice] = useState<any>(null);
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [invoiceData, setInvoiceData] = useState<any>(null);
   const [roundOffInput, setRoundOffInput] = useState(roundOffAmount.toFixed(2));
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
@@ -400,6 +403,7 @@ export default function PaymentDialog({
     // Use discounted price if available, otherwise use original price
     const subtotal = cartItems.reduce(
       (sum, item) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const itemPrice = (item as any).discountedPrice || item.price;
         return sum + itemPrice * item.quantity;
       },
@@ -890,6 +894,7 @@ export default function PaymentDialog({
     const paymentData = {
       items: cartItems.map(item => ({
         ...item,
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
         price: (item as any).discountedPrice || item.price, // Use discounted price
         batchNumber: itemDiscounts[item.id]?.batchNumber || null,
         serialNumber: itemDiscounts[item.id]?.serialNumber || null,
@@ -943,6 +948,7 @@ export default function PaymentDialog({
       clearDraftInvoiceCache();
 
       // Don't clear cart immediately - let modal stay open for invoice preview
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const defaultMessage = isB2B
         ? "Failed to submit invoice"
@@ -954,7 +960,7 @@ export default function PaymentDialog({
       setIsProcessingPayment(false);
     }
   };
-
+//eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleViewInvoice = (invoice: any) => {
     navigate(`/invoice/${invoice.name}`);
   };
@@ -990,6 +996,7 @@ export default function PaymentDialog({
       clearDraftInvoiceCache();
 
       onHoldOrder(orderData);
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const errorMessage = extractErrorFromException(err, "Failed to hold order");
       toast.error(errorMessage);
@@ -1178,7 +1185,7 @@ export default function PaymentDialog({
                   <button
                     onClick={() => {
                       // Simply close the modal - no navigation needed
-                      onClose();
+                      onClose(true);
                     }}
                     className="w-full py-3 bg-beveren-600 text-white rounded-lg font-medium hover:bg-beveren-700 transition-colors"
                   >
@@ -1680,6 +1687,7 @@ export default function PaymentDialog({
                           });
                           toast.success("Email sent successfully!");
                           setSharingMode(null);
+                          //eslint-disable-next-line @typescript-eslint/no-explicit-any
                         } catch (error: any) {
                           const userFriendlyError = getUserFriendlyError(error.message, 'email');
                           toast.error(userFriendlyError);
@@ -1814,6 +1822,7 @@ export default function PaymentDialog({
                           });
                           toast.success("Whatsap message sent successfully!");
                           setSharingMode(null);
+                          //eslint-disable-next-line @typescript-eslint/no-explicit-any
                         } catch (error: any) {
                           const userFriendlyError = getUserFriendlyError(error.message, 'whatsapp');
                           toast.error(userFriendlyError);
@@ -1895,6 +1904,7 @@ export default function PaymentDialog({
                           });
                           toast.success("SMS sent successfully!");
                           setSharingMode(null);
+                          //eslint-disable-next-line @typescript-eslint/no-explicit-any
                         } catch (error: any) {
                           const userFriendlyError = getUserFriendlyError(error.message, 'sms');
                           toast.error(userFriendlyError);
@@ -2458,7 +2468,7 @@ export default function PaymentDialog({
             <div className="flex justify-end space-x-4">
               {invoiceSubmitted && (
                 <button
-                  onClick={onClose}
+                  onClick={() => onClose(true)}
                   className="bg-beveren-500 px-6 py-2 border border-gray-300 dark:border-gray-600 text-white dark:text-gray-300 rounded-lg font-medium hover:bg-green-700 dark:hover:bg-gray-800 transition-colors"
                 >
                   New Order
@@ -2466,7 +2476,7 @@ export default function PaymentDialog({
               )}
               {externalInvoiceData && (
                 <button
-                  onClick={onClose}
+                  onClick={() => onClose()}
                   className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                 >
                   Close

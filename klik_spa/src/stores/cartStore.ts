@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { CartItem, GiftCoupon, Customer } from '../../types'
+import type { CartItem, GiftCoupon } from '../../types'
+import type { Customer } from '../types/customer'
 import { toast } from 'react-toastify'
 import { clearDraftInvoiceCache } from '../utils/draftInvoiceCache'
 import { updateItemPricesForCustomer, getItemPriceForCustomer } from '../services/dynamicPricing'

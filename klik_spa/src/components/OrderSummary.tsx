@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Minus,
   Plus,
@@ -11,8 +11,8 @@ import {
   Building,
 } from "lucide-react";
 import type { CartItem, GiftCoupon } from "../../types";
+import type { Customer } from "../types/customer";
 import PaymentDialog from "./PaymentDialog";
-import { type Customer } from "../types/customer"
 import AddCustomerModal from "./AddCustomerModal";
 import { createDraftSalesInvoice } from "../services/salesInvoice";
 import { useCustomers } from "../hooks/useCustomers";
@@ -21,20 +21,11 @@ import { toast } from "react-toastify";
 import { extractErrorFromException } from "../utils/errorExtraction";
 import { getBatches } from "../utils/batch";
 import { getSerials } from "../utils/serial";
-import { useNavigate } from "react-router-dom";
 import { usePOSDetails } from "../hooks/usePOSProfile";
 import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
 import { useCustomerPermission } from "../hooks/useCustomerPermission";
 import { useCartStore } from "../stores/cartStore";
 
-// Extended CartItem interface to include discount properties
-// interface ExtendedCartItem extends CartItem {
-//   discountPercentage?: number;
-//   discountAmount?: number;
-//   batchNumber?: string;
-//   serialNumber?: string;
-//   availableQuantity?: number;
-// }
 
 interface OrderSummaryProps {
   cartItems: CartItem[];
@@ -112,7 +103,7 @@ interface UOMSelectFieldProps {
   item: CartItem;
   onUOMChange: (itemId: string, selectedUOM: string, newPrice: number) => void;
   isMobile?: boolean;
-  selectedCustomer?: Customer | null;
+  selectedCustomer?: { id: string } | null;
 }
 
 const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSelectFieldProps) => {
@@ -139,6 +130,7 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
             const data = await response.json();
 
             if (data?.message?.uoms) {
+              //eslint-disable-next-line @typescript-eslint/no-explicit-any
               const uoms = data.message.uoms.map((uom: any) => uom.uom);
               setAvailableUOMs(uoms);
             } else {
@@ -195,6 +187,7 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
           console.log(`📦 API Response:`, data.message);
 
           if (data?.message?.uoms) {
+            //eslint-disable-next-line @typescript-eslint/no-explicit-any
             const selectedUOMData = data.message.uoms.find((uom: any) => uom.uom === newUOM);
             if (selectedUOMData) {
 
@@ -284,7 +277,8 @@ interface BatchSelectFieldProps {
   isMobile?: boolean;
 }
 
-const BatchSelectField = ({ itemId, itemCode, options, value, onChange, isMobile }: BatchSelectFieldProps) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const BatchSelectField = ({ itemId: _itemId, itemCode: _itemCode, options, value, onChange, isMobile }: BatchSelectFieldProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const filtered = options.filter(o => o.batch_id.toLowerCase().includes(query.toLowerCase()));
@@ -348,7 +342,8 @@ interface SerialSelectFieldProps {
   isMobile?: boolean;
 }
 
-const SerialSelectField = ({ itemId, itemCode, options, value, onChange, isMobile }: SerialSelectFieldProps) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const SerialSelectField = ({ itemId: _itemId, itemCode: _itemCode, options, value, onChange, isMobile }: SerialSelectFieldProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const filtered = options.filter(sn => sn.toLowerCase().includes(query.toLowerCase()));
@@ -407,11 +402,11 @@ export default function OrderSummary({
   onRemoveItem,
   onClearCart,
   appliedCoupons,
-  onApplyCoupon,
+  // onApplyCoupon,
   onRemoveCoupon,
   isMobile = false,
 }: OrderSummaryProps) {
-  const [showCouponPopover, setShowCouponPopover] = useState(false);
+  // const [showCouponPopover, setShowCouponPopover] = useState(false);
   const { selectedCustomer, setSelectedCustomer, updateUOM, updatePricesForCustomer } = useCartStore();
 
   // Track if user has manually removed the default customer
@@ -432,15 +427,17 @@ export default function OrderSummary({
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-  const couponButtonRef = useRef<HTMLButtonElement>(null);
-  const { customers, isLoading, error, refetch: refetchCustomers } = useCustomers(customerSearchQuery);
-  const { refetch: refetchProducts, refreshStockOnly, updateStockForItems, updateBatchQuantitiesForItems } = useProducts();
-  const navigate = useNavigate();
-  const { posDetails, loading: posLoading } = usePOSDetails();
+  // const couponButtonRef = useRef<HTMLButtonElement>(null);
+  const { customers, isLoading, refetch: refetchCustomers } = useCustomers(customerSearchQuery);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { refetch: _refetchProducts, refreshStockOnly, updateStockForItems: _updateStockForItems, updateBatchQuantitiesForItems } = useProducts();
+  // const navigate = useNavigate();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { posDetails, loading: _posLoading } = usePOSDetails();
   const { checkCustomerPermission } = useCustomerPermission();
 
   // Get customer statistics for the selected customer
-  const { statistics: customerStats, isLoading: statsLoading } = useCustomerStatistics(selectedCustomer?.id || null);
+  const { statistics: customerStats } = useCustomerStatistics(selectedCustomer?.id || null);
   const [prefilledCustomerName, setPrefilledCustomerName] = useState("");
   const [prefilledData, setPrefilledData] = useState<{
     name?: string;
@@ -448,7 +445,7 @@ export default function OrderSummary({
     phone?: string;
   }>({});
 
-  const currency = posDetails?.currency;
+  // const currency = posDetails?.currency;
   const currency_symbol = posDetails?.currency_symbol;
 
   // UOM change handler
@@ -474,7 +471,7 @@ export default function OrderSummary({
 
     // Debug: Check if the cart item was updated
     setTimeout(() => {
-      const updatedItem = cartItems.find(item => item.id === itemId);
+      // const updatedItem = cartItems.find(item => item.id === itemId);
       // Cart update completed
     }, 100);
   }, [updateUOM, cartItems]);
@@ -569,12 +566,12 @@ export default function OrderSummary({
         }
         // Check if it's a phone number (contains mostly digits with some special characters)
         else if (
-          /^[\d\s\+\-\(\)]+$/.test(trimmedValue) &&
-          trimmedValue.replace(/[\s\+\-\(\)]/g, "").length >= 7
+          /^[\d\s+()-]+$/.test(trimmedValue) &&
+          trimmedValue.replace(/[\s+()-]/g, "").length >= 7
         ) {
           // Format phone number with Saudi Arabia country code if it doesn't already have one
           let formattedPhone = trimmedValue;
-          const cleanNumber = trimmedValue.replace(/[\s\+\-\(\)]/g, "");
+          const cleanNumber = trimmedValue.replace(/[\s+()-]/g, "");
 
           // If the number doesn't start with +966 (Saudi Arabia code), add it
           if (
@@ -610,7 +607,7 @@ export default function OrderSummary({
         setPrefilledCustomerName(trimmedValue);
         setShowAddCustomerModal(true);
         setShowCustomerDropdown(false);
-      } else if (filteredCustomers.length === 1 && !userRemovedDefaultCustomer) {
+      } else if (filteredCustomers.length === 1 && !userRemovedDefaultCustomer && filteredCustomers[0]) {
         handleCustomerSelect(filteredCustomers[0]);
       }
     }
@@ -671,7 +668,7 @@ export default function OrderSummary({
     setUserRemovedDefaultCustomer(false); // Reset flag when user explicitly selects a customer
   };
 
-  const handleSaveCustomer = async (newCustomer: Partial<Customer>) => {
+  const handleSaveCustomer = async (newCustomer: Partial<Customer> & { customer_name?: string }) => {
 
     // Automatically select the newly created customer in the cart
     if (newCustomer && newCustomer.customer_name) {
@@ -755,7 +752,7 @@ export default function OrderSummary({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleCompletePayment = async (paymentData: any) => {
-    console.log("OrderSummary: Payment completed, invoice created - modal stays open for preview");
+    console.log("OrderSummary: Payment completed, invoice created - modal stays open for preview", paymentData);
     // Don't close modal or clear cart - let user see invoice preview
     // Cart will be cleared when modal is closed via "New Order" button
   };
@@ -792,6 +789,7 @@ export default function OrderSummary({
           console.error("OrderSummary: Failed to update batch quantities:", error);
         }
       }
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("OrderSummary: Failed to refresh stock:", error);
       const errorMessage = error?.message || "Unknown error";
@@ -818,6 +816,7 @@ export default function OrderSummary({
       } else {
         toast.error("Failed to create draft invoice");
       }
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("Error creating draft invoice:", error);
       const errorMessage = extractErrorFromException(error, "Failed to create draft invoice");
@@ -831,15 +830,15 @@ export default function OrderSummary({
     // Use dedicated clear function if available
     if (onClearCart) {
       onClearCart();
-    } else {
-      // Fallback: create a copy of the array to avoid mutation during iteration
-      const itemsToRemove = [...cartItems];
-      itemsToRemove.forEach((item) => {
-        if (onRemoveItem) {
-          onRemoveItem(item.id);
-        }
-      });
     }
+
+    // Defensive: also remove items individually to ensure the cart is empty
+    const itemsToRemove = [...cartItems];
+    itemsToRemove.forEach((item) => {
+      if (onRemoveItem) {
+        onRemoveItem(item.id);
+      }
+    });
 
     // Clear applied coupons
     appliedCoupons.forEach((coupon) => {
@@ -878,8 +877,10 @@ export default function OrderSummary({
   useEffect(() => {
     if (customers.length === 1 && !selectedCustomer && !isLoading) {
       const singleCustomer = customers[0];
-      setSelectedCustomer(singleCustomer);
-      setCustomerSearchQuery(singleCustomer.name);
+      if (singleCustomer) {
+        setSelectedCustomer(singleCustomer);
+        setCustomerSearchQuery(singleCustomer.name);
+      }
       setShowCustomerDropdown(false);
 
       // toast.info(`Automatically selected customer: ${singleCustomer.name}`);
@@ -889,8 +890,9 @@ export default function OrderSummary({
   // Set default customer from POS profile when available
   useEffect(() => {
 
-    if (posDetails?.default_customer && !selectedCustomer && !posLoading && !userRemovedDefaultCustomer) {
-      const defaultCustomer = posDetails.default_customer;
+    if (posDetails?.default_customer && !selectedCustomer && !_posLoading && !userRemovedDefaultCustomer) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const defaultCustomer = posDetails.default_customer as any;
 
       // Use the new API to check if user has permission to access the default customer
       checkCustomerPermission(defaultCustomer.id).then((result) => {
@@ -899,9 +901,9 @@ export default function OrderSummary({
           const transformedCustomer: Customer = {
             id: defaultCustomer.id,
             name: defaultCustomer.name,
-            email: defaultCustomer.email,
-            phone: defaultCustomer.phone,
-            customer_type: defaultCustomer.customer_type === "Company" ? "company" : "individual",
+            email: defaultCustomer.email || '',
+            phone: defaultCustomer.phone || '',
+            type: (defaultCustomer.customer_type === "Company" ? "company" : "individual") as 'individual' | 'company',
             address: {
               street: "",
               city: "",
@@ -912,12 +914,12 @@ export default function OrderSummary({
             loyaltyPoints: 0,
             totalSpent: 0,
             totalOrders: 0,
-            preferredPaymentMethod: "Cash",
+            preferredPaymentMethod: "Cash" as const,
             notes: "",
             tags: [],
             status: "active",
             createdAt: new Date().toISOString(),
-            defaultCurrency: defaultCustomer.default_currency,
+            defaultCurrency: defaultCustomer.default_currency || undefined,
           };
 
           setSelectedCustomer(transformedCustomer);
@@ -933,7 +935,7 @@ export default function OrderSummary({
         // Don't set the default customer if there's an error checking permissions
       });
     }
-  }, [posDetails, selectedCustomer, posLoading, userRemovedDefaultCustomer, checkCustomerPermission]);
+  }, [posDetails, selectedCustomer, _posLoading, userRemovedDefaultCustomer, checkCustomerPermission]);
 
   useEffect(() => {
     const fetchAndSetInfo = async () => {
@@ -981,6 +983,7 @@ export default function OrderSummary({
       setItemBatches(prevBatches => {
         const newBatches = { ...prevBatches };
 
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
         updatedItems.forEach(({ itemCode, batches }: { itemCode: string; batches: any[] }) => {
           if (itemCode && itemCode !== 'undefined') {
             newBatches[itemCode] = batches;
@@ -990,8 +993,13 @@ export default function OrderSummary({
         });
 
         // Remove any undefined keys
-        delete newBatches['undefined'];
-        delete newBatches[undefined];
+        if (newBatches['undefined'] !== undefined) {
+          delete newBatches['undefined'];
+        }
+        const undefinedKey = undefined as unknown as string;
+        if (newBatches[undefinedKey] !== undefined) {
+          delete newBatches[undefinedKey];
+        }
 
         return newBatches;
       });
@@ -1009,7 +1017,7 @@ export default function OrderSummary({
           ...prev,
           [item.id]: {
             ...(prev[item.id] || { discountPercentage: 0, discountAmount: 0, batchNumber: '', serialNumber: '', availableQuantity: 0 }),
-            batchNumber: batchId,
+            batchNumber: batchId || '',
             availableQuantity: selectedQty,
           }
         }))
@@ -1030,7 +1038,7 @@ export default function OrderSummary({
           ...prev,
           [item.id]: {
             ...(prev[item.id] || { discountPercentage: 0, discountAmount: 0, batchNumber: '', serialNumber: '', availableQuantity: 0 }),
-            serialNumber: serialNo,
+            serialNumber: serialNo || '',
           }
         }))
         // Ensure the serial exists in options for visibility; if not, inject it
@@ -1075,7 +1083,7 @@ export default function OrderSummary({
             ...prev,
             [item.id]: {
               ...(prev[item.id] || { discountPercentage: 0, discountAmount: 0, batchNumber: '', serialNumber: '', availableQuantity: 0 }),
-              batchNumber: pending.batchId,
+              batchNumber: pending.batchId || '',
               availableQuantity: selectedQty,
             }
           }))
@@ -1085,7 +1093,7 @@ export default function OrderSummary({
             ...prev,
             [item.id]: {
               ...(prev[item.id] || { discountPercentage: 0, discountAmount: 0, batchNumber: '', serialNumber: '', availableQuantity: 0 }),
-              serialNumber: pending.serialNo,
+              serialNumber: pending.serialNo || '',
             }
           }))
           setItemSerials(prev => {
@@ -1190,10 +1198,10 @@ export default function OrderSummary({
                 })} */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    {getCustomerTypeIcon(selectedCustomer)}
+                    {selectedCustomer && getCustomerTypeIcon(selectedCustomer)}
                     <div>
                       <div className="font-medium text-gray-900 dark:text-white text-sm">
-                        {selectedCustomer.name}
+                        {selectedCustomer?.name}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">
                         {/* Debug phone rendering */}
@@ -1309,10 +1317,10 @@ export default function OrderSummary({
               })} */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  {getCustomerTypeIcon(selectedCustomer)}
+                  {selectedCustomer && getCustomerTypeIcon(selectedCustomer)}
                   <div>
                     <div className="font-medium text-gray-900 dark:text-white text-sm">
-                      {selectedCustomer.name}
+                      {selectedCustomer?.name}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">
                       {/* Debug phone rendering */}
@@ -1710,114 +1718,6 @@ export default function OrderSummary({
               : "p-4 border-t border-gray-100 dark:border-gray-700"
           } space-y-3`}
         >
-          {/* <div className="space-y-3"> */}
-            {/* <div className="flex justify-between text-sm">
-              <span className="font-medium text-gray-700 dark:text-gray-300">
-                Items
-              </span>
-              <span className="font-semibold text-gray-900 dark:text-white">
-                {cartItems.length}
-              </span>
-            </div> */}
-
-            {/* <div className="flex justify-between text-sm">
-              <span className="font-medium text-gray-700 dark:text-gray-300">
-                Original Subtotal
-              </span>
-              <span className="font-semibold text-gray-900 dark:text-white">
-                {currency_symbol}
-                {cartItems
-                  .reduce((sum, item) => sum + item.price * item.quantity, 0)
-                  .toFixed(2)}
-              </span>
-            </div>
-
-            {totalItemDiscount > 0 && (
-              <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
-                <span className="font-medium flex items-center">
-                  <Tag size={14} className="mr-1" />
-                  Item Discounts
-                </span>
-                <span className="font-semibold">
-                  -{currency_symbol}
-                  {totalItemDiscount.toFixed(2)}
-                </span>
-              </div>
-            )}
-
-            <div className="flex justify-between text-sm">
-              <span className="font-medium text-gray-700 dark:text-gray-300">
-                Subtotal
-              </span>
-              <span className="font-semibold text-gray-900 dark:text-white">
-                {currency_symbol}
-                {subtotal.toFixed(2)}
-              </span>
-            </div> */}
-
-            {/* {appliedCoupons.length > 0 && (
-              <div className="space-y-2">
-                {appliedCoupons.map((coupon) => (
-                  <div
-                    key={coupon.code}
-                    className="flex justify-between text-sm text-green-600 dark:text-green-400"
-                  >
-                    <span className="font-medium flex items-center">
-                      <Tag size={14} className="mr-1" />
-                      {coupon.code}
-                      <button
-                        onClick={() => onRemoveCoupon(coupon.code)}
-                        className="ml-1 text-gray-400 hover:text-red-500"
-                      >
-                        <X size={14} />
-                      </button>
-                    </span>
-                    <span className="font-semibold">
-                      -${coupon.value.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )} */}
-
-            {/* Gift Coupon Button with Popover */}
-            {/* <div className="relative">
-              <button
-                ref={couponButtonRef}
-                onClick={() => setShowCouponPopover(!showCouponPopover)}
-                className="w-full py-2 px-3 text-sm border-2 border-dashed border-beveren-300 dark:border-beveren-600 rounded-xl text-beveren-600 dark:text-beveren-400 hover:bg-beveren-50 dark:hover:bg-beveren-900/20 transition-colors font-medium flex items-center justify-center"
-              >
-                <Tag size={16} className="mr-2" />
-                Add Coupon
-              </button>
-
-              <GiftCouponPopover
-                onApplyCoupon={onApplyCoupon}
-                appliedCoupons={appliedCoupons}
-                isOpen={showCouponPopover}
-                onClose={() => setShowCouponPopover(false)}
-                buttonRef={couponButtonRef}
-              />
-            </div> */}
-
-            {/* <div className="flex justify-between font-bold text-lg pt-3 border-t border-gray-100 dark:border-gray-700">
-              <span className="text-gray-900 dark:text-white">Total</span>
-              <span className="text-gray-900 dark:text-white">
-                {currency_symbol}
-                {total.toFixed(2)}
-              </span>
-            </div>
-
-            {/* Total Savings Summary */}
-            {/* {totalItemDiscount + couponDiscount > 0 && (
-              <div className="text-center py-2 px-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                <span className="text-sm font-medium text-green-800 dark:text-green-300">
-                  Total Savings: {currency_symbol}
-                  {(totalItemDiscount + couponDiscount).toFixed(2)}
-                </span>
-              </div>
-            )} */}
-          {/* </div>  */}
 
           {/* Action Buttons */}
           <div className={`grid grid-cols-2 gap-3 ${isMobile ? "mb-3" : ""}`}>
@@ -1825,13 +1725,16 @@ export default function OrderSummary({
               onClick={() => {
                 if (!validateCustomer()) return;
 
+                const sc = selectedCustomer;
+                if (!sc) return;
+
                 const orderData = {
                   items: cartItems.map((item) => ({
                     id: item.id,
                     quantity: item.quantity,
                     price: getDiscountedPrice(item),
                   })),
-                  customer: { id: selectedCustomer.id },
+                  customer: { id: sc.id },
                   subtotal,
                   total,
                   appliedCoupons,
@@ -1855,28 +1758,7 @@ export default function OrderSummary({
             </button>
           </div>
 
-          {/* Debug: Test Stock Update Button */}
-          {/* <div className="mb-3">
-            <button
-              onClick={async () => {
-                try {
-                  console.log("Testing stock update...");
-                  const success = await refreshStockOnly();
-                  if (success) {
-                    toast.success("Stock update test successful!");
-                  } else {
-                    toast.info("Stock update test completed - no changes needed");
-                  }
-                } catch (error: any) {
-                  console.error("Stock update test failed:", error);
-                  toast.error(`Stock update test failed: ${error?.message || "Unknown error"}`);
-                }
-              }}
-              className="w-full px-4 py-2 bg-gray-500 text-white rounded-lg font-medium hover:bg-gray-600 transition-colors text-sm"
-            >
-              Test Stock Update
-            </button>
-          </div> */}
+
 
           {/* Pay Button */}
           <button

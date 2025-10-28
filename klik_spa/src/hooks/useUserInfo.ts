@@ -25,7 +25,7 @@ export function useUserInfo(): UseUserInfoReturn {
 
   const fetchUserInfo = async () => {
     setIsLoading(true);
-   
+
     try {
       const response = await fetch("/api/method/klik_pos.api.user.get_current_user_info", {
         method: "GET",

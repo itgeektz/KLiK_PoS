@@ -56,7 +56,7 @@ export function useAllPaymentModes() {
 
     const fetchPaymentModes = async () => {
       setIsLoading(true);
-     
+
 
       try {
         const res = await fetch(`/api/method/klik_pos.api.payment.get_opening_entry_payment_summary`);

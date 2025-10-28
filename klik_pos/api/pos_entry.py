@@ -5,10 +5,9 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime, today
 
-from klik_pos.klik_pos.utils import get_current_pos_profile, clear_pos_profile_cache
-
 # Import for clearing cache
 from klik_pos.api.cache import clear_backend_cache
+from klik_pos.klik_pos.utils import clear_pos_profile_cache, get_current_pos_profile
 
 
 @frappe.whitelist()
@@ -100,10 +99,14 @@ def create_opening_entry():
 		# Clear POS profile cache after creating opening entry to ensure fresh data
 		try:
 			clear_pos_profile_cache(user=user)
-			frappe.logger().info(f"🧹 POS Profile cache cleared after creating opening entry for user: {user}")
-		except Exception as e:
+			frappe.logger().info(
+				f"🧹 POS Profile cache cleared after creating opening entry for user: {user}"
+			)
+		except Exception:
 			# Do not block opening if cache clear fails; log and continue
-			frappe.logger().warning(f"Failed to clear POS profile cache after opening entry: {frappe.get_traceback()}")
+			frappe.logger().warning(
+				f"Failed to clear POS profile cache after opening entry: {frappe.get_traceback()}"
+			)
 
 		return {
 			"name": doc.name,

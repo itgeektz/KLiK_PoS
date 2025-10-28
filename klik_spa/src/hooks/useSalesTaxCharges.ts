@@ -29,6 +29,7 @@ export function useSalesTaxCharges() {
         setTaxCategories(data.message.data || [])
         setDefaultTax(data.message.default || null)
 
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {
         setError(err.message)
       } finally {

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useProducts } from './useProducts'
+import type { MenuItem } from '../../types'
 
 interface UseBarcodeScannerReturn {
   scanBarcode: (barcode: string) => Promise<boolean>
@@ -8,7 +9,7 @@ interface UseBarcodeScannerReturn {
   clearError: () => void
 }
 
-export function useBarcodeScanner(onAddToCart: (item: any) => void): UseBarcodeScannerReturn {
+export function useBarcodeScanner(onAddToCart: (item: MenuItem) => void): UseBarcodeScannerReturn {
   const [isScanning, setIsScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { products } = useProducts()

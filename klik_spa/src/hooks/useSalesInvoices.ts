@@ -1,6 +1,6 @@
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import type { SalesInvoice } from "../../types";
+import { useEffect, useState, useCallback } from "react";
+import type { SalesInvoice, SalesInvoiceItem } from "../../types";
 
 export function useSalesInvoices(searchTerm: string = "") {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
@@ -75,14 +75,16 @@ export function useSalesInvoices(searchTerm: string = "") {
 
       const transformed: SalesInvoice[] = rawInvoices.map((invoice: Record<string, unknown>) => {
         const status = invoice.status as string;
-        const items = invoice.items || [];
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const items: SalesInvoiceItem[] = Array.isArray((invoice as any).items)
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ? (((invoice as any).items as unknown[]) as SalesInvoiceItem[])
+          : [];
 
-        // Determine if invoice can be returned
         let canReturn = true;
 
         if (status === "Credit Note Issued") {
-          // For credit notes, only show return button if there are items that can still be returned
-          const itemsWithAvailableQty = items.filter((item: any) => item.available_qty > 0);
+          const itemsWithAvailableQty = items.filter((item: SalesInvoiceItem & { available_qty?: number }) => (item.available_qty || 0) > 0);
           canReturn = itemsWithAvailableQty.length > 0;
 
 

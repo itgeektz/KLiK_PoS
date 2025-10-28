@@ -56,17 +56,12 @@ export function useAllPaymentModes() {
 
     const fetchPaymentModes = async () => {
       setIsLoading(true);
-      const frontendStartTime = performance.now();
-      console.log(`🚀 Frontend: Fetching payment modes summary`);
+     
 
       try {
-        const networkStartTime = performance.now();
         const res = await fetch(`/api/method/klik_pos.api.payment.get_opening_entry_payment_summary`);
-        const networkTime = performance.now();
 
-        const parseStartTime = performance.now();
         const data = await res.json();
-        const parseTime = performance.now();
 
         if (!data.message.data) {
           throw new Error(data.message.error || "Failed to fetch payment modes");
@@ -75,7 +70,7 @@ export function useAllPaymentModes() {
         setModes(data.message.data || []);
         setError(null);
 
-        const totalFrontendTime = performance.now() - frontendStartTime;
+        // const totalFrontendTime = performance.now() - frontendStartTime;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {

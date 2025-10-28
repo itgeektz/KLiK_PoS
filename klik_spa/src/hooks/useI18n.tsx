@@ -149,7 +149,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   )
 }
 
-export function useI18n() {
+// eslint-disable-next-line react-refresh/only-export-components
+export function useI18n(): I18nContextType {
   const context = useContext(I18nContext)
   if (context === undefined) {
     throw new Error("useI18n must be used within an I18nProvider")

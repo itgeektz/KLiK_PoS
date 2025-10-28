@@ -52,6 +52,7 @@ export function useCustomerPermission() {
       }
 
       return resData.message;
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error('Error checking customer permission:', error);
       return {

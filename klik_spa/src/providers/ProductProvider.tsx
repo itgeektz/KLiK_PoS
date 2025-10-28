@@ -9,7 +9,7 @@ interface ProductContextType {
   isRefreshingStock: boolean;
   error: string | null;
   refetchProducts: () => Promise<void>;
-  refreshStockOnly: () => Promise<void>;
+  refreshStockOnly: () => Promise<boolean>;
   updateStockOnly: (itemCode: string, newStock: number) => void;
   updateStockForItems: (itemCodes: string[]) => Promise<void>;
   updateBatchQuantitiesForItems: (itemCodes: string[]) => Promise<void>;

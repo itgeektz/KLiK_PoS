@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import type { SalesInvoice } from "../../types";
+import type { SalesInvoice, SalesInvoiceItem } from "../../types";
 
 export function useCustomerInvoices(customerName: string) {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
@@ -71,34 +71,61 @@ export function useCustomerInvoices(customerName: string) {
 
       // IMPORTANT: Filter by raw customer id BEFORE transforming labels to names
       const rawCustomerInvoices = (rawInvoices as Array<Record<string, unknown>>).filter((inv) => {
+                  //eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rawCustomerId = (inv && (inv as any).customer) as string | undefined;
         return !!rawCustomerId && rawCustomerId === customerName;
       });
 
-      const transformed: SalesInvoice[] = rawCustomerInvoices.map((invoice: Record<string, unknown>) => ({
-        id: invoice.name as string,
-        date: (invoice.posting_date as string) || new Date().toISOString().split("T")[0],
-        time: (invoice.posting_time as string) || "00:00:00",
-        cashier: (invoice.cashier_name as string) || "Unknown",
-        // Use customer_name for display, but keep id separately for future if needed
-        customer: (invoice.customer_name as string) || (invoice.customer as string) || "Walk-in Customer",
-        totalAmount: Number(invoice.base_grand_total) || 0,
-        status: (invoice.status as string) || "Draft",
-        // FIX: payment_method isn't provided by backend; use mode_of_payment or derive from payment_methods
-        paymentMethod: (invoice.mode_of_payment as string)
-          || (((invoice.payment_methods as Array<{ mode_of_payment: string }> | undefined)?.length || 0) > 1
-                ? (invoice.payment_methods as Array<{ mode_of_payment: string }>).map(pm => pm.mode_of_payment).join("/")
-                : ((invoice.payment_methods as Array<{ mode_of_payment: string }> | undefined)?.[0]?.mode_of_payment))
-          || "-",
-        discount: Number(invoice.discount_amount) || 0,
-        tax: Number(invoice.total_taxes_and_charges) || 0,
-        items: (invoice.items as any[]) || [],
-        posProfile: (invoice.pos_profile as string) || "",
-        customPosOpeningEntry: (invoice.custom_pos_opening_entry as string) || "",
-        currency: (invoice.currency as string) || "USD",
-        name: invoice.name as string,
-        customZatcaSubmitStatus: (invoice.custom_zatca_submit_status as string) || null
-      }));
+      const transformed: SalesInvoice[] = rawCustomerInvoices.map((invoice: Record<string, unknown>) => {
+        const paymentMethods = (invoice.payment_methods as Array<{ mode_of_payment: string; amount?: number }> | undefined) || [];
+                  //eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const primaryPaymentMethod = (invoice as any).mode_of_payment as string | undefined;
+
+        return {
+          id: invoice.name as string,
+          date: (invoice.posting_date as string) || new Date().toISOString().split("T")[0],
+          time: (invoice.posting_time as string) || "00:00:00",
+          cashier: (invoice.cashier_name as string) || "Unknown",
+          cashierId: (invoice.cashier as string) || "",
+          // Use customer_name for display, but keep id separately
+          customer: (invoice.customer_name as string) || (invoice.customer as string) || "Walk-in Customer",
+          customerId: (invoice.customer as string) || null,
+          //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          items: Array.isArray((invoice as any).items) ? ((invoice as any).items as SalesInvoiceItem[]) : [],
+                    //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          subtotal: Number((invoice as any).net_total) || 0,
+          giftCardDiscount: 0,
+          giftCardCode: null,
+                    //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          taxAmount: Number((invoice as any).total_taxes_and_charges) || 0,
+                    //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          totalAmount: Number((invoice as any).base_grand_total) || 0,
+          paymentMethod: (primaryPaymentMethod as "Cash" | "Debit Card") || "Cash",
+          payment_methods: paymentMethods.map(pm => ({ mode_of_payment: pm.mode_of_payment, amount: Number(pm.amount) || 0 })),
+                    //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          amountPaid: Number((invoice as any).paid_amount) || 0,
+                    //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          amountDue: Number((invoice as any).outstanding_amount) || 0,
+                    //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          changeGiven: Number((invoice as any).change_amount) || 0,
+          status: (invoice.status as string) || "Draft",
+                    //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          refundAmount: Number((invoice as any).refund_amount) || 0,
+                            //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          notes: ((invoice as any).remarks as string) || "",
+          currency: (invoice.currency as string) || "USD",
+          customer_address_doc: undefined,
+          company_address_doc: undefined,
+                    //eslint-disable-next-line @typescript-eslint/no-explicit-any
+          company: ((invoice as any).company as string) || "",
+          posting_date: (invoice.posting_date as string) || "",
+          posting_time: (invoice.posting_time as string) || "",
+          posProfile: (invoice.pos_profile as string) || undefined,
+          custom_pos_opening_entry: (invoice.custom_pos_opening_entry as string) || undefined,
+          name: invoice.name as string,
+          custom_zatca_submit_status: (invoice.custom_zatca_submit_status as string) || undefined,
+        } as SalesInvoice;
+      });
 
       if (append) {
         setInvoices(prev => [...prev, ...transformed]);
@@ -110,6 +137,7 @@ export function useCustomerInvoices(customerName: string) {
 
       setCurrentPage(page);
       setError(null);
+                //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error('Error fetching customer invoices:', err);
       setError(err.message || "Unknown error occurred");

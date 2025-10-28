@@ -28,21 +28,21 @@ export default function InvoiceViewModal({
   invoice,
   isOpen,
   onClose,
-  onRefund,
   onCancel,
 }: InvoiceViewModalProps) {
-  if (!isOpen || !invoice) return null;
-
+  // Call hooks unconditionally (Rules of Hooks)
   const {
     invoice: fullInvoice,
     isLoading,
     error,
-  } = useInvoiceDetails(invoice.id || null);
+  } = useInvoiceDetails(invoice?.id ?? null);
+
+  if (!isOpen || !invoice) return null;
 
   if (isLoading) return <div>Loading invoice...</div>;
   if (error) return <div>Error loading invoice: {error}</div>;
 
-  const displayInvoice = fullInvoice || invoice;
+  const displayInvoice = (fullInvoice || invoice) as SalesInvoice;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -64,6 +64,7 @@ export default function InvoiceViewModal({
       const result = await createSalesReturn(invoiceName);
       console.log(result);
       toast.success(`Invoice returned: ${result.return_invoice}`);
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       toast.error(error.message || "Failed to return invoice");
     }
@@ -194,10 +195,10 @@ export default function InvoiceViewModal({
                               {item.qty}
                             </td>
                             <td className="px-6 py-4 text-gray-900 dark:text-white">
-                              ${item.rate.toFixed(2)}
+                              ${Number(item.rate ?? 0).toFixed(2)}
                             </td>
                             <td className="px-6 py-4 font-semibold text-gray-900 dark:text-white">
-                              ${item.amount.toFixed(2)}
+                              ${Number(item.amount ?? 0).toFixed(2)}
                             </td>
                           </tr>
                         ))}
@@ -221,7 +222,7 @@ export default function InvoiceViewModal({
                     Payment Summary
                   </h3>
                   <div className="space-y-3">
-                    <SummaryRow label="Subtotal" value={displayInvoice.total} />
+                    <SummaryRow label="Subtotal" value={Number(displayInvoice.subtotal ?? 0)} />
                     {displayInvoice.giftCardDiscount > 0 && (
                       <SummaryRow
                         label="Gift Card Discount"
@@ -232,7 +233,7 @@ export default function InvoiceViewModal({
                     <div className="border-t border-gray-200 dark:border-gray-600 pt-3">
                       <SummaryRow
                         label="Total"
-                        value={displayInvoice.grand_total}
+                        value={Number(displayInvoice.totalAmount ?? 0)}
                         bold
                       />
                     </div>

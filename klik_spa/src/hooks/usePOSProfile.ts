@@ -103,8 +103,25 @@ export function usePOSProfiles() {
 }
 
 
+export type POSDetails = {
+  name?: string;
+  currency?: string;
+  currency_symbol?: string;
+  is_zatca_enabled?: boolean;
+  current_opening_entry?: string;
+  business_type?: "B2B" | "B2C" | "B2B & B2C";
+  hide_unavailable_items?: boolean;
+  custom_use_scanner_fully?: boolean;
+  custom_hide_expected_amount?: boolean;
+  write_off_limit?: number;
+  write_off_account?: string;
+  write_off_cost_center?: string;
+  // extend with any other server-provided fields as needed
+  [key: string]: unknown;
+}
+
 export function usePOSDetails() {
-  const [posDetails, setPOSDetails] = useState<Record<string, unknown> | null>(null)
+  const [posDetails, setPOSDetails] = useState<POSDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -127,7 +144,7 @@ export function usePOSDetails() {
           console.log('[POS] Active Profile:', data.message?.name,
             "| Opening Entry:", data.message?.current_opening_entry,
             "| Currency:", data.message?.currency);
-          setPOSDetails(data.message)
+          setPOSDetails(data.message as POSDetails)
         } else {
           throw new Error(data._server_messages || "Failed to fetch POS details")
         }

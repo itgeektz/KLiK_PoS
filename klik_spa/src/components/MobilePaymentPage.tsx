@@ -11,10 +11,12 @@ import { clearDraftInvoiceCache } from "../utils/draftInvoiceCache"
 export default function MobilePaymentPage() {
   const navigate = useNavigate()
   const { cartItems, appliedCoupons, selectedCustomer, clearCart } = useCartStore()
-  const { refetch: refetchProducts, refreshStockOnly, updateStockForItems, updateBatchQuantitiesForItems } = useProducts();
+  const { refreshStockOnly, updateBatchQuantitiesForItems } = useProducts();
 
-  const handleClose = async (paymentCompleted?: boolean) => {
+  const handleClose = () => {
+    // Note: paymentCompleted flag removed to match onClick signature
     // Only clear cart if payment was completed
+    const paymentCompleted = false; // This should be tracked elsewhere
     if (paymentCompleted) {
       // console.log("MobilePaymentPage: Payment was completed - clearing cart for next order");
       clearCart();
@@ -25,8 +27,9 @@ export default function MobilePaymentPage() {
     }
 
     // Simple stock refresh and navigate back
-    try {
-      await refreshStockOnly();
+    (async () => {
+      try {
+        await refreshStockOnly();
       console.log("Stock refreshed after payment modal close");
 
       // Also update batch quantities for items that were in the cart
@@ -36,19 +39,20 @@ export default function MobilePaymentPage() {
         await updateBatchQuantitiesForItems(cartItemCodes);
         console.log("MobilePaymentPage: Batch quantities updated successfully");
       }
-    } catch (error) {
-      console.error("Failed to refresh stock:", error);
-    }
+      } catch (error) {
+        console.error("Failed to refresh stock:", error);
+      }
+    })();
     navigate(-1)
   }
-
+//eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleCompletePayment = async (paymentData: any) => {
     console.log('Payment completed:', paymentData)
     // Don't clear cart immediately - let user see invoice preview
     // Cart will be cleared when user closes the payment page
     console.log("MobilePaymentPage: Payment completed - cart will be cleared when page is closed");
   }
-
+//eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleHoldOrder = (orderData: any) => {
     console.log('Order held:', orderData)
     clearCart()

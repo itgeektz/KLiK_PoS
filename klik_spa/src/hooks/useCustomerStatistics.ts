@@ -41,6 +41,7 @@ export function useCustomerStatistics(customerId: string | null): UseCustomerSta
       } else {
         throw new Error(result?.message?.error || 'Failed to fetch customer statistics');
       }
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error('Error fetching customer statistics:', err);
       setError(err.message || 'Failed to fetch customer statistics');

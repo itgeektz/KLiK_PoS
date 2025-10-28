@@ -39,6 +39,7 @@ export function useItemGroups(): UseItemGroupsReturn {
       } else {
         throw new Error("Invalid response format");
       }
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("Error fetching item groups:", error);
       setErrorMessage(error.message || "Unknown error occurred");

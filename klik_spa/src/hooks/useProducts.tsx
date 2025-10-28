@@ -70,6 +70,7 @@ export function useBatchData(itemCode: string, warehouse: string): UseBatchRetur
         throw new Error("Invalid response format");
       }
 
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("Error fetching batch data:", error);
       setErrorMessage(error.message || "Unknown error occurred");
@@ -98,6 +99,7 @@ export function useBatchData(itemCode: string, warehouse: string): UseBatchRetur
         setBatches(resData.message);
         console.log(`Updated batch quantities for ${targetItemCode}:`, resData.message);
       }
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("Error updating batch quantities:", error);
     }

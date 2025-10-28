@@ -26,7 +26,7 @@ export default function CartSidebar({ cartItems, onUpdateQty, subtotal, vat, tot
         ) : (
           <div className="space-y-2">
             {cartItems.map((item) => (
-              <CartItemRow key={item.itemCode} item={item} onUpdateQty={onUpdateQty} />
+              <CartItemRow key={item.item_code ?? item.id} item={item} onUpdateQty={onUpdateQty} />
             ))}
           </div>
         )}

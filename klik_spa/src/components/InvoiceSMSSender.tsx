@@ -6,6 +6,7 @@ interface InvoiceSMSSenderProps {
   customerName?: string;
   customerPhone?: string;
   invoiceNumber?: string;
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSuccess?: (result: any) => void;
   onError?: (error: string) => void;
 }
@@ -22,6 +23,7 @@ export const InvoiceSMSSender: React.FC<InvoiceSMSSenderProps> = ({
   const [invoiceNo, setInvoiceNo] = useState(invoiceNumber);
   const [message, setMessage] = useState('Your invoice is ready!');
   const [loading, setLoading] = useState(false);
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string>('');
 
@@ -48,6 +50,7 @@ export const InvoiceSMSSender: React.FC<InvoiceSMSSenderProps> = ({
       setResult(response);
       onSuccess?.(response);
       console.log('Invoice SMS sent successfully:', response);
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const userFriendlyError = getUserFriendlyError(err.message || 'Failed to send invoice SMS message', 'sms');
       setError(userFriendlyError);

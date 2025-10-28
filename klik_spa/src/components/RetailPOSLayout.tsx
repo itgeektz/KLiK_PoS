@@ -10,7 +10,7 @@ import MobilePOSLayout from "./MobilePOSLayout"
 import LoadingSpinner from "./LoadingSpinner"
 import BarcodeScannerModal from "./BarcodeScanner"
 import { useBarcodeScanner } from "../hooks/useBarcodeScanner"
-import type { MenuItem, GiftCoupon, POSProfile } from "../../types"
+import type { MenuItem, GiftCoupon } from "../../types"
 import { useMediaQuery } from "../hooks/useMediaQuery"
 import { useCartStore } from "../stores/cartStore"
 import { toast } from "react-toastify"
@@ -33,8 +33,8 @@ export default function RetailPOSLayout() {
   const { posDetails } = usePOSDetails()
   const useScannerOnly = posDetails?.custom_use_scanner_fully || false
   const hideUnavailableItems = posDetails?.hide_unavailable_items || false
-  type POSProfileWithCustom = POSProfile & { custom_scale_barcodes_start_with?: string }
-  const scalePrefix = (posDetails as POSProfileWithCustom)?.custom_scale_barcodes_start_with || ""
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scalePrefix = (posDetails as any)?.custom_scale_barcodes_start_with || ""
 
   // Use media query to detect mobile/tablet screens
   const isMobile = useMediaQuery("(max-width: 1024px)")

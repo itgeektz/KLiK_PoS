@@ -12,7 +12,6 @@ import {
   ShoppingBag,
   Edit,
   User,
-  Gift,
   Clock,
   Tag,
   Activity,
@@ -163,14 +162,14 @@ export default function CustomerDetailPage() {
 
   const getPaymentMethodIcon = (method: Customer['preferredPaymentMethod']) => {
     switch (method) {
-      case 'card':
-        return <CreditCard size={16} />
-      case 'cash':
+      case 'Cash':
         return <span className="text-xs font-bold">CASH</span>
-      case 'mobile':
-        return <Phone size={16} />
-      case 'loyalty':
-        return <Gift size={16} />
+      case 'Bank Card':
+        return <CreditCard size={16} />
+      case 'Bank Payment':
+        return <CreditCard size={16} />
+      case 'Credit':
+        return <CreditCard size={16} />
       default:
         return <CreditCard size={16} />
     }

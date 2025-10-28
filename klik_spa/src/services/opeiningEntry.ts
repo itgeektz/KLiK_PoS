@@ -7,7 +7,7 @@ interface OpeningBalance {
 }
 
 interface UseCreateOpeningReturn {
-  createOpeningEntry: (openingBalance: OpeningBalance[]) => Promise<void>;
+  createOpeningEntry: (openingBalance: OpeningBalance[], posProfile?: string) => Promise<void>;
   isCreating: boolean;
   error: string | null;
   success: boolean;

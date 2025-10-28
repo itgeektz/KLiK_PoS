@@ -1,6 +1,6 @@
 "use client"
 
-import { useI18n } from "../hooks/useI18n"
+// import { useI18n } from "../hooks/useI18n"
 import type { MenuItem } from "../../types"
 
 interface ProductLineViewProps {
@@ -11,7 +11,7 @@ interface ProductLineViewProps {
 }
 
 export default function ProductLineView({ items, onAddToCart, isMobile = false, scannerOnly = false }: ProductLineViewProps) {
-  const { t } = useI18n()
+  // const { t } = useI18n()
 
   if (items.length === 0) {
     return (

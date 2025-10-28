@@ -42,12 +42,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const token = localStorage.getItem("erpnext_token")
     const userData = localStorage.getItem("user_data")
 
-    // console.log("Auth check:", {
-    //   hasToken: !!token,
-    //   hasUserData: !!userData,
-    //   token,
-    //   userData: userData ? JSON.parse(userData) : "missing"
-    // })
 
     if (token && userData) {
       try {
@@ -56,7 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // First, set the user from cached data to avoid login redirect
         setUser(parsedUser)
 
-        // Then try to refresh user data from server in the background
         const refreshUserData = async () => {
           try {
             // First validate the session
@@ -176,8 +169,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   )
 }
-
-export function useAuth() {
+// eslint-disable-next-line react-refresh/only-export-components
+export function useAuth(): AuthContextType {
   const context = useContext(AuthContext)
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider")

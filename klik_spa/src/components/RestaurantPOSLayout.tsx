@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useI18n } from "../hooks/useI18n"
+// import { useI18n } from "../hooks/useI18n"
 import { useProducts } from "../hooks/useProducts"
 import { usePOSDetails } from "../hooks/usePOSProfile"
 
@@ -14,14 +14,14 @@ import { useMediaQuery } from "../hooks/useMediaQuery"
 import { toast } from "react-toastify"
 
 export default function RetailPOSLayout() {
-  const { t } = useI18n()
+  // const { t } = useI18n()
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [cartItems, setCartItems] = useState<CartItem[]>([])
   const [appliedCoupons, setAppliedCoupons] = useState<GiftCoupon[]>([])
 
   // Use professional data management
-  const { products: menuItems, loading, error, refetch, liveDataCount, mockDataCount } = useProducts()
+  const { products: menuItems, isLoading: loading, error, refetch } = useProducts()
 
   // Get POS details including scanner-only setting
   const { posDetails } = usePOSDetails()

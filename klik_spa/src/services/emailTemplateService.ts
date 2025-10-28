@@ -101,7 +101,7 @@ export async function getEmailTemplate(templateName: string): Promise<EmailTempl
 /**
  * Process email template with parameters (supports HTML)
  */
-export function processEmailTemplate(template: string, parameters: Record<string, null> = {}): string {
+export function processEmailTemplate(template: string, parameters: Record<string, string | null> = {}): string {
   let processedTemplate = template;
 
   // Replace common placeholders

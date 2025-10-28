@@ -23,6 +23,7 @@ import { usePOSDetails } from "../hooks/usePOSProfile";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import countryList from "react-select-country-list";
+type CountryOption = { value: string; label: string };
 interface AddCustomerModalProps {
   customer?: Customer | null;
   onClose: () => void;
@@ -46,7 +47,7 @@ export default function AddCustomerModal({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { posDetails } = usePOSDetails();
 
-  const countryOptions = countryList().getData();
+  const countryOptions: CountryOption[] = countryList().getData();
 
   const [formData, setFormData] = useState({
     customer_type: "individual" as Customer["type"],

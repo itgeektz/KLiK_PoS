@@ -16,6 +16,7 @@ import { createPartialReturn, getReturnedQty, type ReturnItem } from "../service
 import { getInvoiceDetails } from "../services/salesInvoice";
 
 interface SingleInvoiceReturnProps {
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   invoice: any;
   isOpen: boolean;
   onClose: () => void;
@@ -31,6 +32,7 @@ export default function SingleInvoiceReturn({
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingReturnData, setLoadingReturnData] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [originalInvoiceGrandTotal, setOriginalInvoiceGrandTotal] = useState<number>(0);
   const [originalInvoicePaidAmount, setOriginalInvoicePaidAmount] = useState<number>(0);
 
@@ -100,7 +102,8 @@ export default function SingleInvoiceReturn({
     if (paymentModes.length > 0 && !selectedPaymentMethod) {
       // Find default payment method or use first one
       const defaultMode = paymentModes.find(mode => mode.default === 1);
-      const resolved = defaultMode?.mode_of_payment || paymentModes[0].mode_of_payment || "";
+      const firstMode = paymentModes[0];
+      const resolved = defaultMode?.mode_of_payment || firstMode?.mode_of_payment || "";
       setSelectedPaymentMethod(resolved);
     }
   }, [paymentModes, selectedPaymentMethod]);
@@ -212,6 +215,7 @@ export default function SingleInvoiceReturn({
     setIsLoading(true);
     const invoiceName = invoice.id || invoice.name
     try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const returnData = {
         items: itemsToReturn,
         paymentMethod: selectedPaymentMethod,
@@ -489,7 +493,7 @@ export default function SingleInvoiceReturn({
                       <>
                         <option value="">{""}</option>
                         {paymentModes.map((mode) => {
-                          const val = mode.mode_of_payment || mode.name;
+                          const val = mode.mode_of_payment;
                           return (
                             <option key={val} value={val}>
                               {val}

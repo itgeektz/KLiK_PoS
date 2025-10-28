@@ -336,7 +336,7 @@ export default function MultiInvoiceReturn({
   // Auto-update payment amounts when quantities change
   useEffect(() => {
     setInvoicePayments(prev => {
-      const updated = { ...prev };
+      const updated: Record<string, { method: string; amount: number }> = { ...prev };
 
       invoices.forEach(invoice => {
         if (selectedInvoices.has(invoice.name)) {
@@ -348,9 +348,11 @@ export default function MultiInvoiceReturn({
           const amount = Math.round(returnedItemsAmount * 100) / 100;
 
           // Update the payment amount for this invoice
-          if (updated[invoice.name]) {
-            updated[invoice.name] = {
-              ...updated[invoice.name],
+          const invoiceName = invoice.name;
+          if (updated[invoiceName]) {
+            const existing = updated[invoiceName];
+            updated[invoiceName] = {
+              ...existing,
               amount
             };
           }

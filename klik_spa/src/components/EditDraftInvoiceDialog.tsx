@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ShoppingCart, FileText, Check } from 'lucide-react';
+import { X, ShoppingCart, Check } from 'lucide-react';
 import type { SalesInvoice } from '../../types';
 
 interface EditDraftInvoiceDialogProps {
@@ -7,7 +7,6 @@ interface EditDraftInvoiceDialogProps {
   onClose: () => void;
   invoice: SalesInvoice | null;
   onGoToCart: (invoice: SalesInvoice) => void;
-  onSubmitPayment: (invoice: SalesInvoice) => void;
   onSubmitDirect?: (invoice: SalesInvoice) => void;
 }
 
@@ -16,7 +15,6 @@ export default function EditDraftInvoiceDialog({
   onClose,
   invoice,
   onGoToCart,
-  onSubmitPayment,
   onSubmitDirect
 }: EditDraftInvoiceDialogProps) {
   if (!isOpen || !invoice) return null;

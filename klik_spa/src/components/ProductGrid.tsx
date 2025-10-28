@@ -1,6 +1,6 @@
 "use client"
 
-import { useI18n } from "../hooks/useI18n"
+// import { useI18n } from "../hooks/useI18n"
 import ProductCard from "./ProductCard"
 import ProductLineView from "./ProductLineView"
 import type { MenuItem } from "../../types"
@@ -14,7 +14,7 @@ interface ProductGridProps {
 }
 
 export default function ProductGrid({ items, onAddToCart, isMobile = false, scannerOnly = false, viewMode = 'grid' }: ProductGridProps) {
-  const { t } = useI18n()
+  // const { t } = useI18n()
 
   // If viewMode is 'list', render the line view
   if (viewMode === 'list') {

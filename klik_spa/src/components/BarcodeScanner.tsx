@@ -108,17 +108,25 @@ export default function BarcodeScannerModal({ onBarcodeDetected, onClose, isOpen
     }
 
           try {
-        interface BarcodeDetectorOptions {
-          formats: string[]
-        }
-        interface BarcodeDetectorConstructor {
-          new (options: BarcodeDetectorOptions): BarcodeDetector
+        type SupportedBarcodeFormat =
+          | 'code_128'
+          | 'code_39'
+          | 'ean_13'
+          | 'ean_8'
+          | 'upc_a'
+          | 'upc_e'
+          | 'qr_code'
+
+        type BarcodeDetectorType = new (options?: { formats?: SupportedBarcodeFormat[] }) => {
           detect(image: HTMLCanvasElement): Promise<Array<{ rawValue: string }>>
         }
-        interface WindowWithBarcodeDetector extends Window {
-          BarcodeDetector: BarcodeDetectorConstructor
+
+        const Detector = (window as { BarcodeDetector?: BarcodeDetectorType }).BarcodeDetector
+        if (!Detector) {
+          setError('BarcodeDetector not available in this browser.')
+          return
         }
-        const barcodeDetector = new (window as WindowWithBarcodeDetector).BarcodeDetector({
+        const barcodeDetector = new Detector({
           formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code']
         })
 
@@ -135,10 +143,15 @@ export default function BarcodeScannerModal({ onBarcodeDetected, onClose, isOpen
             ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
 
             try {
-              const barcodes = await barcodeDetector.detect(canvas)
+              const barcodes: Array<{ rawValue: string }> = await barcodeDetector.detect(canvas)
 
               if (barcodes.length > 0) {
-                const detectedBarcode = barcodes[0].rawValue
+                // cspell:disable-next-line
+                const firstBarcode = barcodes[0]
+                if (!firstBarcode) {
+                  return
+                }
+                const detectedBarcode = firstBarcode.rawValue
                 console.log('Barcode detected:', detectedBarcode)
 
                 // Stop detection and process barcode

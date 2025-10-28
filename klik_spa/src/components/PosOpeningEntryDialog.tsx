@@ -34,8 +34,7 @@ interface POSOpeningModalProps {
 const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
   isOpen,
   onClose,
-  onSuccess,
-  currentUser
+
 }) => {
   const [step, setStep] = useState<'form' | 'creating' | 'success'>('form');
   const [selectedProfile, setSelectedProfile] = useState<string>('');
@@ -44,8 +43,10 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
 
   // Use your existing hooks
   const { createOpeningEntry, isCreating, error: createError, success } = useCreatePOSOpeningEntry();
-  const { profiles: posProfiles, loading: profilesLoading, error: profilesError } = usePOSProfiles();
-  const { posDetails, loading: posDetailsLoading } = usePOSDetails();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { profiles: posProfiles, loading: profilesLoading, error: _profilesError } = usePOSProfiles();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { posDetails, loading: _posDetailsLoading } = usePOSDetails();
 
   // Get the active POS profile from the opening entry
   const activeProfileName = posDetails?.name as string | undefined;
@@ -53,7 +54,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
   // Use payment modes hook - will fetch when selectedProfile changes
   // Use selectedProfile when opening the dialog, but activeProfileName if already open
   // This ensures users can change profiles and see the correct payment modes
-  const profileForPaymentModes = selectedProfile || activeProfileName;
+  const profileForPaymentModes: string = selectedProfile || activeProfileName || "";
   const {
     modes: paymentModes,
     isLoading: paymentModesLoading,
@@ -77,20 +78,22 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
   useEffect(() => {
     if (posProfiles && posProfiles.length > 0 && !selectedProfile) {
       // First, try to use the active profile from the opening entry
-      let profileToUse = null;
+      let profileToUse: { name: string } | null = null;
 
       if (activeProfileName) {
         // Find the active profile in the list
-        profileToUse = posProfiles.find(p => p.name === activeProfileName);
+        profileToUse = posProfiles.find(p => p.name === activeProfileName) || null;
       }
 
       // If no active profile, use the default or first one
       if (!profileToUse) {
         const defaultProfile = posProfiles.find(p => p.is_default);
-        profileToUse = defaultProfile || posProfiles[0];
+        profileToUse = defaultProfile || posProfiles[0] || null;
       }
 
-      setSelectedProfile(profileToUse.name);
+      if (profileToUse?.name) {
+        setSelectedProfile(profileToUse.name);
+      }
     }
   }, [posProfiles, selectedProfile, activeProfileName]);
 
@@ -117,6 +120,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
         return 0; // Keep original order for non-default methods
       });
 
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
       const methods = sortedPaymentModes.map((payment: any) => ({
         mode_of_payment: payment.mode_of_payment,
         opening_amount: 0,
@@ -136,9 +140,14 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
 
   // Update payment method amount
   const updatePaymentAmount = (index: number, amount: number) => {
-    const updated = [...paymentMethods];
-    updated[index].opening_amount = amount;
-    setPaymentMethods(updated);
+    if (index < 0 || index >= paymentMethods.length) return;
+    setPaymentMethods(prev => {
+      const next = [...prev];
+      if (next[index]) {
+        next[index] = { ...next[index], opening_amount: amount };
+      }
+      return next;
+    });
   };
 
   // Handle create opening entry
@@ -153,7 +162,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
         opening_amount: method.opening_amount || 0
       }));
       console.log("Opening balance data:", openingBalance, "Selected profile:", selectedProfile);
-      await createOpeningEntry(openingBalance, selectedProfile);
+      await createOpeningEntry(openingBalance, selectedProfile || undefined);
 
       // Clear all caches after creating opening entry for fresh start
       clearAllCache();
@@ -174,6 +183,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
         console.warn('⚠️ Failed to clear backend cache after opening entry:', e);
       }
 
+    //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error('Error creating opening entry:', err);
       setError(err.message || 'Failed to create opening entry');
@@ -245,7 +255,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
                   value={selectedProfile}
                   onChange={(e) => handleProfileChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  disabled={profilesLoading || isLoadingPaymentModes}
+                  disabled={!!profilesLoading || !!isLoadingPaymentModes}
                 >
                   {(!posProfiles || posProfiles.length === 0) && (
                     <option value="">
@@ -331,16 +341,16 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
                 <button
                   onClick={onClose}
                   className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-                  disabled={profilesLoading || isCreating || isLoadingPaymentModes}
+                  disabled={!!profilesLoading || !!isCreating || !!isLoadingPaymentModes}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreateOpeningEntry}
                   disabled={
-                    profilesLoading ||
-                    isCreating ||
-                    isLoadingPaymentModes ||
+                    !!profilesLoading ||
+                    !!isCreating ||
+                    !!isLoadingPaymentModes ||
                     !selectedProfile ||
                     paymentMethods.length === 0
                   }

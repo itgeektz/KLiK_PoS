@@ -660,7 +660,6 @@ export default function CustomerDetailsPage() {
           onClose={handleEditDraftCancel}
           invoice={draftInvoiceToEdit}
           onGoToCart={handleGoToCart}
-          onSubmitPayment={handleSubmitPayment}
           onSubmitDirect={handleSubmitDirect}
         />
       </div>
@@ -1049,7 +1048,6 @@ export default function CustomerDetailsPage() {
           onClose={handleEditDraftCancel}
           invoice={draftInvoiceToEdit}
           onGoToCart={handleGoToCart}
-          onSubmitPayment={handleSubmitPayment}
           onSubmitDirect={handleSubmitDirect}
         />
       </div>

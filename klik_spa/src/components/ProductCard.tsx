@@ -1,6 +1,6 @@
 "use client"
 
-import { useI18n } from "../hooks/useI18n"
+// import { useI18n } from "../hooks/useI18n"
 import type { MenuItem } from "../../types"
 
 interface ProductCardProps {
@@ -11,7 +11,7 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ item, onAddToCart, isMobile = false, scannerOnly = false }: ProductCardProps) {
-  const { t } = useI18n()
+  // const { t } = useI18n()
   const isOutOfStock = item.available <= 0
   const isDisabled = isOutOfStock || scannerOnly
 

@@ -5,11 +5,8 @@ import { useI18n } from "../hooks/useI18n"
 import { useNavigate } from "react-router-dom"
 import {
   User,
-
-  Shield,
   Palette,
   Globe,
-
   Camera,
   Moon,
   Sun,
@@ -23,7 +20,7 @@ import {
 export default function SettingsPage() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
-  const { language, setLanguage, t } = useI18n()
+  const { language, setLanguage, } = useI18n()
   const navigate = useNavigate()
   const [activeSection, setActiveSection] = useState<string>("profile")
 

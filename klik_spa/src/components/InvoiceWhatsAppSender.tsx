@@ -6,6 +6,7 @@ interface InvoiceWhatsAppSenderProps {
   customerName?: string;
   customerPhone?: string;
   invoiceNumber?: string;
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSuccess?: (result: any) => void;
   onError?: (error: string) => void;
 }
@@ -23,6 +24,7 @@ export const InvoiceWhatsAppSender: React.FC<InvoiceWhatsAppSenderProps> = ({
   const [invoiceNo, setInvoiceNo] = useState(invoiceNumber);
   const [message, setMessage] = useState('Your invoice is ready! Please find the PDF attached.');
   const [loading, setLoading] = useState(false);
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string>('');
 
@@ -49,6 +51,7 @@ export const InvoiceWhatsAppSender: React.FC<InvoiceWhatsAppSenderProps> = ({
       setResult(response);
       onSuccess?.(response);
       console.log('Invoice WhatsApp sent successfully:', response);
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const userFriendlyError = getUserFriendlyError(err.message || 'Failed to send invoice WhatsApp message', 'whatsapp');
       setError(userFriendlyError);

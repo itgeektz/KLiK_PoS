@@ -7,7 +7,7 @@ import { usePOSDetails } from "../hooks/usePOSProfile"
 import { Search, Settings, LogOut, Moon, Sun, Store } from "lucide-react"
 
 export default function NavBar() {
-  const { t, language, setLanguage } = useI18n()
+  const { language, setLanguage } = useI18n()
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { posDetails } = usePOSDetails()
@@ -39,12 +39,12 @@ export default function NavBar() {
     }
   }
 
-  const currentDate = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  })
+  // const currentDate = new Date().toLocaleDateString("en-US", {
+  //   weekday: "long",
+  //   day: "numeric",
+  //   month: "long",
+  //   year: "numeric",
+  // })
 
   // Generate initials from user's full name
   const getInitials = (name: string) => {

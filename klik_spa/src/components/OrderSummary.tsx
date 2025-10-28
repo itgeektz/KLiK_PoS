@@ -28,13 +28,13 @@ import { useCustomerPermission } from "../hooks/useCustomerPermission";
 import { useCartStore } from "../stores/cartStore";
 
 // Extended CartItem interface to include discount properties
-interface ExtendedCartItem extends CartItem {
-  discountPercentage?: number;
-  discountAmount?: number;
-  batchNumber?: string;
-  serialNumber?: string;
-  availableQuantity?: number;
-}
+// interface ExtendedCartItem extends CartItem {
+//   discountPercentage?: number;
+//   discountAmount?: number;
+//   batchNumber?: string;
+//   serialNumber?: string;
+//   availableQuantity?: number;
+// }
 
 interface OrderSummaryProps {
   cartItems: CartItem[];

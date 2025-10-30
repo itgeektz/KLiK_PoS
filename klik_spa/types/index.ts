@@ -78,6 +78,7 @@ export interface Invoice {
   company_website: string
   notes?: string
   currency_symbol?: string
+  cashier_name: string
 }
 
 export interface SalesInvoiceItem {
@@ -91,11 +92,12 @@ export interface SalesInvoiceItem {
   item_code?: string
   item_name?: string
   qty?: number
-  rate?: number
-  amount?: number
+  rate: number
+  amount: number
   description?: string
   returned_qty?: number
   available_qty?: number
+
 }
 
 export interface SalesInvoice {
@@ -120,7 +122,7 @@ export interface SalesInvoice {
   }>;
   amountPaid: number;
   changeGiven: number;
-  status: "Completed" | "Pending" | "Cancelled" | "Refunded" | "Paid" | "Unpaid" | "Overdue" | "Return";
+  status: "Draft" | "Completed" | "Pending" | "Cancelled" | "Refunded" | "Paid" | "Unpaid" | "Overdue" | "Return";
   custom_zatca_submit_status?: string;
   refundAmount: number;
   notes: string;
@@ -132,6 +134,19 @@ export interface SalesInvoice {
   posting_time: string;
   posProfile?: string;
   custom_pos_opening_entry?: string;
+  invoice:[];
+  cashier_name:string;
+  customer_email:string;
+  customer_mobile_no:string;
+  outstanding_amount:number;
+  paid_amount:number;
+  grand_total:number;
+  rounding_adjustment:number;
+  total_taxes_and_charges:number;
+  total_discount_amount:number;
+  total:number;
+  taxes:[];
+  owner:string;
 }
 
 
@@ -209,6 +224,7 @@ export interface Customer {
     zipCode: string
     country: string
     addressType?: 'Billing' | 'Shipping' | 'Other'
+    streetName?: string
   }
   dateOfBirth?: string
   gender?: 'male' | 'female' | 'other'
@@ -230,6 +246,7 @@ export interface Customer {
 export interface PaymentMode {
   mode_of_payment: string;
   default?: 0 | 1;
+  name?: string;
 }
 
 export interface POSProfile {
@@ -254,5 +271,6 @@ export type AddressDoc = {
   email_id?: string;
   display?: string;
   county:string;
+  street_name:string;
   // ... add more as needed
 };

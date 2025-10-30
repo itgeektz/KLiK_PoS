@@ -1,4 +1,11 @@
 
+interface CurrentUser {
+  name?: string;
+  email?: string;
+  full_name: string;
+  role: string;
+  user_image?: string;
+}
 
 import { useState, useEffect } from 'react'
 import { useI18n } from "../hooks/useI18n"
@@ -6,20 +13,17 @@ import { usePOSOpeningStatus } from '../hooks/usePOSOpeningEntry'
 import RetailPOSLayout from "../components/RetailPOSLayout"
 import POSOpeningModal from '../components/PosOpeningEntryDialog'
 import erpnextAPI from '../services/erpnext-api'
-import { loadCachedItemsToCart, hasCachedDraftInvoiceItems, clearDraftInvoiceCache } from '../utils/draftInvoiceCache'
-import { useCartStore } from '../stores/cartStore'
+import { loadCachedItemsToCart, hasCachedDraftInvoiceItems } from '../utils/draftInvoiceCache'
 
 export default function MainPOSScreen() {
   const { isRTL } = useI18n()
   const [showOpeningModal, setShowOpeningModal] = useState(false)
   const [posReady, setPosReady] = useState(false)
-  const [currentUser, setCurrentUser] = useState(null)
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [userLoading, setUserLoading] = useState(true)
-  const [userError, setUserError] = useState(null)
+  const [userError, setUserError] = useState<string | null>(null)
   const [cacheLoaded, setCacheLoaded] = useState(false)
 
-  // Use cart store hook to ensure re-renders
-  const { cartItems } = useCartStore()
 
   // Check POS opening status
   const {
@@ -29,7 +33,7 @@ export default function MainPOSScreen() {
     refetch
   } = usePOSOpeningStatus()
 
-useEffect(() => {
+  useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
         setUserLoading(true)
@@ -52,9 +56,9 @@ useEffect(() => {
           const basicUser = await erpnextAPI.getCurrentUser()
           if (basicUser) {
             setCurrentUser({
-              name: basicUser,
-              email: basicUser,
-              full_name: basicUser,
+              name: basicUser as string,
+              email: basicUser as string,
+              full_name: basicUser as string,
               role: 'User'
             })
           } else {
@@ -64,7 +68,7 @@ useEffect(() => {
         }
       } catch (error) {
         console.error('Error fetching current user:', error)
-        setUserError(error.message || 'Failed to fetch user')
+        setUserError((error as Error).message || 'Failed to fetch user')
       } finally {
         setUserLoading(false)
       }
@@ -83,8 +87,7 @@ useEffect(() => {
         if (hasCached) {
           console.log('Loading cached draft invoice items to cart');
           await loadCachedItemsToCart();
-          // Don't clear cache here - let PaymentDialog handle it after invoice creation
-          // clearDraftInvoiceCache();
+
         }
 
         // Mark cache as loaded to prevent multiple executions
@@ -121,17 +124,27 @@ useEffect(() => {
 
   const handleOpeningClose = () => {
     setShowOpeningModal(false)
-
   }
 
   // Show loading screen while checking status
-  if (statusLoading) {
+  if (statusLoading || userLoading) {
     return (
       <div className={`min-h-screen bg-gray-50 ${isRTL ? "rtl" : "ltr"} flex items-center justify-center`}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Initializing POS</h2>
           <p className="text-gray-600">Checking your POS session status...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (userError) {
+    return (
+      <div className={`min-h-screen bg-gray-50 ${isRTL ? "rtl" : "ltr"} flex items-center justify-center`}>
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-red-600 mb-2">Error</h2>
+          <p className="text-gray-600">{userError}</p>
         </div>
       </div>
     )
@@ -164,7 +177,7 @@ useEffect(() => {
         isOpen={showOpeningModal}
         onClose={handleOpeningClose}
         onSuccess={handleOpeningSuccess}
-        currentUser={currentUser?.name}
+        currentUser={currentUser?.name || 'Unknown User'}
       />
     </div>
   )

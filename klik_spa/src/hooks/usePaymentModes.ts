@@ -7,6 +7,8 @@ interface PaymentMode {
   type?: string;
   account?: string;
   custom_currency?: string;
+  name?: string;
+  openingAmount?: number;
 }
 
 export function usePaymentModes(posProfile: string) {

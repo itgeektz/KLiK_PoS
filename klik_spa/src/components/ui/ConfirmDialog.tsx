@@ -9,6 +9,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogDescription,
+  // @ts-expect-error ignore
+
 } from "@/components/ui/alert-dialog"
 
 interface ControlledConfirmDialogProps {

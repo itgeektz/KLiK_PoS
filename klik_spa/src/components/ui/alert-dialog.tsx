@@ -3,7 +3,9 @@
 import * as React from "react"
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 
+// @ts-expect-error ignore
 import { cn } from "@/lib/utils"
+// @ts-expect-error ignore
 import { buttonVariants } from "@/components/ui/button"
 
 function AlertDialog({

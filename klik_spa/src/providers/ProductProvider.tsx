@@ -169,6 +169,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
       setLastUpdated(new Date());
 
       // console.log(`Products loaded: ${products.length} items`);
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("Error fetching products:", error);
       setError(error.message || "Unknown error occurred");
@@ -377,6 +378,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useProducts() {
   const context = useContext(ProductContext);
   if (context === undefined) {

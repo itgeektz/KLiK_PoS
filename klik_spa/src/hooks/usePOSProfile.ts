@@ -140,7 +140,7 @@ export function usePOSDetails() {
 
         const data = await response.json()
         if (response.ok && data.message) {
-          
+
           setPOSDetails(data.message as POSDetails)
         } else {
           throw new Error(data._server_messages || "Failed to fetch POS details")

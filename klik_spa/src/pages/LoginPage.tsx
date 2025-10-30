@@ -22,6 +22,7 @@ export default function LoginPage() {
 
       if (result.success) {
         // Redirect to the intended route or default to /pos
+        //eslint-disable-next-line @typescript-eslint/no-explicit-any
         const from = (location.state as any)?.from?.pathname || "/pos"
         navigate(from, { replace: true })
       } else {
@@ -30,6 +31,7 @@ export default function LoginPage() {
       }
     } catch (err) {
       setError("An unexpected error occurred. Please try again.")
+      console.error("Login error:", err)
     } finally {
       setLoading(false)
     }

@@ -24,15 +24,20 @@ interface DetectedBarcode {
   rawValue: string;
 }
 
-declare class BarcodeDetector {
-  constructor(options?: BarcodeDetectorOptions);
+interface BarcodeDetectorConstructor {
+  new (options?: BarcodeDetectorOptions): BarcodeDetectorInstance;
+}
+
+interface BarcodeDetectorInstance {
   detect(image: HTMLCanvasElement | HTMLVideoElement | ImageBitmap | ImageData): Promise<DetectedBarcode[]>;
 }
 
 declare global {
   interface Window {
-    BarcodeDetector?: typeof BarcodeDetector;
+    BarcodeDetector?: BarcodeDetectorConstructor;
   }
+  
+  const BarcodeDetector: BarcodeDetectorConstructor | undefined;
 }
 
 export {};

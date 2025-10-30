@@ -2,6 +2,7 @@ export interface Customer {
   id: string
   type: 'individual' | 'company' | 'walk-in'
   name: string
+  customer_name: string
   email: string
   phone: string
   address: {

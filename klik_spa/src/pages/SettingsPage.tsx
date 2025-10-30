@@ -25,8 +25,8 @@ import {
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { logout } = useAuth()
-  const { t, language, setLanguage, isRTL } = useI18n()
-  const { theme, setTheme, toggleTheme } = useTheme()
+  const { language, setLanguage, isRTL } = useI18n()
+  const { theme, setTheme } = useTheme()
   const [activeSection, setActiveSection] = useState("profile")
 
   const handleLogout = async () => {

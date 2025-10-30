@@ -1,3 +1,4 @@
+// @ts-expect-error ignore
 import React, { createContext, useState, ReactNode } from 'react';
 
 interface I18nContextType {
@@ -5,6 +6,7 @@ interface I18nContextType {
   changeLocale: (newLocale: string) => void;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const I18nContext = createContext<I18nContextType | null>(null);
 
 export const I18nProvider = ({ children }: { children: ReactNode }) => {

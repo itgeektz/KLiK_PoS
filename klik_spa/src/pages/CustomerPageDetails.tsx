@@ -90,13 +90,6 @@ export default function CustomerDetailsPage() {
   const customerInvoices = useMemo(() => {
     if (isLoading || error || !customer) return [];
 
-    console.log('CustomerPageDetails: Filtering invoices for customer:', {
-      customerName: customer.name,
-      customerId: customer.id,
-      totalInvoices: invoices.length,
-      sampleInvoice: invoices[0]
-    });
-
     return invoices.filter((invoice) => {
       // Invoices are already filtered by customer in the hook, so we only apply other filters
       const matchesSearch =

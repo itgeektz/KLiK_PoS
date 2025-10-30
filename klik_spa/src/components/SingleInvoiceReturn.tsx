@@ -137,7 +137,6 @@ export default function SingleInvoiceReturn({
         }
 
         for (const item of itemsArray) {
-        console.log('Processing item:', item);
 
         // Get returned quantity for each item
         const returnedData = await getReturnedQty(
@@ -156,7 +155,6 @@ export default function SingleInvoiceReturn({
         const rate = Number(item.rate ?? item.unitPrice ?? 0);
         const amount = Number(item.amount ?? item.total ?? (qty * rate));
 
-        console.log('Extracted values:', { itemCode, itemName, qty, rate, amount, returnedQty });
 
         items.push({
           item_code: itemCode,
@@ -222,7 +220,6 @@ export default function SingleInvoiceReturn({
         returnAmount: returnAmount
       };
 
-      console.log('Creating return with payment method:', selectedPaymentMethod, 'Amount:', returnAmount);
 
       const result = await createPartialReturn(invoiceName, itemsToReturn, selectedPaymentMethod, returnAmount);
 

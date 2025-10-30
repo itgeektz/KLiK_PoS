@@ -52,7 +52,6 @@ export function ProductProvider({ children }: ProductProviderProps) {
           // console.log(`Loaded ${products.length} products from cache`);
           return products;
         } else {
-          console.log('Product cache expired, clearing...');
           localStorage.removeItem(CACHE_KEY);
           localStorage.removeItem(CACHE_EXPIRY_KEY);
         }

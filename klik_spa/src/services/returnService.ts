@@ -125,7 +125,6 @@ export async function createPartialReturn(
     });
 
     const data = await response.json();
-    console.log('Partial return response:', data);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to create partial return');

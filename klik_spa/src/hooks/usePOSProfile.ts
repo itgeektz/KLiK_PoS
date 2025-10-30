@@ -140,10 +140,7 @@ export function usePOSDetails() {
 
         const data = await response.json()
         if (response.ok && data.message) {
-          // Debug: log active POS profile and current opening entry
-          console.log('[POS] Active Profile:', data.message?.name,
-            "| Opening Entry:", data.message?.current_opening_entry,
-            "| Currency:", data.message?.currency);
+          
           setPOSDetails(data.message as POSDetails)
         } else {
           throw new Error(data._server_messages || "Failed to fetch POS details")

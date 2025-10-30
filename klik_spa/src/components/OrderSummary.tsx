@@ -118,7 +118,7 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
         // Use item_code if available, otherwise fallback to item.id
         const itemCode = item.item_code || item.id;
         if (itemCode) {
-          console.log(`📡 Loading UOMs for item: ${itemCode} with customer: ${selectedCustomer?.id || 'None'}`);
+          // console.log(`📡 Loading UOMs for item: ${itemCode} with customer: ${selectedCustomer?.id || 'None'}`);
           const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
           const response = await fetch(`/api/method/klik_pos.api.item.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
             method: 'GET',
@@ -174,7 +174,7 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
       // Use item_code if available, otherwise fallback to item.id
       const itemCode = item.item_code || item.id;
       if (itemCode) {
-        console.log(`📡 API Call: get_item_uoms_and_prices for ${itemCode} with customer: ${selectedCustomer?.id || 'None'}`);
+        // console.log(`📡 API Call: get_item_uoms_and_prices for ${itemCode} with customer: ${selectedCustomer?.id || 'None'}`);
         const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
         const response = await fetch(`/api/method/klik_pos.api.item.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
           method: 'GET',
@@ -184,7 +184,7 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
 
         if (response.ok) {
           const data = await response.json();
-          console.log(`📦 API Response:`, data.message);
+          // console.log(`📦 API Response:`, data.message);
 
           if (data?.message?.uoms) {
             //eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -413,9 +413,9 @@ export default function OrderSummary({
   const [userRemovedDefaultCustomer, setUserRemovedDefaultCustomer] = useState(false);
 
   // Debug selectedCustomer changes
-  useEffect(() => {
-    console.log();
-  }, [selectedCustomer]);
+  // useEffect(() => {
+  //   console.log();
+  // }, [selectedCustomer]);
 
   // Update prices when customer changes
   useEffect(() => {
@@ -450,10 +450,10 @@ export default function OrderSummary({
 
   // UOM change handler
   const handleUOMChange = useCallback((itemId: string, selectedUOM: string, newPrice: number) => {
-    console.log(`🛒 Cart Update Started:`);
-    console.log(`  Item ID: ${itemId}`);
-    console.log(`  New UOM: ${selectedUOM}`);
-    console.log(`  New Price: $${newPrice}`);
+    // console.log(`🛒 Cart Update Started:`);
+    // console.log(`  Item ID: ${itemId}`);
+    // console.log(`  New UOM: ${selectedUOM}`);
+    // console.log(`  New Price: $${newPrice}`);
 
     // Find the current item before update
     const currentItem = cartItems.find(item => item.id === itemId);
@@ -772,7 +772,6 @@ export default function OrderSummary({
     try {
       const success = await refreshStockOnly();
       if (success) {
-        console.log("OrderSummary: Stock refreshed successfully - cashier can now see updated availability");
         // toast.success("Stock updated - ready for next order!");
       } else {
         console.log("OrderSummary: No stock updates needed");
@@ -781,10 +780,8 @@ export default function OrderSummary({
       // Also update batch quantities for items that were in the cart
       const cartItemCodes = cartItems.map(item => item.item_code || item.id);
       if (cartItemCodes.length > 0) {
-        console.log("OrderSummary: Updating batch quantities for cart items:", cartItemCodes);
         try {
           await updateBatchQuantitiesForItems(cartItemCodes);
-          console.log("OrderSummary: Batch quantities updated successfully");
         } catch (error) {
           console.error("OrderSummary: Failed to update batch quantities:", error);
         }

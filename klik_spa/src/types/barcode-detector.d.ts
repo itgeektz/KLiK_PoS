@@ -36,7 +36,7 @@ declare global {
   interface Window {
     BarcodeDetector?: BarcodeDetectorConstructor;
   }
-  
+
   const BarcodeDetector: BarcodeDetectorConstructor | undefined;
 }
 

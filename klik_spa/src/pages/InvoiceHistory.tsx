@@ -979,7 +979,7 @@ const getStatusBadge = (status: string) => {
                   {filteredCustomers && filteredCustomers.length > 0 ? (
                     filteredCustomers.map((customer) => (
                       <button
-                                      
+
                         key={customer.name || customer.customer_name || Math.random()}
                         onClick={() => handleCustomerSelect(customer.name || customer.customer_name)}
                         className="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

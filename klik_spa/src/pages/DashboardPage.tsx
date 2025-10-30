@@ -32,7 +32,7 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const isMobile = useMediaQuery("(max-width: 1024px)")
   const { posDetails } = usePOSDetails()
-  
+
   const { invoices, isLoading: invoicesLoading } = useSalesInvoices()
   const { userInfo, isLoading: userInfoLoading } = useUserInfo()
   // Blank => current POS opening session
@@ -158,8 +158,8 @@ export default function DashboardPage() {
       if (timeParts.length >= 2) {
         // @ts-expect-error just ignore
         const hour = `${timeParts[0].padStart(2, '0')}:00`
-        
-if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {         
+
+if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
    // @ts-expect-error just ignore
           hourlySales[hour] += invoice.totalAmount
         }
@@ -1323,7 +1323,7 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
               </div>
             </div>
           )}
-         
+
 
           {/* Enhanced Top Cashier */}
           <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-gray-700">
@@ -1362,7 +1362,7 @@ if (Object.prototype.hasOwnProperty.call(hourlySales, hour)) {
             )}
           </div>
 
-         
+
         </div>
 
         {/* Bottom Section */}

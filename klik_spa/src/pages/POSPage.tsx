@@ -87,7 +87,7 @@ export default function MainPOSScreen() {
         if (hasCached) {
           console.log('Loading cached draft invoice items to cart');
           await loadCachedItemsToCart();
-        
+
         }
 
         // Mark cache as loaded to prevent multiple executions

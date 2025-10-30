@@ -953,7 +953,7 @@ export default function ClosingShiftPage() {
                             <Eye className="w-4 h-4" />
                             <span>View</span>
                           </button>
-                         
+
                           {invoice.status === "Draft" && (
                             <button
                               onClick={() => handleDeleteClick(invoice)}

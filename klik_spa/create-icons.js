@@ -8,7 +8,7 @@ async function createIcons() {
 
 	// Create different icon sizes
 	const sizes = [
-		{ size: 192, filename: "icon-192x192.png" },
+		{ size: 192, filename: "icon-512x512.png" },
 		{ size: 512, filename: "icon-512x512.png" },
 	];
 

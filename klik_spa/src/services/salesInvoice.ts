@@ -15,7 +15,6 @@ const csrfToken = window.csrf_token;
   });
 
   const result = await response.json();
-  // console.log("Invoice create result:", result);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, 'Failed to create invoice');
@@ -29,10 +28,6 @@ const csrfToken = window.csrf_token;
 export async function createSalesInvoice(data: any) {
   const csrfToken = window.csrf_token;
 
-  // Add performance timing
-  const startTime = performance.now();
-  // console.log('Starting invoice creation...');
-
   const response = await fetch('/api/method/klik_pos.api.sales_invoice.create_and_submit_invoice', {
     method: 'POST',
     headers: {
@@ -44,11 +39,7 @@ export async function createSalesInvoice(data: any) {
   });
 
   const result = await response.json();
-  const endTime = performance.now();
-  const processingTime = endTime - startTime;
 
-  console.log(`Invoice creation completed in ${processingTime.toFixed(2)}ms`);
-  console.log("Invoice create result:", result);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, 'Failed to create invoice');

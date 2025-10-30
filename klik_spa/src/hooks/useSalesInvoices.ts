@@ -35,8 +35,6 @@ export function useSalesInvoices(searchTerm: string = "") {
 
     try {
       const start = page * LIMIT;
-      const frontendStartTime = performance.now();
-      console.log(`🚀 Frontend: Fetching sales invoices - page: ${page}, start: ${start}, limit: ${LIMIT}, search: ${debouncedSearchTerm}`);
 
       const searchParam = debouncedSearchTerm ? `&search=${encodeURIComponent(debouncedSearchTerm)}` : '';
       const response = await fetch(
@@ -51,16 +49,12 @@ export function useSalesInvoices(searchTerm: string = "") {
         }
       );
 
-      const networkTime = performance.now();
-      console.log(`📊 Frontend: Network request completed in ${(networkTime - frontendStartTime).toFixed(2)}ms`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const resData = await response.json();
-      const parseTime = performance.now();
-
       if (!resData.message || !resData.message.success) {
         throw new Error(resData.message?.error || resData.error || "Failed to fetch invoices");
       }
@@ -144,9 +138,6 @@ export function useSalesInvoices(searchTerm: string = "") {
         };
       });
 
-      const transformTime = performance.now();
-      console.log(`📊 Frontend: Data transformation completed in ${(transformTime - parseTime).toFixed(2)}ms`);
-
       if (append) {
         setInvoices(prev => [...prev, ...transformed]);
         setTotalLoaded(prev => prev + newInvoicesCount);
@@ -154,9 +145,6 @@ export function useSalesInvoices(searchTerm: string = "") {
         setInvoices(transformed);
         setTotalLoaded(newInvoicesCount);
       }
-
-      const totalFrontendTime = performance.now() - frontendStartTime;
-      console.log(`📊 Frontend: TOTAL TIME: ${totalFrontendTime.toFixed(2)}ms for ${newInvoicesCount} invoices (page ${page})`);
 
       setCurrentPage(page);
       setError(null);

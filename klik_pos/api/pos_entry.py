@@ -273,6 +273,98 @@ def _calculate_payment_reconciliation(opening_entry, data):
 	return reconciliation
 
 
+def _calculate_closing_entry_totals(opening_entry_name):
+	"""
+	Calculate total_quantity, net_total, and grand_total from all Sales Invoices
+	linked to the opening entry. This matches standard Frappe POS behavior.
+	"""
+	from frappe.utils import flt
+
+	try:
+		# Aggregate all totals in a single efficient SQL query
+		aggregated = frappe.db.sql(
+			"""
+			SELECT 
+				COALESCE(SUM(si.net_total), 0) as net_total,
+				COALESCE(SUM(si.grand_total), 0) as grand_total,
+				COALESCE(SUM(sii.qty), 0) as total_quantity
+			FROM `tabSales Invoice` si
+			LEFT JOIN `tabSales Invoice Item` sii ON si.name = sii.parent
+			WHERE si.custom_pos_opening_entry = %s
+			  AND si.docstatus = 1
+			""",
+			(opening_entry_name,),
+			as_dict=True,
+		)
+
+		if aggregated and len(aggregated) > 0:
+			net_total = flt(aggregated[0].net_total or 0)
+			grand_total = flt(aggregated[0].grand_total or 0)
+			total_quantity = flt(aggregated[0].total_quantity or 0)
+		else:
+			net_total = grand_total = total_quantity = 0.0
+
+		return {
+			"total_quantity": total_quantity,
+			"net_total": net_total,
+			"grand_total": grand_total,
+		}
+	except Exception as e:
+		frappe.logger().error(
+			f"Error calculating closing entry totals: {frappe.get_traceback()}"
+		)
+		frappe.log_error(
+			message=f"Error calculating totals: {str(e)}\n{traceback.format_exc()}",
+			title="Closing Entry Totals Calculation Error",
+		)
+		# Return zeros on error to avoid blocking closing entry creation
+		return {"total_quantity": 0.0, "net_total": 0.0, "grand_total": 0.0}
+
+
+def _populate_sales_invoices_to_closing_entry(closing_doc, opening_entry_name):
+	"""
+	Populate the custom_sales_invoice child table with all Sales Invoices
+	linked to the opening entry.
+	"""
+	try:
+		# Fetch all submitted Sales Invoices linked to this opening entry
+		invoices = frappe.get_all(
+			"Sales Invoice",
+			filters={
+				"custom_pos_opening_entry": opening_entry_name,
+				"docstatus": 1,  # Only submitted invoices
+			},
+			fields=["name", "customer", "posting_date", "grand_total"],
+			order_by="posting_date, posting_time",
+		)
+
+		# Append each invoice to the child table
+		for invoice in invoices:
+			closing_doc.append(
+				"custom_sales_invoice",
+				{
+					"sales_invoice": invoice.name,
+					"customer": invoice.customer,
+					"posting_date": invoice.posting_date,
+					"amount": invoice.grand_total,
+				},
+			)
+
+		if invoices:
+			frappe.logger().info(
+				f"✅ Populated {len(invoices)} sales invoices to closing entry {closing_doc.name}"
+			)
+	except Exception as e:
+		# Log error but don't block closing entry creation
+		frappe.logger().error(
+			f"Failed to populate sales invoices to closing entry: {frappe.get_traceback()}"
+		)
+		frappe.log_error(
+			message=f"Error populating sales invoices: {str(e)}\n{traceback.format_exc()}",
+			title="Sales Invoice Population Error",
+		)
+
+
 def _create_and_submit_closing_doc(opening_entry, data, payment_data, user):
 	"""Create, populate, and submit the POS Closing Entry document."""
 	doc = frappe.new_doc("POS Closing Entry")
@@ -285,10 +377,14 @@ def _create_and_submit_closing_doc(opening_entry, data, payment_data, user):
 	doc.posting_date = today()
 	doc.pos_opening_entry = opening_entry.name
 
-	# Set totals
-	doc.total_quantity = data.get("total_quantity")
-	doc.net_total = data.get("net_total")
-	doc.total_amount = data.get("total_amount")
+	# Calculate totals from Sales Invoices linked to opening entry
+	totals = _calculate_closing_entry_totals(opening_entry.name)
+	
+	# Set totals (use calculated values, fallback to frontend data if calculation fails)
+	doc.total_quantity = totals.get("total_quantity") or data.get("total_quantity") or 0.0
+	doc.net_total = totals.get("net_total") or data.get("net_total") or 0.0
+	doc.total_amount = totals.get("grand_total") or data.get("total_amount") or 0.0
+	doc.grand_total = totals.get("grand_total") or data.get("total_amount") or 0.0
 
 	# Append payment reconciliation
 	for payment in payment_data:
@@ -304,6 +400,9 @@ def _create_and_submit_closing_doc(opening_entry, data, payment_data, user):
 				"amount": tax.get("amount"),
 			},
 		)
+
+	# Populate sales invoices linked to this opening entry
+	_populate_sales_invoices_to_closing_entry(doc, opening_entry.name)
 
 	# Submit and link back to opening entry
 	doc.submit()

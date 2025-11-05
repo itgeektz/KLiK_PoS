@@ -42,7 +42,7 @@ def get_sales_tax_categories():
 			default_template = pos_doc.taxes_and_charges
 		except Exception:
 			pass
-
+	
 		return {"success": True, "data": result, "default": default_template}
 	except Exception as e:
 		frappe.log_error("Tax Fetch Failed", str(e))

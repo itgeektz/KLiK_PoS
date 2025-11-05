@@ -284,7 +284,7 @@ def _calculate_closing_entry_totals(opening_entry_name):
 		# Aggregate all totals in a single efficient SQL query
 		aggregated = frappe.db.sql(
 			"""
-			SELECT 
+			SELECT
 				COALESCE(SUM(si.net_total), 0) as net_total,
 				COALESCE(SUM(si.grand_total), 0) as grand_total,
 				COALESCE(SUM(sii.qty), 0) as total_quantity
@@ -310,11 +310,9 @@ def _calculate_closing_entry_totals(opening_entry_name):
 			"grand_total": grand_total,
 		}
 	except Exception as e:
-		frappe.logger().error(
-			f"Error calculating closing entry totals: {frappe.get_traceback()}"
-		)
+		frappe.logger().error(f"Error calculating closing entry totals: {frappe.get_traceback()}")
 		frappe.log_error(
-			message=f"Error calculating totals: {str(e)}\n{traceback.format_exc()}",
+			message=f"Error calculating totals: {e!s}\n{traceback.format_exc()}",
 			title="Closing Entry Totals Calculation Error",
 		)
 		# Return zeros on error to avoid blocking closing entry creation
@@ -356,11 +354,9 @@ def _populate_sales_invoices_to_closing_entry(closing_doc, opening_entry_name):
 			)
 	except Exception as e:
 		# Log error but don't block closing entry creation
-		frappe.logger().error(
-			f"Failed to populate sales invoices to closing entry: {frappe.get_traceback()}"
-		)
+		frappe.logger().error(f"Failed to populate sales invoices to closing entry: {frappe.get_traceback()}")
 		frappe.log_error(
-			message=f"Error populating sales invoices: {str(e)}\n{traceback.format_exc()}",
+			message=f"Error populating sales invoices: {e!s}\n{traceback.format_exc()}",
 			title="Sales Invoice Population Error",
 		)
 
@@ -379,7 +375,7 @@ def _create_and_submit_closing_doc(opening_entry, data, payment_data, user):
 
 	# Calculate totals from Sales Invoices linked to opening entry
 	totals = _calculate_closing_entry_totals(opening_entry.name)
-	
+
 	# Set totals (use calculated values, fallback to frontend data if calculation fails)
 	doc.total_quantity = totals.get("total_quantity") or data.get("total_quantity") or 0.0
 	doc.net_total = totals.get("net_total") or data.get("net_total") or 0.0

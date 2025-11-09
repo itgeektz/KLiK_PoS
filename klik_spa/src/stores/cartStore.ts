@@ -74,7 +74,7 @@ export const useCartStore = create<CartState>()(
           }
 
           const newCartItems = [...state.cartItems, { ...item, price: finalPrice, quantity: 1 }];
-          
+
           set((state) => ({
             cartItems: newCartItems
           }));
@@ -129,7 +129,7 @@ export const useCartStore = create<CartState>()(
           }
 
           const newCartItems = [...state.cartItems, { ...item, price: finalPrice, quantity }];
-          
+
           set((state) => ({
             cartItems: newCartItems
           }));
@@ -230,7 +230,7 @@ export const useCartStore = create<CartState>()(
         set(() => ({
           selectedCustomer: customer
         }));
-        
+
         // Apply pricing rules when customer changes (pricing rules can be customer-specific)
         const state = get();
         if (state.cartItems.length > 0) {

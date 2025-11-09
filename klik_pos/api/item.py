@@ -1,7 +1,7 @@
 import frappe
+from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rule
 from erpnext.stock.doctype.batch.batch import get_batch_qty
 from erpnext.stock.utils import get_stock_balance
-from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rule
 from frappe import _
 
 from klik_pos.api.sales_invoice import get_current_pos_opening_entry
@@ -849,22 +849,14 @@ def apply_pricing_rules_to_cart(cart_items, customer=None):
 
 		if not erpnext_items:
 			return []
-		print("hello,",context)
+		print("hello,", context)
 		pricing_results = _apply_pricing_rules(erpnext_items, context)
 
-		result_items = _process_pricing_results(
-			pricing_results,
-			erpnext_items,
-			cart_items,
-			context
-		)
+		result_items = _process_pricing_results(pricing_results, erpnext_items, cart_items, context)
 		return result_items
 
 	except Exception as e:
-		frappe.log_error(
-			frappe.get_traceback(),
-			f"Error applying pricing rules to cart: {str(e)}"
-		)
+		frappe.log_error(frappe.get_traceback(), f"Error applying pricing rules to cart: {e!s}")
 		return cart_items
 
 
@@ -872,6 +864,7 @@ def _parse_cart_items(cart_items):
 	"""Parse cart items from JSON string if needed."""
 	if isinstance(cart_items, str):
 		import json
+
 		return json.loads(cart_items)
 	return cart_items
 
@@ -894,10 +887,7 @@ def _build_pricing_context(customer=None):
 
 	if customer:
 		customer_doc = frappe.get_cached_value(
-			"Customer",
-			customer,
-			["customer_group", "territory"],
-			as_dict=True
+			"Customer", customer, ["customer_group", "territory"], as_dict=True
 		)
 		if customer_doc:
 			context["customer_group"] = customer_doc.customer_group
@@ -915,12 +905,7 @@ def _prepare_erpnext_items(cart_items):
 		if not item_code:
 			continue
 
-		item_doc = frappe.get_cached_value(
-			"Item",
-			item_code,
-			["item_group", "brand"],
-			as_dict=True
-		)
+		item_doc = frappe.get_cached_value("Item", item_code, ["item_group", "brand"], as_dict=True)
 
 		if not item_doc:
 			continue
@@ -936,18 +921,20 @@ def _prepare_erpnext_items(cart_items):
 		base_price = price_info.get("price", 0) or item.get("price", 0)
 
 		item_qty = item.get("quantity", 1)
-		erpnext_items.append({
-			"doctype": "Sales Invoice Item",
-			"name": "",
-			"item_code": item_code,
-			"item_group": item_doc.item_group,
-			"brand": item_doc.brand or "",
-			"qty": item_qty,
-			"stock_qty": item_qty,  # filter_pricing_rules uses stock_qty for filtering
-			"price_list_rate": base_price,  # Use backend price, not cart price
-			"uom": item_uom,
-			"conversion_factor": 1.0,
-		})
+		erpnext_items.append(
+			{
+				"doctype": "Sales Invoice Item",
+				"name": "",
+				"item_code": item_code,
+				"item_group": item_doc.item_group,
+				"brand": item_doc.brand or "",
+				"qty": item_qty,
+				"stock_qty": item_qty,  # filter_pricing_rules uses stock_qty for filtering
+				"price_list_rate": base_price,  # Use backend price, not cart price
+				"uom": item_uom,
+				"conversion_factor": 1.0,
+			}
+		)
 
 	return erpnext_items
 
@@ -969,7 +956,6 @@ def _apply_pricing_rules(erpnext_items, context):
 	if context.get("customer"):
 		args_dict["customer"] = context["customer"]
 
-
 	# Add other optional fields
 	if context.get("price_list"):
 		args_dict["price_list"] = context["price_list"]
@@ -978,14 +964,14 @@ def _apply_pricing_rules(erpnext_items, context):
 
 	args = frappe._dict(args_dict)
 
-
 	try:
 		results = apply_pricing_rule(args, doc=None)
 	except Exception as e:
 		import traceback
+
 		frappe.log_error(
-			message=f"Error in apply_pricing_rule: {str(e)}\n{traceback.format_exc()}",
-			title="Pricing Rule Error"
+			message=f"Error in apply_pricing_rule: {e!s}\n{traceback.format_exc()}",
+			title="Pricing Rule Error",
 		)
 		results = []
 
@@ -1022,28 +1008,22 @@ def _process_pricing_results(pricing_results, erpnext_items, cart_items, context
 
 		# Check if pricing rule was applied
 		if not _has_pricing_rule(pricing_result):
-
 			# No pricing rule - get original price from backend
-			result_items.extend(_handle_no_pricing_rule(
-				erpnext_item,
-				[cart_item],  # Pass single item as list
-				context
-			))
+			result_items.extend(
+				_handle_no_pricing_rule(
+					erpnext_item,
+					[cart_item],  # Pass single item as list
+					context,
+				)
+			)
 			continue
 
 		# Pricing rule was applied - calculate discounted price
-		processed_item = _calculate_discounted_price(
-			cart_item,
-			pricing_result,
-			context
-		)
+		processed_item = _calculate_discounted_price(cart_item, pricing_result, context)
 		result_items.append(processed_item)
 
 	# Add unprocessed cart items (items not in erpnext_items)
-	processed_item_codes = {
-		item.get("id") or item.get("item_code")
-		for item in result_items
-	}
+	processed_item_codes = {item.get("id") or item.get("item_code") for item in result_items}
 	for cart_item in cart_items:
 		cart_item_code = cart_item.get("id") or cart_item.get("item_code")
 		if cart_item_code and cart_item_code not in processed_item_codes:
@@ -1063,6 +1043,7 @@ def _has_pricing_rule(pricing_result):
 def _extract_pricing_rule_names(pricing_result):
 	"""Extract pricing rule names from JSON string."""
 	import json
+
 	try:
 		pricing_rules_json = pricing_result.get("pricing_rules", "")
 		return json.loads(pricing_rules_json)
@@ -1083,21 +1064,19 @@ def _handle_no_pricing_rule(erpnext_item, cart_items, context):
 				cart_item_code,
 				price_list=context["price_list"],
 				customer=context["customer"],
-				uom=cart_item.get("uom")
+				uom=cart_item.get("uom"),
 			)
 			original_price = price_info.get("price", 0)
 
-			return [{
-				**cart_item,
-				"price": original_price,
-				"original_price": original_price,
-			}]
+			return [
+				{
+					**cart_item,
+					"price": original_price,
+					"original_price": original_price,
+				}
+			]
 
 	return []
-
-
-
-
 
 
 def _calculate_discounted_price(cart_item, pricing_result, context):
@@ -1108,7 +1087,7 @@ def _calculate_discounted_price(cart_item, pricing_result, context):
 		cart_item_code,
 		price_list=context["price_list"],
 		customer=context["customer"],
-		uom=cart_item.get("uom")
+		uom=cart_item.get("uom"),
 	)
 	original_price = price_info.get("price", 0)
 
@@ -1135,7 +1114,6 @@ def _apply_discount_logic(original_price, pricing_result):
 	discount_amount = pricing_result.get("discount_amount", 0) or 0
 	price_list_rate = pricing_result.get("price_list_rate")
 
-	
 	if price_list_rate is not None:
 		if pricing_rule_for == "Rate":
 			# Explicitly Rate type - use the rate
@@ -1167,10 +1145,7 @@ def _apply_discount_logic(original_price, pricing_result):
 
 def _add_unprocessed_items(result_items, cart_items):
 	"""Add cart items that weren't processed by pricing rules."""
-	processed_item_codes = {
-		item.get("id") or item.get("item_code")
-		for item in result_items
-	}
+	processed_item_codes = {item.get("id") or item.get("item_code") for item in result_items}
 
 	for cart_item in cart_items:
 		cart_item_code = cart_item.get("id") or cart_item.get("item_code")

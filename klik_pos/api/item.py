@@ -44,7 +44,9 @@ def fetch_item_balance(item_code: str, warehouse: str) -> float:
 		return 0
 
 
-def fetch_item_price(item_code: str, price_list: str | None = None, customer: str | None = None, uom: str | None = None) -> dict:
+def fetch_item_price(
+	item_code: str, price_list: str | None = None, customer: str | None = None, uom: str | None = None
+) -> dict:
 	"""
 	Get item price from Item Price doctype with customer-first priority.
 	If price_list is provided, use it. Otherwise, determine price list using customer-first priority.
@@ -97,7 +99,10 @@ def fetch_item_price(item_code: str, price_list: str | None = None, customer: st
 						order_by="modified desc",
 					)
 					if price_doc:
-						symbol = frappe.db.get_value("Currency", price_doc.currency, "symbol") or price_doc.currency
+						symbol = (
+							frappe.db.get_value("Currency", price_doc.currency, "symbol")
+							or price_doc.currency
+						)
 						return {
 							"price": price_doc.price_list_rate,
 							"currency": price_doc.currency,
@@ -155,7 +160,9 @@ def fetch_item_price(item_code: str, price_list: str | None = None, customer: st
 					as_dict=True,
 				)
 				if price_doc:
-					symbol = frappe.db.get_value("Currency", price_doc.currency, "symbol") or price_doc.currency
+					symbol = (
+						frappe.db.get_value("Currency", price_doc.currency, "symbol") or price_doc.currency
+					)
 					return {
 						"price": price_doc.price_list_rate,
 						"currency": price_doc.currency,

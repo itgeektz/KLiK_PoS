@@ -61,7 +61,8 @@ export const useCartStore = create<CartState>()(
 
           if (state.selectedCustomer) {
             try {
-              const priceInfo = await getItemPriceForCustomer(item.id, state.selectedCustomer.id);
+              // Pass the item's UOM to ensure we get the price for the correct UOM
+              const priceInfo = await getItemPriceForCustomer(item.id, state.selectedCustomer.id, item.uom);
               if (priceInfo.success) {
                 finalPrice = priceInfo.price;
               }
@@ -107,7 +108,8 @@ export const useCartStore = create<CartState>()(
 
           if (state.selectedCustomer) {
             try {
-              const priceInfo = await getItemPriceForCustomer(item.id, state.selectedCustomer.id);
+              // Pass the item's UOM to ensure we get the price for the correct UOM
+              const priceInfo = await getItemPriceForCustomer(item.id, state.selectedCustomer.id, item.uom);
               if (priceInfo.success) {
                 finalPrice = priceInfo.price;
               }

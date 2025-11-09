@@ -44,24 +44,32 @@ def fetch_item_balance(item_code: str, warehouse: str) -> float:
 		return 0
 
 
-def fetch_item_price(item_code: str, price_list: str | None = None, customer: str | None = None) -> dict:
+def fetch_item_price(item_code: str, price_list: str | None = None, customer: str | None = None, uom: str | None = None) -> dict:
 	"""
 	Get item price from Item Price doctype with customer-first priority.
 	If price_list is provided, use it. Otherwise, determine price list using customer-first priority.
+	If uom is provided, filter by that UOM. Otherwise, get latest price regardless of UOM.
 	"""
 	try:
 		# Determine the price list to use
 		if not price_list:
 			price_list = get_price_list_with_customer_priority(customer)
 
+		# Build base filters
+		price_filters = {
+			"item_code": item_code,
+			"selling": 1,
+		}
+
+		# Add UOM filter if provided
+		if uom:
+			price_filters["uom"] = uom
+
 		# If price_list is null or empty, get latest price without price_list filter
 		if not price_list or price_list.strip() == "":
 			price_doc = frappe.get_value(
 				"Item Price",
-				{
-					"item_code": item_code,
-					"selling": 1,
-				},
+				price_filters,
 				["price_list_rate", "currency"],
 				as_dict=True,
 				order_by="modified desc",
@@ -75,6 +83,27 @@ def fetch_item_price(item_code: str, price_list: str | None = None, customer: st
 					"currency_symbol": symbol,
 				}
 			else:
+				# If UOM was specified but no price found, try without UOM filter as fallback
+				if uom:
+					fallback_filters = {
+						"item_code": item_code,
+						"selling": 1,
+					}
+					price_doc = frappe.get_value(
+						"Item Price",
+						fallback_filters,
+						["price_list_rate", "currency"],
+						as_dict=True,
+						order_by="modified desc",
+					)
+					if price_doc:
+						symbol = frappe.db.get_value("Currency", price_doc.currency, "symbol") or price_doc.currency
+						return {
+							"price": price_doc.price_list_rate,
+							"currency": price_doc.currency,
+							"currency_symbol": symbol,
+						}
+
 				# Fallback to item's default price if no price found
 				item_doc = frappe.get_doc("Item", item_code)
 				default_currency = (
@@ -96,13 +125,10 @@ def fetch_item_price(item_code: str, price_list: str | None = None, customer: st
 				}
 
 		# Normal price list lookup
+		price_filters["price_list"] = price_list
 		price_doc = frappe.get_value(
 			"Item Price",
-			{
-				"item_code": item_code,
-				"price_list": price_list,
-				"selling": 1,
-			},
+			price_filters,
 			["price_list_rate", "currency"],
 			as_dict=True,
 		)
@@ -115,6 +141,27 @@ def fetch_item_price(item_code: str, price_list: str | None = None, customer: st
 				"currency_symbol": symbol,
 			}
 		else:
+			# If UOM was specified but no price found, try without UOM filter as fallback
+			if uom:
+				fallback_filters = {
+					"item_code": item_code,
+					"price_list": price_list,
+					"selling": 1,
+				}
+				price_doc = frappe.get_value(
+					"Item Price",
+					fallback_filters,
+					["price_list_rate", "currency"],
+					as_dict=True,
+				)
+				if price_doc:
+					symbol = frappe.db.get_value("Currency", price_doc.currency, "symbol") or price_doc.currency
+					return {
+						"price": price_doc.price_list_rate,
+						"currency": price_doc.currency,
+						"currency_symbol": symbol,
+					}
+
 			# Fallback to item's default price if no price list entry found
 			item_doc = frappe.get_doc("Item", item_code)
 			default_currency = (
@@ -138,17 +185,18 @@ def fetch_item_price(item_code: str, price_list: str | None = None, customer: st
 
 
 @frappe.whitelist(allow_guest=True)
-def get_item_price_for_customer(item_code, customer=None):
+def get_item_price_for_customer(item_code, customer=None, uom=None):
 	"""
 	Get item price for a specific customer using customer-first price list priority.
 	This is used when adding items to cart or when customer changes.
+	If uom is provided, filter by that UOM to ensure price matches the item's UOM.
 	"""
 	try:
 		if not item_code:
-			return {"price": 0, "currency": "SAR", "currency_symbol": "SAR"}
+			return {"success": False, "price": 0, "currency": "SAR", "currency_symbol": "SAR"}
 
-		# Get price using customer-first priority
-		price_info = fetch_item_price(item_code, customer=customer)
+		# Get price using customer-first priority, with UOM filter if provided
+		price_info = fetch_item_price(item_code, customer=customer, uom=uom)
 
 		return {
 			"success": True,
@@ -431,8 +479,11 @@ def get_items_with_balance_and_price():
 			if hide_unavailable and balance <= 0:
 				continue
 
-			# Get price info only for available items
-			price_info = fetch_item_price(item["name"], price_list)
+			# Get the default UOM to display (stock_uom)
+			default_uom = item.get("stock_uom", "Nos")
+
+			# Get price info only for available items, matching the UOM being displayed
+			price_info = fetch_item_price(item["name"], price_list, uom=default_uom)
 
 			primary_barcode = barcode_map.get(item["name"])
 
@@ -449,7 +500,7 @@ def get_items_with_balance_and_price():
 					"image": item.get("image"),
 					"sold": 0,
 					"preparationTime": 10,
-					"uom": item.get("stock_uom", "Nos"),
+					"uom": default_uom,
 					"barcode": primary_barcode,
 				}
 			)

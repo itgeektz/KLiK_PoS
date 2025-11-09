@@ -1,6 +1,7 @@
 import frappe
 from erpnext.stock.doctype.batch.batch import get_batch_qty
 from erpnext.stock.utils import get_stock_balance
+from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rule
 from frappe import _
 
 from klik_pos.api.sales_invoice import get_current_pos_opening_entry
@@ -383,10 +384,8 @@ def get_items_with_balance_and_price():
 		frappe.log_error(frappe.get_traceback(), "get_current_pos_profile failed")
 		pos_doc = frappe._dict({})
 
-	# Resolve warehouse with robust fallbacks
 	warehouse = getattr(pos_doc, "warehouse", None)
 	if not warehouse:
-		# Try company defaults
 		try:
 			default_company = frappe.defaults.get_user_default("Company") or frappe.db.get_single_value(
 				"Global Defaults", "default_company"
@@ -395,7 +394,6 @@ def get_items_with_balance_and_price():
 		except Exception:
 			warehouse = None
 	if not warehouse:
-		# Last resort: pick any leaf warehouse
 		try:
 			any_wh = frappe.get_all("Warehouse", filters={"is_group": 0}, fields=["name"], limit=1)
 			warehouse = any_wh[0]["name"] if any_wh else None
@@ -407,7 +405,6 @@ def get_items_with_balance_and_price():
 	hide_unavailable = getattr(pos_doc, "hide_unavailable_items", False)
 
 	try:
-		# Build base query with early stock filtering if hide_unavailable is enabled
 		if hide_unavailable:
 			base_query = [
 				"SELECT DISTINCT i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom",
@@ -436,7 +433,6 @@ def get_items_with_balance_and_price():
 			sql = "\n".join(base_query)
 			items = frappe.db.sql(sql, tuple(params_list), as_dict=True)
 		else:
-			# Original logic for when hide_unavailable is disabled
 			# Use SQL to get items with barcode information
 			base_query = [
 				"SELECT DISTINCT i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom",
@@ -459,7 +455,6 @@ def get_items_with_balance_and_price():
 			sql = "\n".join(base_query)
 			items = frappe.db.sql(sql, tuple(params_list), as_dict=True)
 
-		# Get barcodes for all items in a separate query (portable across DBs)
 		item_codes = [item["name"] for item in items]
 		barcode_map = {}
 		if item_codes:
@@ -549,7 +544,6 @@ def get_stock_updates():
                 AND b.actual_qty > 0
             """
 
-			# Add item group filter if specified in POS profile
 			params = [warehouse]
 			if pos_doc.item_groups:
 				item_group_names = [d.item_group for d in pos_doc.item_groups if d.item_group]
@@ -583,7 +577,6 @@ def get_stock_updates():
 			for item_code in chunk:
 				try:
 					balance = get_stock_balance(item_code, warehouse) or 0
-					# Only include items with stock if hide_unavailable is enabled
 					if not hide_unavailable or balance > 0:
 						stock_updates[item_code] = balance
 				except Exception:
@@ -619,13 +612,11 @@ def get_items_stock_batch(item_codes: str):
 	hide_unavailable = getattr(pos_doc, "hide_unavailable_items", False)
 
 	try:
-		# Parse the comma-separated item codes
 		item_codes_list = [code.strip() for code in item_codes.split(",") if code.strip()]
 
 		stock_updates = {}
 		for item_code in item_codes_list:
 			balance = fetch_item_balance(item_code, warehouse)
-			# Only include items with stock if hide_unavailable is enabled
 			if not hide_unavailable or balance > 0:
 				stock_updates[item_code] = balance
 
@@ -735,7 +726,6 @@ def get_item_uoms_and_prices(item_code, customer=None):
 
 		uom_data = []
 
-		# Add additional UOMs from Item UOM child table
 		for uom_row in item_doc.get("uoms", []):
 			uom_data.append(
 				{
@@ -745,7 +735,6 @@ def get_item_uoms_and_prices(item_code, customer=None):
 				}
 			)
 
-		# Get prices for each UOM using customer-first price list priority
 		for uom_info in uom_data:
 			if price_list:
 				price_list_rate = frappe.db.get_value(
@@ -836,3 +825,354 @@ def get_serial_nos_for_item(item_code: str):
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), f"Get Serial Nos Error for {item_code}")
 		return []
+
+
+@frappe.whitelist(allow_guest=True)
+def apply_pricing_rules_to_cart(cart_items, customer=None):
+	"""
+	Apply ERPNext pricing rules to cart items.
+
+	Args:
+		cart_items: List of cart items with item_code, qty, price, uom, etc.
+		customer: Customer ID (optional)
+
+	Returns:
+		List of items with updated prices, discounts, and pricing rule info
+	"""
+	try:
+		cart_items = _parse_cart_items(cart_items)
+		if not cart_items:
+			return []
+
+		context = _build_pricing_context(customer)
+		erpnext_items = _prepare_erpnext_items(cart_items)
+
+		if not erpnext_items:
+			return []
+		print("hello,",context)
+		pricing_results = _apply_pricing_rules(erpnext_items, context)
+
+		result_items = _process_pricing_results(
+			pricing_results,
+			erpnext_items,
+			cart_items,
+			context
+		)
+		return result_items
+
+	except Exception as e:
+		frappe.log_error(
+			frappe.get_traceback(),
+			f"Error applying pricing rules to cart: {str(e)}"
+		)
+		return cart_items
+
+
+def _parse_cart_items(cart_items):
+	"""Parse cart items from JSON string if needed."""
+	if isinstance(cart_items, str):
+		import json
+		return json.loads(cart_items)
+	return cart_items
+
+
+def _build_pricing_context(customer=None):
+	"""Build context object with POS profile, company, and customer details."""
+	pos_profile = get_current_pos_profile()
+	company = pos_profile.company if pos_profile else frappe.defaults.get_user_default("Company")
+
+	context = {
+		"pos_profile": pos_profile,
+		"company": company,
+		"warehouse": pos_profile.warehouse if pos_profile else None,
+		"price_list": pos_profile.selling_price_list if pos_profile else None,
+		"currency": frappe.get_cached_value("Company", company, "default_currency") or "SAR",
+		"customer": customer,
+		"customer_group": None,
+		"territory": None,
+	}
+
+	if customer:
+		customer_doc = frappe.get_cached_value(
+			"Customer",
+			customer,
+			["customer_group", "territory"],
+			as_dict=True
+		)
+		if customer_doc:
+			context["customer_group"] = customer_doc.customer_group
+			context["territory"] = customer_doc.territory
+
+	return context
+
+
+def _prepare_erpnext_items(cart_items):
+	"""Convert cart items to ERPNext pricing rule format."""
+	erpnext_items = []
+
+	for item in cart_items:
+		item_code = item.get("id") or item.get("item_code")
+		if not item_code:
+			continue
+
+		item_doc = frappe.get_cached_value(
+			"Item",
+			item_code,
+			["item_group", "brand"],
+			as_dict=True
+		)
+
+		if not item_doc:
+			continue
+
+		# Get original price from backend to pass to pricing rule
+		# This ensures pricing rules work with correct base price
+		item_uom = item.get("uom") or frappe.get_cached_value("Item", item_code, "stock_uom")
+		pos_profile = get_current_pos_profile()
+		price_list = pos_profile.selling_price_list if pos_profile else None
+		# Use customer from context if available (will be set in _build_pricing_context)
+		customer = None  # Will be passed in context to apply_pricing_rule
+		price_info = fetch_item_price(item_code, price_list=price_list, customer=customer, uom=item_uom)
+		base_price = price_info.get("price", 0) or item.get("price", 0)
+
+		item_qty = item.get("quantity", 1)
+		erpnext_items.append({
+			"doctype": "Sales Invoice Item",
+			"name": "",
+			"item_code": item_code,
+			"item_group": item_doc.item_group,
+			"brand": item_doc.brand or "",
+			"qty": item_qty,
+			"stock_qty": item_qty,  # filter_pricing_rules uses stock_qty for filtering
+			"price_list_rate": base_price,  # Use backend price, not cart price
+			"uom": item_uom,
+			"conversion_factor": 1.0,
+		})
+
+	return erpnext_items
+
+
+def _apply_pricing_rules(erpnext_items, context):
+	"""Call ERPNext's pricing rule engine."""
+	# Build args dict - always include customer_group and territory from customer
+	args_dict = {
+		"items": erpnext_items,
+		"company": context["company"],
+		"currency": context["currency"],
+		"transaction_date": frappe.utils.today(),
+		"transaction_type": "selling",
+		"conversion_rate": 1.0,
+		"plc_conversion_rate": 1.0,
+	}
+
+	# Always include customer if it exists
+	if context.get("customer"):
+		args_dict["customer"] = context["customer"]
+
+
+	# Add other optional fields
+	if context.get("price_list"):
+		args_dict["price_list"] = context["price_list"]
+	if context.get("warehouse"):
+		args_dict["warehouse"] = context["warehouse"]
+
+	args = frappe._dict(args_dict)
+
+
+	try:
+		results = apply_pricing_rule(args, doc=None)
+	except Exception as e:
+		import traceback
+		frappe.log_error(
+			message=f"Error in apply_pricing_rule: {str(e)}\n{traceback.format_exc()}",
+			title="Pricing Rule Error"
+		)
+		results = []
+
+	return results
+
+
+def _process_pricing_results(pricing_results, erpnext_items, cart_items, context):
+	"""Process pricing rule results and map back to cart items."""
+	result_items = []
+
+	# Create a map from item_code to cart_item for quick lookup
+	cart_item_map = {}
+	for cart_item in cart_items:
+		cart_item_code = cart_item.get("id") or cart_item.get("item_code")
+		if cart_item_code:
+			cart_item_map[cart_item_code] = cart_item
+
+	# Process each pricing result - they correspond to erpnext_items by index
+	for idx, pricing_result in enumerate(pricing_results):
+		if idx >= len(erpnext_items):
+			continue
+
+		# Get the item_code from the corresponding erpnext_item
+		erpnext_item = erpnext_items[idx]
+		item_code = erpnext_item.get("item_code")
+
+		if not item_code:
+			continue
+
+		# Find the matching cart item
+		cart_item = cart_item_map.get(item_code)
+		if not cart_item:
+			continue
+
+		# Check if pricing rule was applied
+		if not _has_pricing_rule(pricing_result):
+
+			# No pricing rule - get original price from backend
+			result_items.extend(_handle_no_pricing_rule(
+				erpnext_item,
+				[cart_item],  # Pass single item as list
+				context
+			))
+			continue
+
+		# Pricing rule was applied - calculate discounted price
+		processed_item = _calculate_discounted_price(
+			cart_item,
+			pricing_result,
+			context
+		)
+		result_items.append(processed_item)
+
+	# Add unprocessed cart items (items not in erpnext_items)
+	processed_item_codes = {
+		item.get("id") or item.get("item_code")
+		for item in result_items
+	}
+	for cart_item in cart_items:
+		cart_item_code = cart_item.get("id") or cart_item.get("item_code")
+		if cart_item_code and cart_item_code not in processed_item_codes:
+			result_items.append(cart_item)
+
+	return result_items
+
+
+def _has_pricing_rule(pricing_result):
+	"""Check if pricing result contains a valid pricing rule."""
+	pricing_rules_json = pricing_result.get("pricing_rules", "")
+	print("results", pricing_result)
+	has_rule = pricing_result.get("has_pricing_rule", 0)
+	return bool(pricing_rules_json and has_rule)
+
+
+def _extract_pricing_rule_names(pricing_result):
+	"""Extract pricing rule names from JSON string."""
+	import json
+	try:
+		pricing_rules_json = pricing_result.get("pricing_rules", "")
+		return json.loads(pricing_rules_json)
+	except (json.JSONDecodeError, TypeError):
+		return []
+
+
+def _handle_no_pricing_rule(erpnext_item, cart_items, context):
+	"""Handle items without pricing rules - return with original price."""
+	item_code = erpnext_item.get("item_code")
+	if not item_code:
+		return []
+
+	for cart_item in cart_items:
+		cart_item_code = cart_item.get("id") or cart_item.get("item_code")
+		if cart_item_code == item_code:
+			price_info = fetch_item_price(
+				cart_item_code,
+				price_list=context["price_list"],
+				customer=context["customer"],
+				uom=cart_item.get("uom")
+			)
+			original_price = price_info.get("price", 0)
+
+			return [{
+				**cart_item,
+				"price": original_price,
+				"original_price": original_price,
+			}]
+
+	return []
+
+
+
+
+
+
+def _calculate_discounted_price(cart_item, pricing_result, context):
+	"""Calculate final price after applying discounts."""
+	cart_item_code = cart_item.get("id") or cart_item.get("item_code")
+	# Get original price from backend
+	price_info = fetch_item_price(
+		cart_item_code,
+		price_list=context["price_list"],
+		customer=context["customer"],
+		uom=cart_item.get("uom")
+	)
+	original_price = price_info.get("price", 0)
+
+	# Calculate final price based on pricing rule type
+	final_price = _apply_discount_logic(original_price, pricing_result)
+
+	# Build result item with all pricing information
+	return {
+		**cart_item,
+		"price": final_price,
+		"original_price": original_price,
+		"discount_percentage": pricing_result.get("discount_percentage", 0) or 0,
+		"discount_amount": pricing_result.get("discount_amount", 0) or 0,
+		"pricing_rules": pricing_result.get("pricing_rules", ""),
+		"has_pricing_rule": pricing_result.get("has_pricing_rule", 0),
+		"free_item_data": pricing_result.get("free_item_data", []),
+	}
+
+
+def _apply_discount_logic(original_price, pricing_result):
+	"""Apply discount based on pricing rule type."""
+	pricing_rule_for = pricing_result.get("pricing_rule_for", "")
+	discount_percentage = pricing_result.get("discount_percentage", 0) or 0
+	discount_amount = pricing_result.get("discount_amount", 0) or 0
+	price_list_rate = pricing_result.get("price_list_rate")
+
+	
+	if price_list_rate is not None:
+		if pricing_rule_for == "Rate":
+			# Explicitly Rate type - use the rate
+			return price_list_rate
+		elif price_list_rate != original_price:
+			# Use it even if pricing_rule_for is not set correctly
+			return price_list_rate
+
+	# Apply discount based on type
+	if pricing_rule_for == "Discount Percentage":
+		# Use percentage discount
+		if discount_percentage > 0:
+			return original_price * (1 - discount_percentage / 100)
+		# discount_amount is already calculated from percentage, don't subtract it again
+
+	elif pricing_rule_for == "Discount Amount":
+		# Use amount discount
+		if discount_amount > 0:
+			return max(0, original_price - discount_amount)
+
+	# Fallback: try percentage first, then amount
+	if discount_percentage > 0:
+		return original_price * (1 - discount_percentage / 100)
+	elif discount_amount > 0:
+		return max(0, original_price - discount_amount)
+
+	return original_price
+
+
+def _add_unprocessed_items(result_items, cart_items):
+	"""Add cart items that weren't processed by pricing rules."""
+	processed_item_codes = {
+		item.get("id") or item.get("item_code")
+		for item in result_items
+	}
+
+	for cart_item in cart_items:
+		cart_item_code = cart_item.get("id") or cart_item.get("item_code")
+		if cart_item_code and cart_item_code not in processed_item_codes:
+			result_items.append(cart_item)

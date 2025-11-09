@@ -4,7 +4,7 @@ import type { CartItem, GiftCoupon } from '../../types'
 import type { Customer } from '../types/customer'
 import { toast } from 'react-toastify'
 import { clearDraftInvoiceCache } from '../utils/draftInvoiceCache'
-import { updateItemPricesForCustomer, getItemPriceForCustomer } from '../services/dynamicPricing'
+import { updateItemPricesForCustomer, getItemPriceForCustomer, applyPricingRulesToCart } from '../services/dynamicPricing'
 
 interface CartState {
   cartItems: CartItem[]
@@ -14,14 +14,15 @@ interface CartState {
   // Actions
   addToCart: (item: Omit<CartItem, 'quantity'>) => Promise<void>
   addToCartWithQuantity: (item: Omit<CartItem, 'quantity'>, quantity: number) => Promise<void>
-  updateQuantity: (id: string, quantity: number) => void
-  updateUOM: (id: string, uom: string, price: number) => void
+  updateQuantity: (id: string, quantity: number) => Promise<void>
+  updateUOM: (id: string, uom: string, price: number) => Promise<void>
   removeItem: (id: string) => void
   clearCart: () => void
   applyCoupon: (coupon: GiftCoupon) => void
   removeCoupon: (couponCode: string) => void
-  setSelectedCustomer: (customer: Customer | null) => void
+  setSelectedCustomer: (customer: Customer | null) => Promise<void>
   updatePricesForCustomer: (customerId?: string) => Promise<void>
+  applyPricingRules: () => Promise<void>
 }
 
 export const useCartStore = create<CartState>()(
@@ -72,9 +73,17 @@ export const useCartStore = create<CartState>()(
             }
           }
 
+          const newCartItems = [...state.cartItems, { ...item, price: finalPrice, quantity: 1 }];
+          
           set((state) => ({
-            cartItems: [...state.cartItems, { ...item, price: finalPrice, quantity: 1 }]
+            cartItems: newCartItems
           }));
+
+          // Apply pricing rules after adding item
+          const stateAfterAdd = get();
+          if (stateAfterAdd.cartItems.length > 0) {
+            await stateAfterAdd.applyPricingRules();
+          }
         }
       },
 
@@ -119,33 +128,54 @@ export const useCartStore = create<CartState>()(
             }
           }
 
+          const newCartItems = [...state.cartItems, { ...item, price: finalPrice, quantity }];
+          
           set((state) => ({
-            cartItems: [...state.cartItems, { ...item, price: finalPrice, quantity }]
+            cartItems: newCartItems
           }));
+
+          // Apply pricing rules after adding item
+          const stateAfterAdd = get();
+          if (stateAfterAdd.cartItems.length > 0) {
+            await stateAfterAdd.applyPricingRules();
+          }
         }
       },
 
-      updateQuantity: (id, quantity) => set((state) => {
+      updateQuantity: async (id, quantity) => {
+        const state = get();
         if (quantity <= 0) {
-          return {
+          set({
             cartItems: state.cartItems.filter((item) => item.id !== id)
+          });
+          // Apply pricing rules after removing item (quantities changed)
+          const stateAfterUpdate = get();
+          if (stateAfterUpdate.cartItems.length > 0) {
+            await stateAfterUpdate.applyPricingRules();
           }
+          return;
         }
 
-        const item = state.cartItems.find((cartItem) => cartItem.id === id)
+        const item = state.cartItems.find((cartItem) => cartItem.id === id);
         if (item && item.available !== undefined && quantity > item.available) {
-          toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`)
-          return state
+          toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
+          return;
         }
 
-        return {
+        set({
           cartItems: state.cartItems.map((item) =>
             item.id === id ? { ...item, quantity } : item
           )
-        }
-      }),
+        });
 
-      updateUOM: (id, uom, price) => {
+        // Apply pricing rules after quantity change (pricing rules can be quantity-based)
+        const stateAfterUpdate = get();
+        if (stateAfterUpdate.cartItems.length > 0) {
+          await stateAfterUpdate.applyPricingRules();
+        }
+      },
+
+      updateUOM: async (id, uom, price) => {
         console.log(`🏪 Cart Store: Updating UOM for item ${id} to ${uom} with price ${price}`);
         set((state) => {
           const updatedItems = state.cartItems.map((item) => {
@@ -161,6 +191,12 @@ export const useCartStore = create<CartState>()(
           console.log(`🏪 Cart Store: All items after update:`, updatedItems);
           return { cartItems: updatedItems };
         });
+
+        // Apply pricing rules after UOM change (pricing rules can be UOM-specific)
+        const stateAfterUpdate = get();
+        if (stateAfterUpdate.cartItems.length > 0) {
+          await stateAfterUpdate.applyPricingRules();
+        }
       },
 
       removeItem: (id) => set((state) => ({
@@ -190,25 +226,52 @@ export const useCartStore = create<CartState>()(
         appliedCoupons: state.appliedCoupons.filter((coupon) => coupon.code !== couponCode)
       })),
 
-      setSelectedCustomer: (customer) => set(() => ({
-        selectedCustomer: customer
-      })),
+      setSelectedCustomer: async (customer) => {
+        set(() => ({
+          selectedCustomer: customer
+        }));
+        
+        // Apply pricing rules when customer changes (pricing rules can be customer-specific)
+        const state = get();
+        if (state.cartItems.length > 0) {
+          await state.updatePricesForCustomer(customer?.id);
+        }
+      },
 
       updatePricesForCustomer: async (customerId) => {
         const state = get();
         if (state.cartItems.length === 0) return;
 
         try {
-
-          // Get updated prices for all items
+          // First get base prices for items
           const priceUpdates = await updateItemPricesForCustomer(state.cartItems, customerId);
 
-          // Update cart items with new prices
+          // Update cart items with new base prices
+          let updatedItems = state.cartItems.map(item => {
+            const priceUpdate = priceUpdates[item.id];
+            if (priceUpdate && priceUpdate.success) {
+              return { ...item, price: priceUpdate.price };
+            }
+            return item;
+          });
+
+          // Then apply pricing rules to get discounted prices
+          const itemsWithPricingRules = await applyPricingRulesToCart(updatedItems, customerId);
+
+          // Update cart with pricing rule results
           set((state) => ({
             cartItems: state.cartItems.map(item => {
-              const priceUpdate = priceUpdates[item.id];
-              if (priceUpdate && priceUpdate.success) {
-                return { ...item, price: priceUpdate.price };
+              const pricingRuleItem = itemsWithPricingRules.find(prItem => prItem.id === item.id);
+              if (pricingRuleItem) {
+                return {
+                  ...item,
+                  price: pricingRuleItem.price,
+                  original_price: pricingRuleItem.original_price || item.price,
+                  discount_percentage: pricingRuleItem.discount_percentage,
+                  discount_amount: pricingRuleItem.discount_amount,
+                  pricing_rules: pricingRuleItem.pricing_rules,
+                  has_pricing_rule: pricingRuleItem.has_pricing_rule,
+                };
               }
               return item;
             })
@@ -217,6 +280,36 @@ export const useCartStore = create<CartState>()(
         } catch (error) {
           console.error('❌ Error updating prices for customer:', error);
           toast.error('Failed to update prices for customer');
+        }
+      },
+
+      applyPricingRules: async () => {
+        const state = get();
+        if (state.cartItems.length === 0) return;
+
+        try {
+          const customerId = state.selectedCustomer?.id;
+          const itemsWithPricingRules = await applyPricingRulesToCart(state.cartItems, customerId);
+
+          set((state) => ({
+            cartItems: state.cartItems.map(item => {
+              const pricingRuleItem = itemsWithPricingRules.find(prItem => prItem.id === item.id);
+              if (pricingRuleItem) {
+                return {
+                  ...item,
+                  price: pricingRuleItem.price,
+                  original_price: pricingRuleItem.original_price || item.price,
+                  discount_percentage: pricingRuleItem.discount_percentage,
+                  discount_amount: pricingRuleItem.discount_amount,
+                  pricing_rules: pricingRuleItem.pricing_rules,
+                  has_pricing_rule: pricingRuleItem.has_pricing_rule,
+                };
+              }
+              return item;
+            })
+          }));
+        } catch (error) {
+          console.error('❌ Error applying pricing rules:', error);
         }
       }
     }),

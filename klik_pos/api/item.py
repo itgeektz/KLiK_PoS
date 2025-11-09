@@ -849,7 +849,6 @@ def apply_pricing_rules_to_cart(cart_items, customer=None):
 
 		if not erpnext_items:
 			return []
-		print("hello,", context)
 		pricing_results = _apply_pricing_rules(erpnext_items, context)
 
 		result_items = _process_pricing_results(pricing_results, erpnext_items, cart_items, context)
@@ -1035,7 +1034,6 @@ def _process_pricing_results(pricing_results, erpnext_items, cart_items, context
 def _has_pricing_rule(pricing_result):
 	"""Check if pricing result contains a valid pricing rule."""
 	pricing_rules_json = pricing_result.get("pricing_rules", "")
-	print("results", pricing_result)
 	has_rule = pricing_result.get("has_pricing_rule", 0)
 	return bool(pricing_rules_json and has_rule)
 

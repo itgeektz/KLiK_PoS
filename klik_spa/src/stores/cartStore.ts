@@ -193,9 +193,17 @@ export const useCartStore = create<CartState>()(
         });
 
         // Apply pricing rules after UOM change (pricing rules can be UOM-specific)
+        // But preserve the UOM-converted price if it's correct
         const stateAfterUpdate = get();
         if (stateAfterUpdate.cartItems.length > 0) {
+          console.log(`🏪 Cart Store: Applying pricing rules after UOM update`);
           await stateAfterUpdate.applyPricingRules();
+          const stateAfterPricing = get();
+          const updatedItem = stateAfterPricing.cartItems.find(item => item.id === id);
+          console.log(`🏪 Cart Store: Item ${id} after pricing rules:`, {
+            uom: updatedItem?.uom,
+            price: updatedItem?.price
+          });
         }
       },
 
@@ -246,11 +254,27 @@ export const useCartStore = create<CartState>()(
           // First get base prices for items
           const priceUpdates = await updateItemPricesForCustomer(state.cartItems, customerId);
 
-          // Update cart items with new base prices
+          // Update cart items with new base prices, but preserve existing price if UOM is set and price seems correct
           let updatedItems = state.cartItems.map(item => {
             const priceUpdate = priceUpdates[item.id];
-            if (priceUpdate && priceUpdate.success) {
-              return { ...item, price: priceUpdate.price };
+            if (priceUpdate && priceUpdate.success && priceUpdate.price > 0) {
+              const currentPrice = item.price || 0;
+              const newPrice = priceUpdate.price;
+
+              // If item has a UOM and current price > 0, validate if new price makes sense
+              // For UOMs with conversion factors, the price should be base_price * conversion_factor
+              // If current price is much higher than new price and UOM is set, it might be a calculated price
+              if (item.uom && currentPrice > 0) {
+                // If new price is much lower than current (less than 50% of current),
+                // and current price is reasonable (> 0), preserve current price
+                // This handles cases where Box (360) is being overwritten with Nos (18)
+                if (newPrice < currentPrice * 0.5 && currentPrice > 10) {
+                  console.log(`Preserving price for ${item.id}: current=${currentPrice}, new=${newPrice}, UOM=${item.uom}`);
+                  return item; // Keep existing price - it's likely a UOM-converted price
+                }
+              }
+
+              return { ...item, price: newPrice };
             }
             return item;
           });
@@ -295,9 +319,31 @@ export const useCartStore = create<CartState>()(
             cartItems: state.cartItems.map(item => {
               const pricingRuleItem = itemsWithPricingRules.find(prItem => prItem.id === item.id);
               if (pricingRuleItem) {
+                const currentPrice = item.price || 0;
+                const newPrice = pricingRuleItem.price || 0;
+
+                // Preserve UOM-converted prices - if item has UOM and new price is much lower, keep current
+                if (!pricingRuleItem.has_pricing_rule && item.uom && currentPrice > 0 && newPrice > 0) {
+                  // If new price is much lower than current (less than 50% of current),
+                  // and current price is reasonable, preserve current price
+                  // This handles cases where Box (360) is being overwritten with Nos (18)
+                  if (newPrice < currentPrice * 0.5 && currentPrice > 10) {
+                    console.log(`Preserving price in pricing rules for ${item.id}: current=${currentPrice}, new=${newPrice}, UOM=${item.uom}`);
+                    return {
+                      ...item,
+                      price: currentPrice, // Keep current price
+                      original_price: pricingRuleItem.original_price || currentPrice,
+                      discount_percentage: pricingRuleItem.discount_percentage,
+                      discount_amount: pricingRuleItem.discount_amount,
+                      pricing_rules: pricingRuleItem.pricing_rules,
+                      has_pricing_rule: pricingRuleItem.has_pricing_rule,
+                    };
+                  }
+                }
+
                 return {
                   ...item,
-                  price: pricingRuleItem.price,
+                  price: newPrice,
                   original_price: pricingRuleItem.original_price || item.price,
                   discount_percentage: pricingRuleItem.discount_percentage,
                   discount_amount: pricingRuleItem.discount_amount,

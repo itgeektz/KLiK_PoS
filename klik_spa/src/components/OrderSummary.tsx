@@ -189,14 +189,35 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
           if (data?.message?.uoms) {
             //eslint-disable-next-line @typescript-eslint/no-explicit-any
             const selectedUOMData = data.message.uoms.find((uom: any) => uom.uom === newUOM);
-            if (selectedUOMData) {
-
+            if (selectedUOMData && selectedUOMData.price !== undefined) {
+              console.log(`✅ Found UOM data for ${newUOM}:`, selectedUOMData);
               onUOMChange(item.id, newUOM, selectedUOMData.price);
             } else {
-              // No UOM data found
+              console.warn(`⚠️ UOM data not found for ${newUOM}. Available UOMs:`, data.message.uoms.map((u: any) => u.uom));
+              // Fallback: try to calculate price using fetch_item_price API
+              try {
+                const itemCode = item.item_code || item.id;
+                const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
+                const priceResponse = await fetch(`/api/method/klik_pos.api.item.get_item_price_for_customer?item_code=${itemCode}&uom=${encodeURIComponent(newUOM)}${customerParam}`, {
+                  method: 'GET',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include'
+                });
+                if (priceResponse.ok) {
+                  const priceData = await priceResponse.json();
+                  if (priceData?.message?.success && priceData.message.price > 0) {
+                    console.log(`✅ Got price from fallback API for ${newUOM}:`, priceData.message.price);
+                    onUOMChange(item.id, newUOM, priceData.message.price);
+                  } else {
+                    console.error(`❌ Fallback API returned invalid price for ${newUOM}`);
+                  }
+                }
+              } catch (fallbackError) {
+                console.error(`❌ Error in fallback price fetch for ${newUOM}:`, fallbackError);
+              }
             }
           } else {
-            // No UOMs data in API response
+            console.error('❌ No UOMs data in API response');
           }
         } else {
           // API call failed
@@ -417,12 +438,24 @@ export default function OrderSummary({
   //   console.log();
   // }, [selectedCustomer]);
 
-  // Update prices when customer changes
+  // Track if this is the initial load to prevent price recalculation on page refresh
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+
   useEffect(() => {
-    if (selectedCustomer && cartItems.length > 0) {
+    // Mark initial load as complete after a short delay
+    const timer = setTimeout(() => {
+      setIsInitialLoad(false);
+    }, 2000); // 2 seconds should be enough for cart to restore from localStorage
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Update prices when customer changes (but not on initial load to preserve restored prices)
+  useEffect(() => {
+    if (!isInitialLoad && selectedCustomer && cartItems.length > 0) {
       updatePricesForCustomer(selectedCustomer.id);
     }
-  }, [selectedCustomer?.id, cartItems.length, updatePricesForCustomer]);
+  }, [selectedCustomer?.id, cartItems.length, isInitialLoad, updatePricesForCustomer]);
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);

@@ -45,6 +45,94 @@ def fetch_item_balance(item_code: str, warehouse: str) -> float:
 		return 0
 
 
+def _get_uom_conversion_factor(item_code: str, uom: str) -> float | None:
+	"""Get conversion factor for a specific UOM from Item UOM table."""
+	try:
+		conversion_factor = frappe.db.get_value(
+			"UOM",
+			{"parent": item_code, "uom": uom},
+			"conversion_factor",
+		)
+		return float(conversion_factor) if conversion_factor else None
+	except Exception:
+		return None
+
+
+def _calculate_price_from_default_uom(
+	item_code: str, requested_uom: str, price_list: str | None, customer: str | None
+) -> dict | None:
+	"""
+	Calculate price for requested UOM from default UOM (stock_uom) using conversion factor.
+	Returns None if calculation is not possible.
+	This function directly queries for default UOM price to avoid recursion.
+	"""
+	try:
+		item_doc = frappe.get_doc("Item", item_code)
+		default_uom = item_doc.stock_uom
+
+		# If requested UOM is already the default UOM, no conversion needed
+		if requested_uom == default_uom:
+			return None
+
+		# Get conversion factor for requested UOM
+		conversion_factor = _get_uom_conversion_factor(item_code, requested_uom)
+		if not conversion_factor:
+			return None
+
+		# Determine the price list to use
+		if not price_list:
+			price_list = get_price_list_with_customer_priority(customer)
+
+		# Directly query for default UOM price to avoid recursion
+		default_uom_filters = {
+			"item_code": item_code,
+			"uom": default_uom,
+			"selling": 1,
+		}
+
+		if price_list and price_list.strip():
+			default_uom_filters["price_list"] = price_list
+
+		default_price_doc = frappe.get_value(
+			"Item Price",
+			default_uom_filters,
+			["price_list_rate", "currency"],
+			as_dict=True,
+		)
+
+		# If no price found with price_list, try without price_list filter
+		if not default_price_doc and price_list:
+			default_uom_filters.pop("price_list", None)
+			default_price_doc = frappe.get_value(
+				"Item Price",
+				default_uom_filters,
+				["price_list_rate", "currency"],
+				as_dict=True,
+				order_by="modified desc",
+			)
+
+		if default_price_doc and default_price_doc.price_list_rate:
+			# Calculate price: default_uom_price * conversion_factor
+			calculated_price = float(default_price_doc.price_list_rate) * conversion_factor
+			symbol = (
+				frappe.db.get_value("Currency", default_price_doc.currency, "symbol")
+				or default_price_doc.currency
+			)
+			return {
+				"price": calculated_price,
+				"currency": default_price_doc.currency,
+				"currency_symbol": symbol,
+			}
+
+		return None
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			f"Error calculating price from default UOM for {item_code}, UOM: {requested_uom}",
+		)
+		return None
+
+
 def fetch_item_price(
 	item_code: str, price_list: str | None = None, customer: str | None = None, uom: str | None = None
 ) -> dict:
@@ -86,29 +174,13 @@ def fetch_item_price(
 					"currency_symbol": symbol,
 				}
 			else:
-				# If UOM was specified but no price found, try without UOM filter as fallback
+				# If UOM was specified but no price found, calculate from default UOM
 				if uom:
-					fallback_filters = {
-						"item_code": item_code,
-						"selling": 1,
-					}
-					price_doc = frappe.get_value(
-						"Item Price",
-						fallback_filters,
-						["price_list_rate", "currency"],
-						as_dict=True,
-						order_by="modified desc",
+					calculated_price_info = _calculate_price_from_default_uom(
+						item_code, uom, price_list, customer
 					)
-					if price_doc:
-						symbol = (
-							frappe.db.get_value("Currency", price_doc.currency, "symbol")
-							or price_doc.currency
-						)
-						return {
-							"price": price_doc.price_list_rate,
-							"currency": price_doc.currency,
-							"currency_symbol": symbol,
-						}
+					if calculated_price_info:
+						return calculated_price_info
 
 				# Fallback to item's default price if no price found
 				item_doc = frappe.get_doc("Item", item_code)
@@ -124,8 +196,15 @@ def fetch_item_price(
 					frappe.db.get_value("Currency", default_currency, "symbol") or default_currency
 				)
 
+				# If UOM is specified and different from stock_uom, apply conversion factor
+				valuation_price = item_doc.valuation_rate or 0
+				if uom and uom != item_doc.stock_uom:
+					conversion_factor = _get_uom_conversion_factor(item_code, uom)
+					if conversion_factor:
+						valuation_price = float(valuation_price) * conversion_factor
+
 				return {
-					"price": item_doc.valuation_rate or 0,
+					"price": valuation_price,
 					"currency": default_currency,
 					"currency_symbol": default_symbol,
 				}
@@ -147,28 +226,13 @@ def fetch_item_price(
 				"currency_symbol": symbol,
 			}
 		else:
-			# If UOM was specified but no price found, try without UOM filter as fallback
+			# If UOM was specified but no price found, calculate from default UOM
 			if uom:
-				fallback_filters = {
-					"item_code": item_code,
-					"price_list": price_list,
-					"selling": 1,
-				}
-				price_doc = frappe.get_value(
-					"Item Price",
-					fallback_filters,
-					["price_list_rate", "currency"],
-					as_dict=True,
+				calculated_price_info = _calculate_price_from_default_uom(
+					item_code, uom, price_list, customer
 				)
-				if price_doc:
-					symbol = (
-						frappe.db.get_value("Currency", price_doc.currency, "symbol") or price_doc.currency
-					)
-					return {
-						"price": price_doc.price_list_rate,
-						"currency": price_doc.currency,
-						"currency_symbol": symbol,
-					}
+				if calculated_price_info:
+					return calculated_price_info
 
 			# Fallback to item's default price if no price list entry found
 			item_doc = frappe.get_doc("Item", item_code)
@@ -181,8 +245,16 @@ def fetch_item_price(
 				or "SAR"
 			)
 			default_symbol = frappe.db.get_value("Currency", default_currency, "symbol") or default_currency
+
+			# If UOM is specified and different from stock_uom, apply conversion factor
+			valuation_price = item_doc.valuation_rate or 0
+			if uom and uom != item_doc.stock_uom:
+				conversion_factor = _get_uom_conversion_factor(item_code, uom)
+				if conversion_factor:
+					valuation_price = float(valuation_price) * conversion_factor
+
 			return {
-				"price": item_doc.valuation_rate or 0,
+				"price": valuation_price,
 				"currency": default_currency,
 				"currency_symbol": default_symbol,
 			}
@@ -726,7 +798,10 @@ def get_item_uoms_and_prices(item_code, customer=None):
 
 		uom_data = []
 
+		# Get all UOMs from child table
+		uom_names_in_table = set()
 		for uom_row in item_doc.get("uoms", []):
+			uom_names_in_table.add(uom_row.uom)
 			uom_data.append(
 				{
 					"uom": uom_row.uom,
@@ -735,44 +810,59 @@ def get_item_uoms_and_prices(item_code, customer=None):
 				}
 			)
 
+		# Add stock_uom if it's not already in the list (stock_uom has conversion_factor of 1.0)
+		stock_uom = item_doc.stock_uom
+		if stock_uom and stock_uom not in uom_names_in_table:
+			uom_data.insert(
+				0,
+				{
+					"uom": stock_uom,
+					"conversion_factor": 1.0,
+					"price": 0.0,
+				},
+			)
+
 		for uom_info in uom_data:
-			if price_list:
-				price_list_rate = frappe.db.get_value(
-					"Item Price",
-					{
-						"item_code": item_code,
-						"uom": uom_info["uom"],
-						"price_list": price_list,
-						"selling": 1,
-					},
-					"price_list_rate",
-				)
+			# First, check if there's a direct price entry for this UOM
+			direct_price_filters = {
+				"item_code": item_code,
+				"uom": uom_info["uom"],
+				"selling": 1,
+			}
+			if price_list and price_list.strip():
+				direct_price_filters["price_list"] = price_list
 
-				if price_list_rate:
-					uom_info["price"] = float(price_list_rate)
-					continue
-
-			# Fallback: Get price without price list filter
-			price_list_rate = frappe.db.get_value(
+			direct_price = frappe.db.get_value(
 				"Item Price",
-				{"item_code": item_code, "uom": uom_info["uom"], "selling": 1},
+				direct_price_filters,
 				"price_list_rate",
 			)
 
-			if price_list_rate:
-				uom_info["price"] = float(price_list_rate)
-			else:
-				# If no specific price found for this UOM, calculate from base price using conversion factor
-				base_price = frappe.db.get_value(
+			# If no direct price with price_list, try without price_list
+			if not direct_price and price_list:
+				direct_price_filters.pop("price_list", None)
+				direct_price = frappe.db.get_value(
 					"Item Price",
-					{"item_code": item_code, "uom": item_doc.stock_uom, "selling": 1},
+					direct_price_filters,
 					"price_list_rate",
+					order_by="modified desc",
 				)
 
-				if base_price:
-					converted_price = float(base_price) * uom_info["conversion_factor"]
+			if direct_price:
+				# Use direct price if found
+				uom_info["price"] = float(direct_price)
+			else:
+				# No direct price found - calculate from base UOM using conversion factor
+				# Get base UOM price with customer-first priority
+				base_price_info = fetch_item_price(
+					item_code, price_list=price_list, customer=customer, uom=item_doc.stock_uom
+				)
+
+				if base_price_info and base_price_info.get("price", 0) > 0:
+					converted_price = float(base_price_info["price"]) * uom_info["conversion_factor"]
 					uom_info["price"] = converted_price
 				else:
+					# Last resort: use valuation_rate with conversion factor
 					valuation_rate = frappe.db.get_value("Item", item_code, "valuation_rate") or 0
 					converted_price = float(valuation_rate) * uom_info["conversion_factor"]
 					uom_info["price"] = converted_price
@@ -845,7 +935,7 @@ def apply_pricing_rules_to_cart(cart_items, customer=None):
 			return []
 
 		context = _build_pricing_context(customer)
-		erpnext_items = _prepare_erpnext_items(cart_items)
+		erpnext_items = _prepare_erpnext_items(cart_items, context)
 
 		if not erpnext_items:
 			return []
@@ -895,7 +985,7 @@ def _build_pricing_context(customer=None):
 	return context
 
 
-def _prepare_erpnext_items(cart_items):
+def _prepare_erpnext_items(cart_items, context):
 	"""Convert cart items to ERPNext pricing rule format."""
 	erpnext_items = []
 
@@ -912,14 +1002,80 @@ def _prepare_erpnext_items(cart_items):
 		# Get original price from backend to pass to pricing rule
 		# This ensures pricing rules work with correct base price
 		item_uom = item.get("uom") or frappe.get_cached_value("Item", item_code, "stock_uom")
-		pos_profile = get_current_pos_profile()
-		price_list = pos_profile.selling_price_list if pos_profile else None
-		# Use customer from context if available (will be set in _build_pricing_context)
-		customer = None  # Will be passed in context to apply_pricing_rule
-		price_info = fetch_item_price(item_code, price_list=price_list, customer=customer, uom=item_uom)
-		base_price = price_info.get("price", 0) or item.get("price", 0)
+		# Use context for price_list and customer to ensure correct price calculation
+		price_list = context.get("price_list")
+		customer = context.get("customer")
+
+		# First check for direct price entry for this UOM (same logic as get_item_uoms_and_prices)
+		direct_price_filters = {
+			"item_code": item_code,
+			"uom": item_uom,
+			"selling": 1,
+		}
+		if price_list and price_list.strip():
+			direct_price_filters["price_list"] = price_list
+
+		direct_price = frappe.db.get_value(
+			"Item Price",
+			direct_price_filters,
+			"price_list_rate",
+		)
+
+		# If no direct price with price_list, try without price_list
+		if not direct_price and price_list:
+			direct_price_filters.pop("price_list", None)
+			direct_price = frappe.db.get_value(
+				"Item Price",
+				direct_price_filters,
+				"price_list_rate",
+				order_by="modified desc",
+			)
+
+		if direct_price:
+			# Use direct price if found
+			base_price = float(direct_price)
+		else:
+			# No direct price - calculate from base UOM using conversion factor
+			item_doc = frappe.get_doc("Item", item_code)
+			stock_uom = item_doc.stock_uom
+
+			# Get base UOM price
+			base_price_info = fetch_item_price(
+				item_code, price_list=price_list, customer=customer, uom=stock_uom
+			)
+			base_uom_price = (
+				base_price_info.get("price", 0)
+				if base_price_info.get("price", 0) > 0
+				else item.get("price", 0)
+			)
+
+			# If UOM is different from stock_uom, apply conversion factor
+			if item_uom and item_uom != stock_uom:
+				conversion_factor = _get_uom_conversion_factor(item_code, item_uom)
+				if conversion_factor:
+					base_price = float(base_uom_price) * conversion_factor
+				else:
+					base_price = base_uom_price
+			else:
+				base_price = base_uom_price
+
+		# Fallback to cart item price if calculation failed
+		if base_price <= 0:
+			base_price = item.get("price", 0)
 
 		item_qty = item.get("quantity", 1)
+
+		# Get conversion factor for the UOM to calculate stock_qty correctly
+		item_doc_full = frappe.get_doc("Item", item_code)
+		stock_uom = item_doc_full.stock_uom
+		conversion_factor = 1.0
+		if item_uom and item_uom != stock_uom:
+			uom_conversion = _get_uom_conversion_factor(item_code, item_uom)
+			if uom_conversion:
+				conversion_factor = uom_conversion
+
+		stock_qty = item_qty * conversion_factor
+
 		erpnext_items.append(
 			{
 				"doctype": "Sales Invoice Item",
@@ -928,10 +1084,10 @@ def _prepare_erpnext_items(cart_items):
 				"item_group": item_doc.item_group,
 				"brand": item_doc.brand or "",
 				"qty": item_qty,
-				"stock_qty": item_qty,  # filter_pricing_rules uses stock_qty for filtering
-				"price_list_rate": base_price,  # Use backend price, not cart price
+				"stock_qty": stock_qty,  # filter_pricing_rules uses stock_qty for filtering
+				"price_list_rate": base_price,  # Use calculated price with UOM conversion
 				"uom": item_uom,
-				"conversion_factor": 1.0,
+				"conversion_factor": conversion_factor,
 			}
 		)
 
@@ -1058,13 +1214,95 @@ def _handle_no_pricing_rule(erpnext_item, cart_items, context):
 	for cart_item in cart_items:
 		cart_item_code = cart_item.get("id") or cart_item.get("item_code")
 		if cart_item_code == item_code:
-			price_info = fetch_item_price(
-				cart_item_code,
-				price_list=context["price_list"],
-				customer=context["customer"],
-				uom=cart_item.get("uom"),
+			item_uom = cart_item.get("uom")
+			price_list = context.get("price_list")
+			customer = context.get("customer")
+
+			# Use same logic as _prepare_erpnext_items: check direct price first, then calculate
+			direct_price_filters = {
+				"item_code": cart_item_code,
+				"uom": item_uom,
+				"selling": 1,
+			}
+			if price_list and price_list.strip():
+				direct_price_filters["price_list"] = price_list
+
+			direct_price = frappe.db.get_value(
+				"Item Price",
+				direct_price_filters,
+				"price_list_rate",
 			)
-			original_price = price_info.get("price", 0)
+
+			if not direct_price and price_list:
+				direct_price_filters.pop("price_list", None)
+				direct_price = frappe.db.get_value(
+					"Item Price",
+					direct_price_filters,
+					"price_list_rate",
+					order_by="modified desc",
+				)
+
+			if direct_price:
+				original_price = float(direct_price)
+			else:
+				# Calculate from base UOM, but prefer cart item price if it's already set correctly
+				cart_price = cart_item.get("price", 0)
+
+				# If cart already has a price > 0, check if it makes sense for this UOM
+				if cart_price > 0 and item_uom:
+					item_doc = frappe.get_doc("Item", cart_item_code)
+					stock_uom = item_doc.stock_uom
+
+					# Get base UOM price to validate cart price
+					base_price_info = fetch_item_price(
+						cart_item_code, price_list=price_list, customer=customer, uom=stock_uom
+					)
+					base_uom_price = base_price_info.get("price", 0)
+
+					if base_uom_price > 0:
+						if item_uom != stock_uom:
+							conversion_factor = _get_uom_conversion_factor(cart_item_code, item_uom)
+							if conversion_factor:
+								expected_price = float(base_uom_price) * conversion_factor
+								# If cart price is close to expected (within 5%), use cart price
+								if abs(cart_price - expected_price) / max(cart_price, expected_price) < 0.05:
+									original_price = cart_price
+								else:
+									original_price = expected_price
+							else:
+								original_price = cart_price
+						else:
+							# Same UOM, use cart price if close to base price
+							if abs(cart_price - base_uom_price) / max(cart_price, base_uom_price) < 0.05:
+								original_price = cart_price
+							else:
+								original_price = base_uom_price
+					else:
+						# No base price found, use cart price
+						original_price = cart_price
+				else:
+					# No cart price or UOM, calculate normally
+					item_doc = frappe.get_doc("Item", cart_item_code)
+					stock_uom = item_doc.stock_uom
+					base_price_info = fetch_item_price(
+						cart_item_code, price_list=price_list, customer=customer, uom=stock_uom
+					)
+					base_uom_price = (
+						base_price_info.get("price", 0) if base_price_info.get("price", 0) > 0 else 0
+					)
+
+					if item_uom and item_uom != stock_uom:
+						conversion_factor = _get_uom_conversion_factor(cart_item_code, item_uom)
+						if conversion_factor and base_uom_price > 0:
+							original_price = float(base_uom_price) * conversion_factor
+						else:
+							original_price = base_uom_price if base_uom_price > 0 else cart_price
+					else:
+						original_price = base_uom_price if base_uom_price > 0 else cart_price
+
+			# Final fallback to cart item price
+			if original_price <= 0:
+				original_price = cart_item.get("price", 0)
 
 			return [
 				{
@@ -1080,14 +1318,93 @@ def _handle_no_pricing_rule(erpnext_item, cart_items, context):
 def _calculate_discounted_price(cart_item, pricing_result, context):
 	"""Calculate final price after applying discounts."""
 	cart_item_code = cart_item.get("id") or cart_item.get("item_code")
-	# Get original price from backend
-	price_info = fetch_item_price(
-		cart_item_code,
-		price_list=context["price_list"],
-		customer=context["customer"],
-		uom=cart_item.get("uom"),
+	item_uom = cart_item.get("uom")
+	price_list = context.get("price_list")
+	customer = context.get("customer")
+
+	# Use same logic as _prepare_erpnext_items: check direct price first, then calculate
+	direct_price_filters = {
+		"item_code": cart_item_code,
+		"uom": item_uom,
+		"selling": 1,
+	}
+	if price_list and price_list.strip():
+		direct_price_filters["price_list"] = price_list
+
+	direct_price = frappe.db.get_value(
+		"Item Price",
+		direct_price_filters,
+		"price_list_rate",
 	)
-	original_price = price_info.get("price", 0)
+
+	if not direct_price and price_list:
+		direct_price_filters.pop("price_list", None)
+		direct_price = frappe.db.get_value(
+			"Item Price",
+			direct_price_filters,
+			"price_list_rate",
+			order_by="modified desc",
+		)
+
+	if direct_price:
+		original_price = float(direct_price)
+	else:
+		# Calculate from base UOM, but prefer cart item price if it's already set correctly
+		cart_price = cart_item.get("price", 0)
+
+		# If cart already has a price > 0, check if it makes sense for this UOM
+		if cart_price > 0 and item_uom:
+			item_doc = frappe.get_doc("Item", cart_item_code)
+			stock_uom = item_doc.stock_uom
+
+			# Get base UOM price to validate cart price
+			base_price_info = fetch_item_price(
+				cart_item_code, price_list=price_list, customer=customer, uom=stock_uom
+			)
+			base_uom_price = base_price_info.get("price", 0)
+
+			if base_uom_price > 0:
+				if item_uom != stock_uom:
+					conversion_factor = _get_uom_conversion_factor(cart_item_code, item_uom)
+					if conversion_factor:
+						expected_price = float(base_uom_price) * conversion_factor
+						# If cart price is close to expected (within 5%), use cart price
+						if abs(cart_price - expected_price) / max(cart_price, expected_price) < 0.05:
+							original_price = cart_price
+						else:
+							original_price = expected_price
+					else:
+						original_price = cart_price
+				else:
+					# Same UOM, use cart price if close to base price
+					if abs(cart_price - base_uom_price) / max(cart_price, base_uom_price) < 0.05:
+						original_price = cart_price
+					else:
+						original_price = base_uom_price
+			else:
+				# No base price found, use cart price
+				original_price = cart_price
+		else:
+			# No cart price or UOM, calculate normally
+			item_doc = frappe.get_doc("Item", cart_item_code)
+			stock_uom = item_doc.stock_uom
+			base_price_info = fetch_item_price(
+				cart_item_code, price_list=price_list, customer=customer, uom=stock_uom
+			)
+			base_uom_price = base_price_info.get("price", 0) if base_price_info.get("price", 0) > 0 else 0
+
+			if item_uom and item_uom != stock_uom:
+				conversion_factor = _get_uom_conversion_factor(cart_item_code, item_uom)
+				if conversion_factor and base_uom_price > 0:
+					original_price = float(base_uom_price) * conversion_factor
+				else:
+					original_price = base_uom_price if base_uom_price > 0 else cart_price
+			else:
+				original_price = base_uom_price if base_uom_price > 0 else cart_price
+
+	# Final fallback to cart item price
+	if original_price <= 0:
+		original_price = cart_item.get("price", 0)
 
 	# Calculate final price based on pricing rule type
 	final_price = _apply_discount_logic(original_price, pricing_result)

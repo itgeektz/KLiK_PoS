@@ -1420,10 +1420,10 @@ def _calculate_discounted_price(cart_item, pricing_result, context):
 	# If pricing rule returns a price that's way off from expected UOM price,
 	# it means ERPNext calculated discount for wrong UOM - recalculate using our original_price
 	pricing_result_rate = pricing_result.get("price_list_rate")
-	has_pricing_rule = pricing_result.get("has_pricing_rule", 0)
+	_has_pricing_rule = pricing_result.get("has_pricing_rule", 0)
 	discount_percentage = pricing_result.get("discount_percentage", 0) or 0
 	discount_amount = pricing_result.get("discount_amount", 0) or 0
-	pricing_rules_json = pricing_result.get("pricing_rules", "")
+	_pricing_rules_json = pricing_result.get("pricing_rules", "")
 
 	if pricing_result_rate is not None and item_uom and original_price > 0:
 		# If the pricing_result_rate is significantly different from our calculated original_price

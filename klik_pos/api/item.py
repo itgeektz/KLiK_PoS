@@ -1076,20 +1076,20 @@ def _prepare_erpnext_items(cart_items, context):
 
 		stock_qty = item_qty * conversion_factor
 
-		erpnext_items.append(
-			{
-				"doctype": "Sales Invoice Item",
-				"name": "",
-				"item_code": item_code,
-				"item_group": item_doc.item_group,
-				"brand": item_doc.brand or "",
-				"qty": item_qty,
-				"stock_qty": stock_qty,  # filter_pricing_rules uses stock_qty for filtering
-				"price_list_rate": base_price,  # Use calculated price with UOM conversion
-				"uom": item_uom,
-				"conversion_factor": conversion_factor,
-			}
-		)
+		erpnext_item = {
+			"doctype": "Sales Invoice Item",
+			"name": "",
+			"item_code": item_code,
+			"item_group": item_doc.item_group,
+			"brand": item_doc.brand or "",
+			"qty": item_qty,
+			"stock_qty": stock_qty,  # filter_pricing_rules uses stock_qty for filtering
+			"price_list_rate": base_price,  # Use calculated price with UOM conversion
+			"uom": item_uom,
+			"conversion_factor": conversion_factor,
+		}
+
+		erpnext_items.append(erpnext_item)
 
 	return erpnext_items
 
@@ -1110,6 +1110,12 @@ def _apply_pricing_rules(erpnext_items, context):
 	# Always include customer if it exists
 	if context.get("customer"):
 		args_dict["customer"] = context["customer"]
+
+	# Always include customer_group and territory if available (needed for pricing rule filtering)
+	if context.get("customer_group"):
+		args_dict["customer_group"] = context["customer_group"]
+	if context.get("territory"):
+		args_dict["territory"] = context["territory"]
 
 	# Add other optional fields
 	if context.get("price_list"):
@@ -1162,7 +1168,9 @@ def _process_pricing_results(pricing_results, erpnext_items, cart_items, context
 			continue
 
 		# Check if pricing rule was applied
-		if not _has_pricing_rule(pricing_result):
+		has_rule = _has_pricing_rule(pricing_result)
+
+		if not has_rule:
 			# No pricing rule - get original price from backend
 			result_items.extend(
 				_handle_no_pricing_rule(
@@ -1191,7 +1199,9 @@ def _has_pricing_rule(pricing_result):
 	"""Check if pricing result contains a valid pricing rule."""
 	pricing_rules_json = pricing_result.get("pricing_rules", "")
 	has_rule = pricing_result.get("has_pricing_rule", 0)
-	return bool(pricing_rules_json and has_rule)
+	result = bool(pricing_rules_json and has_rule)
+
+	return result
 
 
 def _extract_pricing_rule_names(pricing_result):
@@ -1405,6 +1415,69 @@ def _calculate_discounted_price(cart_item, pricing_result, context):
 	# Final fallback to cart item price
 	if original_price <= 0:
 		original_price = cart_item.get("price", 0)
+
+	# Validate that pricing_result price_list_rate makes sense for the UOM
+	# If pricing rule returns a price that's way off from expected UOM price,
+	# it means ERPNext calculated discount for wrong UOM - recalculate using our original_price
+	pricing_result_rate = pricing_result.get("price_list_rate")
+	_has_pricing_rule = pricing_result.get("has_pricing_rule", 0)
+	discount_percentage = pricing_result.get("discount_percentage", 0) or 0
+	discount_amount = pricing_result.get("discount_amount", 0) or 0
+	_pricing_rules_json = pricing_result.get("pricing_rules", "")
+
+	if pricing_result_rate is not None and item_uom and original_price > 0:
+		# If the pricing_result_rate is significantly different from our calculated original_price
+		# (more than 50% difference), it's likely calculated for wrong UOM
+		price_diff_ratio = abs(pricing_result_rate - original_price) / max(
+			pricing_result_rate, original_price
+		)
+		if price_diff_ratio > 0.5:
+			# Pricing rule returned price for wrong UOM, recalculate discount on correct UOM price
+			# Extract discount info and apply to our correct original_price
+			discount_percentage = pricing_result.get("discount_percentage", 0) or 0
+			discount_amount = pricing_result.get("discount_amount", 0) or 0
+
+			# Calculate what the discount should be based on the difference
+			# If pricing_result_rate is much lower, calculate the discount percentage
+			if pricing_result_rate < original_price:
+				calculated_discount_pct = ((original_price - pricing_result_rate) / original_price) * 100
+				# Use the calculated discount or the one from pricing_result
+				effective_discount = (
+					discount_percentage if discount_percentage > 0 else calculated_discount_pct
+				)
+				if effective_discount > 0:
+					final_price = original_price * (1 - effective_discount / 100)
+				elif discount_amount > 0:
+					final_price = max(0, original_price - discount_amount)
+				else:
+					final_price = original_price
+			else:
+				# Use discount from pricing_result
+				if discount_percentage > 0:
+					final_price = original_price * (1 - discount_percentage / 100)
+				elif discount_amount > 0:
+					final_price = max(0, original_price - discount_amount)
+				else:
+					final_price = original_price
+
+			# Return early with recalculated price
+			final_discount_pct = (
+				discount_percentage
+				if discount_percentage > 0
+				else ((original_price - final_price) / original_price * 100)
+			)
+			final_discount_amt = discount_amount if discount_amount > 0 else (original_price - final_price)
+
+			return {
+				**cart_item,
+				"price": final_price,
+				"original_price": original_price,
+				"discount_percentage": final_discount_pct,
+				"discount_amount": final_discount_amt,
+				"pricing_rules": pricing_result.get("pricing_rules", ""),
+				"has_pricing_rule": pricing_result.get("has_pricing_rule", 0),
+				"free_item_data": pricing_result.get("free_item_data", []),
+			}
 
 	# Calculate final price based on pricing rule type
 	final_price = _apply_discount_logic(original_price, pricing_result)

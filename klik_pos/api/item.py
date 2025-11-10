@@ -1076,20 +1076,36 @@ def _prepare_erpnext_items(cart_items, context):
 
 		stock_qty = item_qty * conversion_factor
 
-		erpnext_items.append(
-			{
-				"doctype": "Sales Invoice Item",
-				"name": "",
-				"item_code": item_code,
-				"item_group": item_doc.item_group,
-				"brand": item_doc.brand or "",
-				"qty": item_qty,
-				"stock_qty": stock_qty,  # filter_pricing_rules uses stock_qty for filtering
-				"price_list_rate": base_price,  # Use calculated price with UOM conversion
-				"uom": item_uom,
-				"conversion_factor": conversion_factor,
-			}
+		erpnext_item = {
+			"doctype": "Sales Invoice Item",
+			"name": "",
+			"item_code": item_code,
+			"item_group": item_doc.item_group,
+			"brand": item_doc.brand or "",
+			"qty": item_qty,
+			"stock_qty": stock_qty,  # filter_pricing_rules uses stock_qty for filtering
+			"price_list_rate": base_price,  # Use calculated price with UOM conversion
+			"uom": item_uom,
+			"conversion_factor": conversion_factor,
+		}
+
+		# Debug logging
+		frappe.log_error(
+			f"[PRICING RULE DEBUG] Prepared item for pricing rules:\n"
+			f"  Item: {item_code}\n"
+			f"  UOM: {item_uom}\n"
+			f"  Stock UOM: {stock_uom}\n"
+			f"  Conversion Factor: {conversion_factor}\n"
+			f"  Qty: {item_qty}\n"
+			f"  Stock Qty: {stock_qty}\n"
+			f"  Price List Rate: {base_price}\n"
+			f"  Direct Price Found: {bool(direct_price)}\n"
+			f"  Price List: {price_list}\n"
+			f"  Customer: {customer}",
+			"Pricing Rule Debug - Prepare Items"
 		)
+
+		erpnext_items.append(erpnext_item)
 
 	return erpnext_items
 
@@ -1119,8 +1135,39 @@ def _apply_pricing_rules(erpnext_items, context):
 
 	args = frappe._dict(args_dict)
 
+	# Debug logging - what we're sending to ERPNext
+	frappe.log_error(
+		f"[PRICING RULE DEBUG] Calling apply_pricing_rule with:\n"
+		f"  Items count: {len(erpnext_items)}\n"
+		f"  Company: {context.get('company')}\n"
+		f"  Currency: {context.get('currency')}\n"
+		f"  Customer: {context.get('customer')}\n"
+		f"  Price List: {context.get('price_list')}\n"
+		f"  Warehouse: {context.get('warehouse')}\n"
+		f"  Items details:\n" + "\n".join([
+			f"    - {item.get('item_code')}: UOM={item.get('uom')}, Price={item.get('price_list_rate')}, Qty={item.get('qty')}, StockQty={item.get('stock_qty')}"
+			for item in erpnext_items
+		]),
+		"Pricing Rule Debug - Before Apply"
+	)
+
 	try:
 		results = apply_pricing_rule(args, doc=None)
+
+		# Debug logging - what we got back
+		frappe.log_error(
+			f"[PRICING RULE DEBUG] apply_pricing_rule returned:\n"
+			f"  Results count: {len(results) if results else 0}\n"
+			f"  Results details:\n" + "\n".join([
+				f"    - Item {idx}: has_pricing_rule={result.get('has_pricing_rule', 0)}, "
+				f"price_list_rate={result.get('price_list_rate')}, "
+				f"discount_percentage={result.get('discount_percentage', 0)}, "
+				f"discount_amount={result.get('discount_amount', 0)}, "
+				f"pricing_rules={result.get('pricing_rules', '')}"
+				for idx, result in enumerate(results) if results
+			]),
+			"Pricing Rule Debug - After Apply"
+		)
 	except Exception as e:
 		import traceback
 
@@ -1162,7 +1209,25 @@ def _process_pricing_results(pricing_results, erpnext_items, cart_items, context
 			continue
 
 		# Check if pricing rule was applied
-		if not _has_pricing_rule(pricing_result):
+		has_rule = _has_pricing_rule(pricing_result)
+
+		# Debug logging
+		frappe.log_error(
+			f"[PRICING RULE DEBUG] Processing result for {item_code}:\n"
+			f"  Cart Item UOM: {cart_item.get('uom')}\n"
+			f"  Cart Item Price: {cart_item.get('price')}\n"
+			f"  ERPNext Item UOM: {erpnext_item.get('uom')}\n"
+			f"  ERPNext Item Price: {erpnext_item.get('price_list_rate')}\n"
+			f"  Has Pricing Rule: {has_rule}\n"
+			f"  Pricing Result: has_pricing_rule={pricing_result.get('has_pricing_rule', 0)}, "
+			f"price_list_rate={pricing_result.get('price_list_rate')}, "
+			f"discount_percentage={pricing_result.get('discount_percentage', 0)}, "
+			f"discount_amount={pricing_result.get('discount_amount', 0)}, "
+			f"pricing_rules={pricing_result.get('pricing_rules', '')}",
+			"Pricing Rule Debug - Process Results"
+		)
+
+		if not has_rule:
 			# No pricing rule - get original price from backend
 			result_items.extend(
 				_handle_no_pricing_rule(
@@ -1191,7 +1256,19 @@ def _has_pricing_rule(pricing_result):
 	"""Check if pricing result contains a valid pricing rule."""
 	pricing_rules_json = pricing_result.get("pricing_rules", "")
 	has_rule = pricing_result.get("has_pricing_rule", 0)
-	return bool(pricing_rules_json and has_rule)
+	result = bool(pricing_rules_json and has_rule)
+
+	# Debug logging
+	if not result:
+		frappe.log_error(
+			f"[PRICING RULE DEBUG] No pricing rule detected:\n"
+			f"  pricing_rules: {pricing_rules_json}\n"
+			f"  has_pricing_rule: {has_rule}\n"
+			f"  Result: {result}",
+			"Pricing Rule Debug - Has Rule Check"
+		)
+
+	return result
 
 
 def _extract_pricing_rule_names(pricing_result):
@@ -1406,8 +1483,106 @@ def _calculate_discounted_price(cart_item, pricing_result, context):
 	if original_price <= 0:
 		original_price = cart_item.get("price", 0)
 
+	# Validate that pricing_result price_list_rate makes sense for the UOM
+	# If pricing rule returns a price that's way off from expected UOM price,
+	# it means ERPNext calculated discount for wrong UOM - recalculate using our original_price
+	pricing_result_rate = pricing_result.get("price_list_rate")
+	has_pricing_rule = pricing_result.get("has_pricing_rule", 0)
+	discount_percentage = pricing_result.get("discount_percentage", 0) or 0
+	discount_amount = pricing_result.get("discount_amount", 0) or 0
+	pricing_rules_json = pricing_result.get("pricing_rules", "")
+
+	# Comprehensive debug logging
+	frappe.log_error(
+		f"[PRICING RULE DEBUG] Calculating discounted price for {cart_item_code}:\n"
+		f"  UOM: {item_uom}\n"
+		f"  Original Price (calculated): {original_price}\n"
+		f"  Pricing Result Rate: {pricing_result_rate}\n"
+		f"  Has Pricing Rule: {has_pricing_rule}\n"
+		f"  Discount Percentage: {discount_percentage}\n"
+		f"  Discount Amount: {discount_amount}\n"
+		f"  Pricing Rules JSON: {pricing_rules_json}\n"
+		f"  Cart Item Price: {cart_item.get('price', 0)}\n"
+		f"  Price List: {price_list}\n"
+		f"  Customer: {customer}",
+		"Pricing Rule Debug - Calculate Discount"
+	)
+
+	if pricing_result_rate is not None and item_uom and original_price > 0:
+		# If the pricing_result_rate is significantly different from our calculated original_price
+		# (more than 50% difference), it's likely calculated for wrong UOM
+		price_diff_ratio = abs(pricing_result_rate - original_price) / max(pricing_result_rate, original_price)
+		if price_diff_ratio > 0.5:
+			# Pricing rule returned price for wrong UOM, recalculate discount on correct UOM price
+			frappe.log_error(
+				f"[PRICING RULE DEBUG] Price mismatch detected for {cart_item_code}:\n"
+				f"  UOM: {item_uom}\n"
+				f"  Original Price (correct for UOM): {original_price}\n"
+				f"  Pricing Result Rate (wrong UOM?): {pricing_result_rate}\n"
+				f"  Price Difference Ratio: {price_diff_ratio}\n"
+				f"  Recalculating discount on correct UOM price...",
+				"Pricing Rule Debug - Price Mismatch"
+			)
+
+			# Extract discount info and apply to our correct original_price
+			discount_percentage = pricing_result.get("discount_percentage", 0) or 0
+			discount_amount = pricing_result.get("discount_amount", 0) or 0
+
+			# Calculate what the discount should be based on the difference
+			# If pricing_result_rate is much lower, calculate the discount percentage
+			if pricing_result_rate < original_price:
+				calculated_discount_pct = ((original_price - pricing_result_rate) / original_price) * 100
+				# Use the calculated discount or the one from pricing_result
+				effective_discount = discount_percentage if discount_percentage > 0 else calculated_discount_pct
+				if effective_discount > 0:
+					final_price = original_price * (1 - effective_discount / 100)
+				elif discount_amount > 0:
+					final_price = max(0, original_price - discount_amount)
+				else:
+					final_price = original_price
+			else:
+				# Use discount from pricing_result
+				if discount_percentage > 0:
+					final_price = original_price * (1 - discount_percentage / 100)
+				elif discount_amount > 0:
+					final_price = max(0, original_price - discount_amount)
+				else:
+					final_price = original_price
+
+			# Return early with recalculated price
+			final_discount_pct = discount_percentage if discount_percentage > 0 else ((original_price - final_price) / original_price * 100)
+			final_discount_amt = discount_amount if discount_amount > 0 else (original_price - final_price)
+
+			frappe.log_error(
+				f"[PRICING RULE DEBUG] Recalculated price for {cart_item_code}:\n"
+				f"  Original Price: {original_price}\n"
+				f"  Final Price: {final_price}\n"
+				f"  Discount Percentage: {final_discount_pct}\n"
+				f"  Discount Amount: {final_discount_amt}",
+				"Pricing Rule Debug - Recalculated"
+			)
+
+			return {
+				**cart_item,
+				"price": final_price,
+				"original_price": original_price,
+				"discount_percentage": final_discount_pct,
+				"discount_amount": final_discount_amt,
+				"pricing_rules": pricing_result.get("pricing_rules", ""),
+				"has_pricing_rule": pricing_result.get("has_pricing_rule", 0),
+				"free_item_data": pricing_result.get("free_item_data", []),
+			}
+
 	# Calculate final price based on pricing rule type
 	final_price = _apply_discount_logic(original_price, pricing_result)
+
+	frappe.log_error(
+		f"[PRICING RULE DEBUG] Final price calculation for {cart_item_code}:\n"
+		f"  Original Price: {original_price}\n"
+		f"  Final Price: {final_price}\n"
+		f"  Pricing Rule For: {pricing_result.get('pricing_rule_for', '')}",
+		"Pricing Rule Debug - Final Price"
+	)
 
 	# Build result item with all pricing information
 	return {

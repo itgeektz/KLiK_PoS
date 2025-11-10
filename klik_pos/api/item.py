@@ -813,11 +813,14 @@ def get_item_uoms_and_prices(item_code, customer=None):
 		# Add stock_uom if it's not already in the list (stock_uom has conversion_factor of 1.0)
 		stock_uom = item_doc.stock_uom
 		if stock_uom and stock_uom not in uom_names_in_table:
-			uom_data.insert(0, {
-				"uom": stock_uom,
-				"conversion_factor": 1.0,
-				"price": 0.0,
-			})
+			uom_data.insert(
+				0,
+				{
+					"uom": stock_uom,
+					"conversion_factor": 1.0,
+					"price": 0.0,
+				},
+			)
 
 		for uom_info in uom_data:
 			# First, check if there's a direct price entry for this UOM
@@ -1040,7 +1043,11 @@ def _prepare_erpnext_items(cart_items, context):
 			base_price_info = fetch_item_price(
 				item_code, price_list=price_list, customer=customer, uom=stock_uom
 			)
-			base_uom_price = base_price_info.get("price", 0) if base_price_info.get("price", 0) > 0 else item.get("price", 0)
+			base_uom_price = (
+				base_price_info.get("price", 0)
+				if base_price_info.get("price", 0) > 0
+				else item.get("price", 0)
+			)
 
 			# If UOM is different from stock_uom, apply conversion factor
 			if item_uom and item_uom != stock_uom:
@@ -1280,7 +1287,9 @@ def _handle_no_pricing_rule(erpnext_item, cart_items, context):
 					base_price_info = fetch_item_price(
 						cart_item_code, price_list=price_list, customer=customer, uom=stock_uom
 					)
-					base_uom_price = base_price_info.get("price", 0) if base_price_info.get("price", 0) > 0 else 0
+					base_uom_price = (
+						base_price_info.get("price", 0) if base_price_info.get("price", 0) > 0 else 0
+					)
 
 					if item_uom and item_uom != stock_uom:
 						conversion_factor = _get_uom_conversion_factor(cart_item_code, item_uom)

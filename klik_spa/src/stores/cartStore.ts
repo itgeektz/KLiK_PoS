@@ -260,12 +260,12 @@ export const useCartStore = create<CartState>()(
             if (priceUpdate && priceUpdate.success && priceUpdate.price > 0) {
               const currentPrice = item.price || 0;
               const newPrice = priceUpdate.price;
-              
+
               // If item has a UOM and current price > 0, validate if new price makes sense
               // For UOMs with conversion factors, the price should be base_price * conversion_factor
               // If current price is much higher than new price and UOM is set, it might be a calculated price
               if (item.uom && currentPrice > 0) {
-                // If new price is much lower than current (less than 50% of current), 
+                // If new price is much lower than current (less than 50% of current),
                 // and current price is reasonable (> 0), preserve current price
                 // This handles cases where Box (360) is being overwritten with Nos (18)
                 if (newPrice < currentPrice * 0.5 && currentPrice > 10) {
@@ -273,7 +273,7 @@ export const useCartStore = create<CartState>()(
                   return item; // Keep existing price - it's likely a UOM-converted price
                 }
               }
-              
+
               return { ...item, price: newPrice };
             }
             return item;
@@ -321,10 +321,10 @@ export const useCartStore = create<CartState>()(
               if (pricingRuleItem) {
                 const currentPrice = item.price || 0;
                 const newPrice = pricingRuleItem.price || 0;
-                
+
                 // Preserve UOM-converted prices - if item has UOM and new price is much lower, keep current
                 if (!pricingRuleItem.has_pricing_rule && item.uom && currentPrice > 0 && newPrice > 0) {
-                  // If new price is much lower than current (less than 50% of current), 
+                  // If new price is much lower than current (less than 50% of current),
                   // and current price is reasonable, preserve current price
                   // This handles cases where Box (360) is being overwritten with Nos (18)
                   if (newPrice < currentPrice * 0.5 && currentPrice > 10) {
@@ -340,7 +340,7 @@ export const useCartStore = create<CartState>()(
                     };
                   }
                 }
-                
+
                 return {
                   ...item,
                   price: newPrice,

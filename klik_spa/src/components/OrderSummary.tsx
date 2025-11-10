@@ -440,13 +440,13 @@ export default function OrderSummary({
 
   // Track if this is the initial load to prevent price recalculation on page refresh
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  
+
   useEffect(() => {
     // Mark initial load as complete after a short delay
     const timer = setTimeout(() => {
       setIsInitialLoad(false);
     }, 2000); // 2 seconds should be enough for cart to restore from localStorage
-    
+
     return () => clearTimeout(timer);
   }, []);
 

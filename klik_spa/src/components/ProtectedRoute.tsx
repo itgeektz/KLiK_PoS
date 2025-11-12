@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import POSOpeningEntryGuard from './POSOpeningEntryGuard';
 
 const ProtectedRoute = ({ element }: { element: React.ReactElement }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -24,7 +25,12 @@ const ProtectedRoute = ({ element }: { element: React.ReactElement }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  return element;
+  // Wrap the element with POSOpeningEntryGuard to ensure opening entry exists
+  return (
+    <POSOpeningEntryGuard excludePaths={['/settings']}>
+      {element}
+    </POSOpeningEntryGuard>
+  );
 };
 
 export default ProtectedRoute;

@@ -97,19 +97,23 @@ export default function MainPOSScreen() {
   }, [posReady, cacheLoaded]);
 
   // Check opening entry status when component mounts
+  // Note: The POSOpeningEntryGuard handles showing the modal and blocking access
+  // This just sets posReady state for this component
   useEffect(() => {
     if (!statusLoading && !statusError) {
       if (hasOpenEntry === true) {
         setPosReady(true)
         setShowOpeningModal(false)
       } else if (hasOpenEntry === false) {
+        // Guard will handle showing modal and blocking access
         setPosReady(false)
-        setShowOpeningModal(true)
+        setShowOpeningModal(false)
       }
     } else if (statusError) {
       console.error('Error checking POS opening status:', statusError)
+      // Guard will handle showing modal and blocking access
       setPosReady(false)
-      setShowOpeningModal(true)
+      setShowOpeningModal(false)
     }
   }, [hasOpenEntry, statusLoading, statusError])
 

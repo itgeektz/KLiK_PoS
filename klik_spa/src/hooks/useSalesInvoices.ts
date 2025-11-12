@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import type { SalesInvoice, SalesInvoiceItem } from "../../types";
 
-export function useSalesInvoices(searchTerm: string = "") {
+export function useSalesInvoices(searchTerm: string = "", skipOpeningEntryFilter: boolean = false, cashierName?: string) {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -37,8 +37,12 @@ export function useSalesInvoices(searchTerm: string = "") {
       const start = page * LIMIT;
 
       const searchParam = debouncedSearchTerm ? `&search=${encodeURIComponent(debouncedSearchTerm)}` : '';
+      // Skip opening entry filter for Invoice History page - show all invoices for cashier
+      const skipOpeningFilter = skipOpeningEntryFilter ? '&skip_opening_entry_filter=true' : '';
+      // Filter by cashier name if provided
+      const cashierParam = cashierName && cashierName !== 'all' ? `&cashier_name=${encodeURIComponent(cashierName)}` : '';
       const response = await fetch(
-        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${searchParam}`,
+        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${searchParam}${skipOpeningFilter}${cashierParam}`,
         {
           method: 'GET',
           headers: {
@@ -156,7 +160,7 @@ export function useSalesInvoices(searchTerm: string = "") {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [debouncedSearchTerm]);
+  }, [debouncedSearchTerm, skipOpeningEntryFilter, cashierName]);
 
   const loadMore = useCallback(() => {
     if (!isLoadingMore && hasMore) {
@@ -178,6 +182,25 @@ export function useSalesInvoices(searchTerm: string = "") {
     setHasMore(true);
     fetchInvoices(0, false);
   }, [debouncedSearchTerm, fetchInvoices]);
+
+  // Auto-load all invoices if total count is reasonable (for better client-side filtering)
+  // This helps when client-side filtering reduces the visible count significantly
+  // Auto-loads up to 10 pages (1000 invoices) to ensure users see all their filtered invoices
+  useEffect(() => {
+    if (!isLoading && !isLoadingMore && totalCount > 0 && totalCount <= 1000 && hasMore) {
+      const remainingPages = Math.ceil((totalCount - totalLoaded) / LIMIT);
+      if (remainingPages > 0 && remainingPages <= 10) {
+        // Only auto-load if there are 10 or fewer pages remaining (to avoid too many requests)
+        const loadAllPages = async () => {
+          for (let page = currentPage + 1; page <= currentPage + remainingPages; page++) {
+            if (!hasMore) break; // Stop if we've loaded everything
+            await fetchInvoices(page, true);
+          }
+        };
+        loadAllPages();
+      }
+    }
+  }, [totalCount, totalLoaded, hasMore, isLoading, isLoadingMore, currentPage, fetchInvoices]);
 
   return {
     invoices,

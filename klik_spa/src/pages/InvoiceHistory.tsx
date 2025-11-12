@@ -75,7 +75,9 @@ export default function InvoiceHistoryPage() {
   const [showEditOptions, setShowEditOptions] = useState(false);
   const [selectedDraftInvoice, setSelectedDraftInvoice] = useState<SalesInvoice | null>(null);
 
-  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore } = useSalesInvoices(searchTerm);
+  // Skip opening entry filter for Invoice History - show all invoices for cashier regardless of opening entry
+  // Pass cashier filter to API so it filters on server side (more efficient)
+  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore } = useSalesInvoices(searchTerm, true, cashierFilter);
   const { modes } = useAllPaymentModes();
   const { customers } = useCustomers();
   const { posDetails } = usePOSDetails();
@@ -201,15 +203,30 @@ const getStatusBadge = (status: string) => {
     if (isLoading) return [];
     if (error) return [];
 
-    return invoices.filter((invoice) => {
+    const filtered = invoices.filter((invoice) => {
       // Server-side search is handled by the API, so we only apply client-side filters
-      const matchesStatus = activeTab === "all" || invoice.status === activeTab;
+      // Normalize status comparison to handle case and whitespace differences
+      const invoiceStatus = (invoice.status || "").trim();
+      const tabStatus = (activeTab || "").trim();
+      const matchesStatus = activeTab === "all" || invoiceStatus === tabStatus;
       const matchesPayment = paymentFilter === "all" || invoice.paymentMethod === paymentFilter;
       const matchesCashier = cashierFilter === "all" || invoice.cashier === cashierFilter;
       const matchesDate = filterInvoiceByDate(invoice.date);
 
       return matchesPayment && matchesCashier && matchesStatus && matchesDate;
     });
+
+    // Debug: Log filtering results
+    if (activeTab !== "all") {
+      console.log(`[InvoiceHistory] Filtering by status "${activeTab}":`, {
+        totalInvoices: invoices.length,
+        filteredCount: filtered.length,
+        activeTab,
+        sampleStatuses: invoices.slice(0, 5).map(inv => inv.status)
+      });
+    }
+
+    return filtered;
   }, [invoices, activeTab, dateFilter, paymentFilter, cashierFilter, isLoading, error]);
 
   const uniqueCashiers = useMemo(() => {
@@ -237,10 +254,26 @@ const getStatusBadge = (status: string) => {
     });
   }, [customers, customerSearchQuery]);
 
-  // Get count for each status
+  // Get count for each status - filtered by cashier, date, and payment (but not status)
+  // This ensures tab counts reflect the current filter selections
   const getStatusCount = (status: string) => {
-    if (status === "all") return invoices.length;
-    return invoices.filter(invoice => invoice.status === status).length;
+    // First apply all filters except status
+    const invoicesFilteredByOtherFilters = invoices.filter((invoice) => {
+      const matchesPayment = paymentFilter === "all" || invoice.paymentMethod === paymentFilter;
+      const matchesCashier = cashierFilter === "all" || invoice.cashier === cashierFilter;
+      const matchesDate = filterInvoiceByDate(invoice.date);
+      return matchesPayment && matchesCashier && matchesDate;
+    });
+
+    // Then count by status - normalize comparison
+    if (status === "all") {
+      return invoicesFilteredByOtherFilters.length;
+    }
+    const normalizedStatus = (status || "").trim();
+    return invoicesFilteredByOtherFilters.filter(invoice => {
+      const invoiceStatus = (invoice.status || "").trim();
+      return invoiceStatus === normalizedStatus;
+    }).length;
   };
 
   // Loading state - only block if nothing loaded yet
@@ -473,7 +506,7 @@ const getStatusBadge = (status: string) => {
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
               {filteredInvoices.map((invoice) => (
-                <tr key={invoice.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                <tr key={`${activeTab}-${invoice.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
@@ -561,7 +594,7 @@ const getStatusBadge = (status: string) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
           {filteredInvoices.map((invoice) => (
             <div
-              key={invoice.id}
+              key={`${activeTab}-${invoice.id}`}
               className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 hover:shadow-md transition-shadow"
             >
               <div className="flex items-center justify-between mb-3">
@@ -644,7 +677,10 @@ const getStatusBadge = (status: string) => {
       {!hasMore && totalLoaded > 0 && (
         <div className="text-center mt-8 py-4">
           <p className="text-gray-600 dark:text-gray-400">
-            All {totalCount} invoices loaded
+            {filteredInvoices.length > 0
+              ? `Showing ${filteredInvoices.length} invoice${filteredInvoices.length !== 1 ? 's' : ''} (${totalLoaded} total loaded)`
+              : `All ${totalCount} invoices loaded`
+            }
           </p>
         </div>
       )}

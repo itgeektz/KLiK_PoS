@@ -15,7 +15,7 @@ interface CurrentUser {
 
 interface POSOpeningEntryGuardProps {
   children: React.ReactNode;
-  
+
   excludePaths?: string[];
 }
 
@@ -23,9 +23,9 @@ interface POSOpeningEntryGuardProps {
  * Guard component that ensures a POS opening entry exists before allowing access to protected pages.
  * Shows the opening entry modal when no entry is found and blocks access to page content.
  */
-export default function POSOpeningEntryGuard({ 
-  children, 
-  excludePaths = ['/settings', '/login'] 
+export default function POSOpeningEntryGuard({
+  children,
+  excludePaths = ['/settings', '/login']
 }: POSOpeningEntryGuardProps) {
   const { isRTL } = useI18n();
   const location = useLocation();
@@ -151,7 +151,7 @@ export default function POSOpeningEntryGuard({
         setIsInitialized(true);
       } else {
         setShowOpeningModal(true);
-        setIsInitialized(true); 
+        setIsInitialized(true);
       }
     } else if (statusError) {
       setShowOpeningModal(true);
@@ -197,7 +197,7 @@ export default function POSOpeningEntryGuard({
         <div className="min-h-screen bg-gray-50 flex items-center justify-center pointer-events-none opacity-50">
           {children}
         </div>
-        
+
         {/* Show opening entry modal */}
         <POSOpeningModal
           isOpen={showOpeningModal}
@@ -211,4 +211,3 @@ export default function POSOpeningEntryGuard({
 
   return <>{children}</>;
 }
-

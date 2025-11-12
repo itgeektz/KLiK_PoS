@@ -49,7 +49,7 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 	try:
 		# Convert string to boolean if needed (Frappe passes query params as strings)
 		if isinstance(skip_opening_entry_filter, str):
-			skip_opening_entry_filter = skip_opening_entry_filter.lower() in ('true', '1', 'yes')
+			skip_opening_entry_filter = skip_opening_entry_filter.lower() in ("true", "1", "yes")
 
 		# Get user IDs for cashier filter if cashier_name is provided
 		cashier_user_ids = None
@@ -59,7 +59,9 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 				# No users found with this name, return empty result
 				return {"success": True, "data": [], "total_count": 0}
 
-		filters, fields = _build_filters_and_fields(skip_opening_entry_filter=skip_opening_entry_filter, cashier_user_ids=cashier_user_ids)
+		filters, fields = _build_filters_and_fields(
+			skip_opening_entry_filter=skip_opening_entry_filter, cashier_user_ids=cashier_user_ids
+		)
 
 		# Build search filters
 		or_filters = _build_search_filters(search)

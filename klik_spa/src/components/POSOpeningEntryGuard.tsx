@@ -137,7 +137,7 @@ export default function POSOpeningEntryGuard({
     // On initial load, wait for both status and user to be loaded
     // On subsequent navigations, use cached data and update when refetch completes
     const isInitialCheck = hasOpenEntry === null;
-    
+
     if (isInitialCheck && (statusLoading || userLoading)) {
       return; // Wait for initial load
     }
@@ -188,7 +188,7 @@ export default function POSOpeningEntryGuard({
   // Don't show loading when navigating between pages - use cached data instead
   // Once we have a status (hasOpenEntry !== null), always use cached data even during refetch
   const shouldShowLoading = hasOpenEntry === null && (statusLoading || userLoading);
-  
+
   if (shouldShowLoading) {
     return (
       <div className={`min-h-screen bg-gray-50 ${isRTL ? "rtl" : "ltr"} flex items-center justify-center`}>

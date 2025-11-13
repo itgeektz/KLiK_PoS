@@ -93,17 +93,19 @@ export default function POSOpeningEntryGuard({
     fetchCurrentUser();
   }, []);
 
-  // Refetch opening entry status when route changes
-  // This ensures we check for opening entry on every navigation
+  // Refetch opening entry status when route changes (silently in background)
+  // This ensures we check for opening entry on every navigation without blocking UI
   useEffect(() => {
     if (shouldExclude()) {
       return;
     }
 
-    // Reset initialization to show loading state while refetching
-    setIsInitialized(false);
-    refetch();
-  }, [location.pathname, refetch]);
+    // Only refetch if we already have a status (don't block on first load)
+    // This allows background refresh without showing loading screen
+    if (hasOpenEntry !== null && isInitialized) {
+      refetch();
+    }
+  }, [location.pathname, refetch, hasOpenEntry, isInitialized]);
 
   // This helps detect if opening entry was closed from ERPNext while user was away
   useEffect(() => {
@@ -132,9 +134,12 @@ export default function POSOpeningEntryGuard({
       return;
     }
 
-    // Wait for both status and user to be loaded
-    if (statusLoading || userLoading) {
-      return;
+    // On initial load, wait for both status and user to be loaded
+    // On subsequent navigations, use cached data and update when refetch completes
+    const isInitialCheck = hasOpenEntry === null;
+
+    if (isInitialCheck && (statusLoading || userLoading)) {
+      return; // Wait for initial load
     }
 
     if (userError) {
@@ -144,7 +149,8 @@ export default function POSOpeningEntryGuard({
     }
 
     // Check opening entry status
-    if (!statusLoading && !statusError) {
+    // If we have cached data, update immediately even if refetch is in progress
+    if (hasOpenEntry !== null) {
       if (hasOpenEntry === true) {
         // Opening entry exists, allow access
         setShowOpeningModal(false);
@@ -153,9 +159,10 @@ export default function POSOpeningEntryGuard({
         setShowOpeningModal(true);
         setIsInitialized(true);
       }
-    } else if (statusError) {
+    } else if (!statusLoading && statusError) {
+      // Only show error modal if we don't have cached data
       setShowOpeningModal(true);
-      setIsInitialized(true); // Set initialized so we can show the modal
+      setIsInitialized(true);
     }
   }, [hasOpenEntry, statusLoading, statusError, userLoading, userError, location.pathname]);
 
@@ -177,8 +184,12 @@ export default function POSOpeningEntryGuard({
     return <>{children}</>;
   }
 
-  // Show loading screen while checking status
-  if (statusLoading || userLoading || !isInitialized) {
+  // Show loading screen only on initial load (when we don't have status yet)
+  // Don't show loading when navigating between pages - use cached data instead
+  // Once we have a status (hasOpenEntry !== null), always use cached data even during refetch
+  const shouldShowLoading = hasOpenEntry === null && (statusLoading || userLoading);
+
+  if (shouldShowLoading) {
     return (
       <div className={`min-h-screen bg-gray-50 ${isRTL ? "rtl" : "ltr"} flex items-center justify-center`}>
         <div className="text-center">

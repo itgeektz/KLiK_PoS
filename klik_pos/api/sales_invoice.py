@@ -1110,7 +1110,7 @@ def return_sales_invoice(invoice_name):
 
 		# Payment sync will be handled after save so totals include write-off adjustments
 
-		return_doc.save()
+		return_doc.save(ignore_permissions=True)
 
 		# After save (totals finalized by validate), sync payments to match grand/rounded total
 		if getattr(return_doc, "custom_roundoff_amount", 0):
@@ -1137,7 +1137,7 @@ def return_sales_invoice(invoice_name):
 			return_doc.paid_amount = desired_payment
 			return_doc.base_paid_amount = desired_payment * (return_doc.conversion_rate or 1)
 			return_doc.outstanding_amount = 0
-			return_doc.save()
+			return_doc.save(ignore_permissions=True)
 
 		return_doc.submit()
 
@@ -1897,7 +1897,7 @@ def create_partial_return(
 		except Exception:
 			pass
 
-		return_doc.save()
+		return_doc.save(ignore_permissions=True)
 		return_doc.submit()
 
 		return {

@@ -127,7 +127,6 @@ export default function POSOpeningEntryGuard({
 
   // Re-check when route changes or opening entry status changes
   useEffect(() => {
-    // Skip check if path is excluded
     if (shouldExclude()) {
       setIsInitialized(true);
       setShowOpeningModal(false);
@@ -184,9 +183,7 @@ export default function POSOpeningEntryGuard({
     return <>{children}</>;
   }
 
-  // Show loading screen only on initial load (when we don't have status yet)
-  // Don't show loading when navigating between pages - use cached data instead
-  // Once we have a status (hasOpenEntry !== null), always use cached data even during refetch
+
   const shouldShowLoading = hasOpenEntry === null && (statusLoading || userLoading);
 
   if (shouldShowLoading) {

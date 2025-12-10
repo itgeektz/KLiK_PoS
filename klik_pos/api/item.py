@@ -712,7 +712,7 @@ def get_items_with_balance_and_price(
 		count_sql = "\n".join(count_query)
 		total_result = frappe.db.sql(count_sql, tuple(count_params), as_dict=True)
 		total_count = total_result[0]["total"] if total_result else 0
-		
+
 		# If hide_unavailable is enabled, we also need to count ALL items (without stock filter) for display
 		# The actual items returned will still be filtered by stock, but count shows real total
 		if hide_unavailable:
@@ -724,7 +724,7 @@ def get_items_with_balance_and_price(
 				"AND i.is_stock_item = 1",
 			]
 			unfiltered_count_params: list[object] = []
-			
+
 			# Apply item group filter from POS profile
 			if getattr(pos_doc, "item_groups", None):
 				item_group_names = [d.item_group for d in pos_doc.item_groups if d.item_group]
@@ -732,12 +732,12 @@ def get_items_with_balance_and_price(
 					placeholders = ", ".join(["%s"] * len(item_group_names))
 					unfiltered_count_query.append(f"AND i.item_group IN ({placeholders})")
 					unfiltered_count_params.extend(item_group_names)
-			
+
 			# Apply category filter if specified
 			if category and category != "all":
 				unfiltered_count_query.append("AND i.item_group = %s")
 				unfiltered_count_params.append(category)
-			
+
 			# Apply search filter if specified
 			if search and search.strip():
 				search_term = f"%{search.strip()}%"
@@ -753,12 +753,12 @@ def get_items_with_balance_and_price(
 					)
 				""")
 				unfiltered_count_params.extend([search_term, search_term, search_term, search_term])
-			
+
 			# Get unfiltered total count
 			unfiltered_count_sql = "\n".join(unfiltered_count_query)
 			unfiltered_total_result = frappe.db.sql(unfiltered_count_sql, tuple(unfiltered_count_params), as_dict=True)
 			unfiltered_total_count = unfiltered_total_result[0]["total"] if unfiltered_total_result else 0
-			
+
 			# Use the unfiltered count for display (real total)
 			total_count = unfiltered_total_count
 

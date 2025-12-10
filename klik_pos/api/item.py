@@ -444,12 +444,8 @@ def get_item_by_identifier(code: str):
 		frappe.throw(_("Error fetching item by identifier: {0}").format(str(e)))
 
 
-@frappe.whitelist(allow_guest=True)
-def get_items_with_balance_and_price():
-	"""
-	Get items with balance and price - optimized with early filtering for unavailable items
-	"""
-	# Get POS profile and apply safe fallbacks so the API never crashes in production
+def _get_pos_context():
+	"""Get POS profile and warehouse context with safe fallbacks."""
 	try:
 		pos_doc = get_current_pos_profile()
 	except Exception:
@@ -472,99 +468,363 @@ def get_items_with_balance_and_price():
 		except Exception:
 			warehouse = None
 
-	# Price list (scan-friendly). fetch_item_price already tolerates empty
 	price_list = getattr(pos_doc, "selling_price_list", None)
 	hide_unavailable = getattr(pos_doc, "hide_unavailable_items", False)
 
+	return pos_doc, warehouse, price_list, hide_unavailable
+
+
+def _fetch_batch_stock(item_codes: list, warehouse: str) -> dict:
+	"""Fetch stock balances for multiple items in optimized batch queries."""
+	if not item_codes or not warehouse:
+		return {}
+
+	stock_map = {}
+
+	# Use SQL to get stock from Bin table in batch
 	try:
+		placeholders = ", ".join(["%s"] * len(item_codes))
+		sql = f"""
+			SELECT item_code, actual_qty
+			FROM `tabBin`
+			WHERE item_code IN ({placeholders})
+			AND warehouse = %s
+		"""
+		params = [*item_codes, warehouse]
+		results = frappe.db.sql(sql, params, as_dict=True)
+
+		for row in results:
+			stock_map[row["item_code"]] = row["actual_qty"] or 0
+
+		# Items not in Bin have 0 stock
+		for item_code in item_codes:
+			if item_code not in stock_map:
+				stock_map[item_code] = 0
+
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Batch stock fetch error")
+		# Fallback to individual queries
+		for item_code in item_codes:
+			stock_map[item_code] = fetch_item_balance(item_code, warehouse)
+
+	return stock_map
+
+
+def _fetch_batch_prices(item_codes: list, price_list: str | None, uom_map: dict) -> dict:
+	"""Fetch prices for multiple items in optimized batch queries."""
+	if not item_codes:
+		return {}
+
+	price_map = {}
+
+	try:
+		# Get default currency
+		default_currency = (
+			frappe.get_value(
+				"Company",
+				frappe.defaults.get_user_default("Company"),
+				"default_currency",
+			)
+			or "SAR"
+		)
+		default_symbol = frappe.db.get_value("Currency", default_currency, "symbol") or default_currency
+
+		# Build query for Item Price
+		placeholders = ", ".join(["%s"] * len(item_codes))
+
+		if price_list and price_list.strip():
+			# Try with price list first
+			sql = f"""
+				SELECT item_code, price_list_rate, currency, uom
+				FROM `tabItem Price`
+				WHERE item_code IN ({placeholders})
+				AND price_list = %s
+				AND selling = 1
+			"""
+			params = [*item_codes, price_list]
+		else:
+			sql = f"""
+				SELECT item_code, price_list_rate, currency, uom
+				FROM `tabItem Price`
+				WHERE item_code IN ({placeholders})
+				AND selling = 1
+				ORDER BY modified DESC
+			"""
+			params = item_codes
+
+		results = frappe.db.sql(sql, params, as_dict=True)
+
+		# Build price map - prefer prices matching the item's UOM
+		for row in results:
+			item_code = row["item_code"]
+			item_uom = uom_map.get(item_code, "Nos")
+
+			# If we already have a price for this item, only replace if UOM matches better
+			if item_code in price_map:
+				existing_uom_match = price_map[item_code].get("uom") == item_uom
+				new_uom_match = row.get("uom") == item_uom
+				if not new_uom_match or existing_uom_match:
+					continue
+
+			symbol = frappe.db.get_value("Currency", row["currency"], "symbol") or row["currency"]
+			price_map[item_code] = {
+				"price": row["price_list_rate"] or 0,
+				"currency": row["currency"] or default_currency,
+				"currency_symbol": symbol or default_symbol,
+				"uom": row.get("uom"),
+			}
+
+		# For items without prices, use default values
+		for item_code in item_codes:
+			if item_code not in price_map:
+				price_map[item_code] = {
+					"price": 0,
+					"currency": default_currency,
+					"currency_symbol": default_symbol,
+				}
+
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Batch price fetch error")
+		# Fallback to individual queries
+		for item_code in item_codes:
+			uom = uom_map.get(item_code, "Nos")
+			price_map[item_code] = fetch_item_price(item_code, price_list, uom=uom)
+
+	return price_map
+
+
+@frappe.whitelist(allow_guest=True)
+def get_items_with_balance_and_price(
+	limit: int = 1000,
+	offset: int = 0,
+	search: str | None = None,
+	category: str | None = None,
+):
+	"""
+	Get items with balance and price - optimized with pagination and server-side search.
+
+	Args:
+		limit: Number of items to return (default 1000)
+		offset: Starting position for pagination (default 0)
+		search: Search term to filter items by name, item_code, or barcode
+		category: Filter by item group/category
+
+	Returns:
+		dict with items, total_count, and has_more flag
+	"""
+	# Convert string params to proper types (frappe passes strings from URL)
+	try:
+		limit = int(limit) if limit else 1000
+		offset = int(offset) if offset else 0
+	except (ValueError, TypeError):
+		limit = 1000
+		offset = 0
+
+	# Cap limit to prevent abuse
+	limit = min(limit, 2000)
+
+	pos_doc, warehouse, price_list, hide_unavailable = _get_pos_context()
+
+	try:
+		# Build the base query
+		select_fields = "i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom"
+
 		if hide_unavailable:
 			base_query = [
-				"SELECT DISTINCT i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom",
+				f"SELECT DISTINCT {select_fields}",
 				"FROM `tabItem` i",
 				"INNER JOIN `tabBin` b ON i.name = b.item_code",
 				"WHERE i.disabled = 0",
 				"AND i.is_stock_item = 1",
 				"AND b.actual_qty > 0",
 			]
-			params_list: list[object] = []
-
-			if warehouse:
-				base_query.append("AND b.warehouse = %s")
-				params_list.append(warehouse)
-
-			# Add item group filter if specified in POS profile
-			if getattr(pos_doc, "item_groups", None):
-				item_group_names = [d.item_group for d in pos_doc.item_groups if d.item_group]
-				if item_group_names:
-					placeholders = ", ".join(["%s"] * len(item_group_names))
-					base_query.append(f"AND i.item_group IN ({placeholders})")
-					params_list.extend(item_group_names)
-
-			base_query.append("ORDER BY i.modified DESC")
-
-			sql = "\n".join(base_query)
-			items = frappe.db.sql(sql, tuple(params_list), as_dict=True)
+			count_query = [
+				"SELECT COUNT(DISTINCT i.name) as total",
+				"FROM `tabItem` i",
+				"INNER JOIN `tabBin` b ON i.name = b.item_code",
+				"WHERE i.disabled = 0",
+				"AND i.is_stock_item = 1",
+				"AND b.actual_qty > 0",
+			]
 		else:
-			# Use SQL to get items with barcode information
 			base_query = [
-				"SELECT DISTINCT i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom",
+				f"SELECT DISTINCT {select_fields}",
 				"FROM `tabItem` i",
 				"WHERE i.disabled = 0",
 				"AND i.is_stock_item = 1",
 			]
-			params_list: list[object] = []
+			count_query = [
+				"SELECT COUNT(DISTINCT i.name) as total",
+				"FROM `tabItem` i",
+				"WHERE i.disabled = 0",
+				"AND i.is_stock_item = 1",
+			]
 
-			# Add item group filter if specified in POS profile
+		params_list: list[object] = []
+		count_params: list[object] = []
+
+		# Warehouse filter for hide_unavailable
+		if hide_unavailable and warehouse:
+			base_query.append("AND b.warehouse = %s")
+			count_query.append("AND b.warehouse = %s")
+			params_list.append(warehouse)
+			count_params.append(warehouse)
+
+		# Item group filter from POS profile
+		if getattr(pos_doc, "item_groups", None):
+			item_group_names = [d.item_group for d in pos_doc.item_groups if d.item_group]
+			if item_group_names:
+				placeholders = ", ".join(["%s"] * len(item_group_names))
+				base_query.append(f"AND i.item_group IN ({placeholders})")
+				count_query.append(f"AND i.item_group IN ({placeholders})")
+				params_list.extend(item_group_names)
+				count_params.extend(item_group_names)
+
+		# Category filter (overrides POS profile groups if specified)
+		if category and category != "all":
+			base_query.append("AND i.item_group = %s")
+			count_query.append("AND i.item_group = %s")
+			params_list.append(category)
+			count_params.append(category)
+
+		# Search filter - search by name, item_code, description, or barcode
+		if search and search.strip():
+			search_term = f"%{search.strip()}%"
+			# Join with Item Barcode to search by barcode
+			search_condition = """
+				AND (
+					i.name LIKE %s
+					OR i.item_name LIKE %s
+					OR i.description LIKE %s
+					OR EXISTS (
+						SELECT 1 FROM `tabItem Barcode` ib
+						WHERE ib.parent = i.name AND ib.barcode LIKE %s
+					)
+				)
+			"""
+			base_query.append(search_condition)
+			count_query.append(search_condition)
+			params_list.extend([search_term, search_term, search_term, search_term])
+			count_params.extend([search_term, search_term, search_term, search_term])
+
+		# Get total count - count ALL items matching filters (excluding stock availability for count)
+		# This shows the real total even if hide_unavailable_items is enabled
+		count_sql = "\n".join(count_query)
+		total_result = frappe.db.sql(count_sql, tuple(count_params), as_dict=True)
+		total_count = total_result[0]["total"] if total_result else 0
+
+		# If hide_unavailable is enabled, we also need to count ALL items (without stock filter) for display
+		# The actual items returned will still be filtered by stock, but count shows real total
+		if hide_unavailable:
+			# Build count query without stock filter to get real total
+			unfiltered_count_query = [
+				"SELECT COUNT(DISTINCT i.name) as total",
+				"FROM `tabItem` i",
+				"WHERE i.disabled = 0",
+				"AND i.is_stock_item = 1",
+			]
+			unfiltered_count_params: list[object] = []
+
+			# Apply item group filter from POS profile
 			if getattr(pos_doc, "item_groups", None):
 				item_group_names = [d.item_group for d in pos_doc.item_groups if d.item_group]
 				if item_group_names:
 					placeholders = ", ".join(["%s"] * len(item_group_names))
-					base_query.append(f"AND i.item_group IN ({placeholders})")
-					params_list.extend(item_group_names)
+					unfiltered_count_query.append(f"AND i.item_group IN ({placeholders})")
+					unfiltered_count_params.extend(item_group_names)
 
-			base_query.append("ORDER BY i.modified DESC")
+			# Apply category filter if specified
+			if category and category != "all":
+				unfiltered_count_query.append("AND i.item_group = %s")
+				unfiltered_count_params.append(category)
 
-			sql = "\n".join(base_query)
-			items = frappe.db.sql(sql, tuple(params_list), as_dict=True)
+			# Apply search filter if specified
+			if search and search.strip():
+				search_term = f"%{search.strip()}%"
+				unfiltered_count_query.append("""
+					AND (
+						i.name LIKE %s
+						OR i.item_name LIKE %s
+						OR i.description LIKE %s
+						OR EXISTS (
+							SELECT 1 FROM `tabItem Barcode` ib
+							WHERE ib.parent = i.name AND ib.barcode LIKE %s
+						)
+					)
+				""")
+				unfiltered_count_params.extend([search_term, search_term, search_term, search_term])
+
+			# Get unfiltered total count
+			unfiltered_count_sql = "\n".join(unfiltered_count_query)
+			unfiltered_total_result = frappe.db.sql(
+				unfiltered_count_sql, tuple(unfiltered_count_params), as_dict=True
+			)
+			unfiltered_total_count = unfiltered_total_result[0]["total"] if unfiltered_total_result else 0
+
+			# Use the unfiltered count for display (real total)
+			total_count = unfiltered_total_count
+
+		# Add ordering and pagination
+		base_query.append("ORDER BY i.item_name ASC")
+		base_query.append("LIMIT %s OFFSET %s")
+		params_list.extend([limit, offset])
+
+		# Execute main query
+		sql = "\n".join(base_query)
+		items = frappe.db.sql(sql, tuple(params_list), as_dict=True)
+
+		if not items:
+			return {
+				"items": [],
+				"total_count": total_count,
+				"has_more": False,
+				"limit": limit,
+				"offset": offset,
+			}
 
 		item_codes = [item["name"] for item in items]
+
+		# Fetch barcodes in batch
 		barcode_map = {}
-		if item_codes:
-			try:
-				barcode_results = frappe.get_all(
-					"Item Barcode",
-					filters={"parent": ["in", item_codes]},
-					fields=["parent", "barcode"],
-					limit=0,
-				)
+		try:
+			barcode_results = frappe.get_all(
+				"Item Barcode",
+				filters={"parent": ["in", item_codes]},
+				fields=["parent", "barcode"],
+				limit=0,
+			)
+			for barcode_row in barcode_results:
+				item_code = barcode_row.get("parent")
+				if item_code and item_code not in barcode_map:
+					barcode_map[item_code] = barcode_row.get("barcode")
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Error fetching item barcodes for POS")
 
-				for barcode_row in barcode_results:
-					item_code = barcode_row.get("parent")
-					if item_code and item_code not in barcode_map:
-						barcode_map[item_code] = barcode_row.get("barcode")
-			except Exception:
-				frappe.log_error(frappe.get_traceback(), "Error fetching item barcodes for POS")
+		# Build UOM map for price fetching
+		uom_map = {item["name"]: item.get("stock_uom", "Nos") for item in items}
 
+		# Fetch stock and prices in batch (optimized)
+		stock_map = _fetch_batch_stock(item_codes, warehouse)
+		price_map = _fetch_batch_prices(item_codes, price_list, uom_map)
+
+		# Build enriched items
 		enriched_items = []
 		for item in items:
-			# Get balance (already filtered if hide_unavailable is True)
-			balance = fetch_item_balance(item["name"], warehouse)
+			item_code = item["name"]
+			balance = stock_map.get(item_code, 0)
 
+			# Skip items with no stock if hide_unavailable is enabled
 			if hide_unavailable and balance <= 0:
 				continue
 
-			# Get the default UOM to display (stock_uom)
 			default_uom = item.get("stock_uom", "Nos")
-
-			# Get price info only for available items, matching the UOM being displayed
-			price_info = fetch_item_price(item["name"], price_list, uom=default_uom)
-
-			primary_barcode = barcode_map.get(item["name"])
+			price_info = price_map.get(item_code, {"price": 0, "currency": "SAR", "currency_symbol": "SAR"})
+			primary_barcode = barcode_map.get(item_code)
 
 			enriched_items.append(
 				{
-					"id": item["name"],
-					"name": item.get("item_name") or item["name"],
+					"id": item_code,
+					"name": item.get("item_name") or item_code,
 					"description": item.get("description", ""),
 					"category": item.get("item_group", "General"),
 					"price": price_info["price"],
@@ -578,7 +838,15 @@ def get_items_with_balance_and_price():
 					"barcode": primary_barcode,
 				}
 			)
-		return enriched_items
+
+		has_more = (offset + len(enriched_items)) < total_count
+		return {
+			"items": enriched_items,
+			"total_count": total_count,
+			"has_more": has_more,
+			"limit": limit,
+			"offset": offset,
+		}
 
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Get Combined Item Data Error")

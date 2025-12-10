@@ -24,6 +24,7 @@ export function useItemGroups(): UseItemGroupsReturn {
   const [totalItemCount, setTotalItemCount] = useState<number>(0); // <-- track total
 
   const fetchItemGroups = async () => {
+
     setIsLoading(true);
     try {
       const response = await fetch(`/api/method/klik_pos.api.item.get_item_groups_for_pos`);

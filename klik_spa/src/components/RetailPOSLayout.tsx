@@ -22,7 +22,7 @@ export default function RetailPOSLayout() {
   const [showScanner, setShowScanner] = useState(false)
   const [pinnedItemId, setPinnedItemId] = useState<string | null>(null)
   const [identifierItemId, setIdentifierItemId] = useState<string | null>(null)
-  
+
   // Debounce timer ref for search
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -30,12 +30,12 @@ export default function RetailPOSLayout() {
   const { cartItems, addToCart, updateQuantity, removeItem, clearCart } = useCartStore()
 
   // Use professional data management with pagination
-  const { 
-    products: menuItems, 
-    isLoading: loading, 
+  const {
+    products: menuItems,
+    isLoading: loading,
     isLoadingMore,
     isSearching,
-    error, 
+    error,
     refetch,
     loadMoreProducts,
     searchProducts,
@@ -226,14 +226,14 @@ export default function RetailPOSLayout() {
 
     // Reset identifier resolution when query changes; will re-resolve via effect
     setIdentifierItemId(null)
-    
+
     // Debounced server-side search for any query (text or numeric); still keep barcode paths elsewhere
     if (searchDebounceRef.current) {
       clearTimeout(searchDebounceRef.current)
     }
-    
+
     const trimmedQuery = query.trim()
-    
+
     // Trigger server-side search for any non-empty query (length >= 1)
     if (trimmedQuery.length >= 1) {
       searchDebounceRef.current = setTimeout(() => {
@@ -329,7 +329,7 @@ export default function RetailPOSLayout() {
       // Regular search - trigger server-side search on Enter
       console.log('Processing as product search:', localSearchQuery)
       searchProducts(localSearchQuery.trim())
-      
+
       // Additionally try resolving batch/serial on Enter for user convenience
       ;(async () => {
         try {
@@ -415,7 +415,7 @@ export default function RetailPOSLayout() {
 
     return () => { cancelled = true; clearTimeout(timer) }
   }, [localSearchQuery, scalePrefix])
-  
+
   // Cleanup debounce timer on unmount
   useEffect(() => {
     return () => {

@@ -297,11 +297,11 @@ export default function MobilePOSLayout({
             </div>
           </div>
         ) : (
-          <ProductGrid 
-            items={items} 
-            onAddToCart={addToCart} 
-            isMobile={true} 
-            scannerOnly={scannerOnly} 
+          <ProductGrid
+            items={items}
+            onAddToCart={addToCart}
+            isMobile={true}
+            scannerOnly={scannerOnly}
             viewMode={viewMode}
             hasMore={hasMore}
             isLoadingMore={isLoadingMore}

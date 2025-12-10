@@ -490,7 +490,7 @@ def _fetch_batch_stock(item_codes: list, warehouse: str) -> dict:
 			WHERE item_code IN ({placeholders})
 			AND warehouse = %s
 		"""
-		params = item_codes + [warehouse]
+		params = [*item_codes, warehouse]
 		results = frappe.db.sql(sql, params, as_dict=True)
 
 		for row in results:
@@ -541,7 +541,7 @@ def _fetch_batch_prices(item_codes: list, price_list: str | None, uom_map: dict)
 				AND price_list = %s
 				AND selling = 1
 			"""
-			params = item_codes + [price_list]
+			params = [*item_codes, price_list]
 		else:
 			sql = f"""
 				SELECT item_code, price_list_rate, currency, uom
@@ -756,7 +756,9 @@ def get_items_with_balance_and_price(
 
 			# Get unfiltered total count
 			unfiltered_count_sql = "\n".join(unfiltered_count_query)
-			unfiltered_total_result = frappe.db.sql(unfiltered_count_sql, tuple(unfiltered_count_params), as_dict=True)
+			unfiltered_total_result = frappe.db.sql(
+				unfiltered_count_sql, tuple(unfiltered_count_params), as_dict=True
+			)
 			unfiltered_total_count = unfiltered_total_result[0]["total"] if unfiltered_total_result else 0
 
 			# Use the unfiltered count for display (real total)

@@ -260,10 +260,10 @@ export default function MenuGrid({
             </div>
           </div>
         ) : (
-          <ProductGrid 
-            items={items} 
-            onAddToCart={onAddToCart} 
-            scannerOnly={scannerOnly} 
+          <ProductGrid
+            items={items}
+            onAddToCart={onAddToCart}
+            scannerOnly={scannerOnly}
             viewMode={viewMode}
             hasMore={hasMore}
             isLoadingMore={isLoadingMore}

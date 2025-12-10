@@ -18,11 +18,11 @@ interface ProductGridProps {
   totalCount?: number
 }
 
-export default function ProductGrid({ 
-  items, 
-  onAddToCart, 
-  isMobile = false, 
-  scannerOnly = false, 
+export default function ProductGrid({
+  items,
+  onAddToCart,
+  isMobile = false,
+  scannerOnly = false,
   viewMode = 'grid',
   hasMore = false,
   isLoadingMore = false,
@@ -45,13 +45,13 @@ export default function ProductGrid({
       rootMargin: "200px", // Load more before reaching the bottom
       threshold: 0,
     }
-    
+
     const observer = new IntersectionObserver(handleObserver, option)
-    
+
     if (loadMoreRef.current) {
       observer.observe(loadMoreRef.current)
     }
-    
+
     return () => {
       if (loadMoreRef.current) {
         observer.unobserve(loadMoreRef.current)
@@ -64,7 +64,7 @@ export default function ProductGrid({
     return (
       <div className="flex flex-col">
         <ProductLineView items={items} onAddToCart={onAddToCart} isMobile={isMobile} scannerOnly={scannerOnly} />
-        
+
         {/* Load more trigger and indicator */}
         {onLoadMore && (
           <div ref={loadMoreRef} className="py-4 flex justify-center">
@@ -116,7 +116,7 @@ export default function ProductGrid({
           <ProductCard key={item.id} item={item} onAddToCart={onAddToCart} isMobile={isMobile} scannerOnly={scannerOnly} />
         ))}
       </div>
-      
+
       {/* Load more trigger and indicator */}
       {onLoadMore && (
         <div ref={loadMoreRef} className="py-6 flex justify-center">

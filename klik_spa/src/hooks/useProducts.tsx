@@ -7,15 +7,23 @@ import { useProducts as useProductsContext } from "../providers/ProductProvider"
 interface UseProductsReturn {
   products: MenuItem[];
   isLoading: boolean;
+  isLoadingMore: boolean;
   isRefreshingStock: boolean;
+  isSearching: boolean;
   error: string | null;
   refetch: () => Promise<void>;
   refreshStockOnly: () => Promise<boolean>;
   updateStockOnly: (itemCode: string, newStock: number) => void;
   updateStockForItems: (itemCodes: string[]) => Promise<void>;
   updateBatchQuantitiesForItems: (itemCodes: string[]) => Promise<void>;
+  loadMoreProducts: () => Promise<void>;
+  searchProducts: (query: string) => Promise<void>;
+  clearSearch: () => void;
   count: number;
+  totalCount: number;
+  hasMore: boolean;
   lastUpdated: Date | null;
+  searchQuery: string;
 }
 
 type Batch = {
@@ -38,15 +46,23 @@ export function useProducts(): UseProductsReturn {
   return {
     products: context.products,
     isLoading: context.isLoading,
+    isLoadingMore: context.isLoadingMore,
     isRefreshingStock: context.isRefreshingStock,
+    isSearching: context.isSearching,
     error: context.error,
     refetch: context.refetchProducts,
     refreshStockOnly: context.refreshStockOnly,
     updateStockOnly: context.updateStockOnly,
     updateStockForItems: context.updateStockForItems,
     updateBatchQuantitiesForItems: context.updateBatchQuantitiesForItems,
+    loadMoreProducts: context.loadMoreProducts,
+    searchProducts: context.searchProducts,
+    clearSearch: context.clearSearch,
     count: context.products.length,
+    totalCount: context.totalCount,
+    hasMore: context.hasMore,
     lastUpdated: context.lastUpdated,
+    searchQuery: context.searchQuery,
   };
 }
 

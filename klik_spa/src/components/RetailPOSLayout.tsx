@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useProducts } from "../hooks/useProducts"
 import { usePOSDetails } from "../hooks/usePOSProfile"
 
@@ -17,17 +17,32 @@ import { toast } from "react-toastify"
 
 export default function RetailPOSLayout() {
   const [selectedCategory, setSelectedCategory] = useState("all")
-  const [searchQuery, setSearchQuery] = useState("")
+  const [localSearchQuery, setLocalSearchQuery] = useState("")
   const [appliedCoupons, setAppliedCoupons] = useState<GiftCoupon[]>([])
   const [showScanner, setShowScanner] = useState(false)
   const [pinnedItemId, setPinnedItemId] = useState<string | null>(null)
   const [identifierItemId, setIdentifierItemId] = useState<string | null>(null)
+  
+  // Debounce timer ref for search
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null)
 
   // Use cart store instead of local state
   const { cartItems, addToCart, updateQuantity, removeItem, clearCart } = useCartStore()
 
-  // Use professional data management
-  const { products: menuItems, isLoading: loading, error, refetch } = useProducts()
+  // Use professional data management with pagination
+  const { 
+    products: menuItems, 
+    isLoading: loading, 
+    isLoadingMore,
+    isSearching,
+    error, 
+    refetch,
+    loadMoreProducts,
+    searchProducts,
+    hasMore,
+    totalCount,
+    searchQuery: serverSearchQuery,
+  } = useProducts()
 
   // Get POS details including scanner-only setting
   const { posDetails } = usePOSDetails()
@@ -184,7 +199,7 @@ export default function RetailPOSLayout() {
 
   // Handle search input for both product search and barcode scanning
   const handleSearchInput = (query: string) => {
-    setSearchQuery(query)
+    setLocalSearchQuery(query)
 
     // If input looks like a barcode (numeric-only, 8+ digits),
     // it might be from a hardware scanner (reduced false positives)
@@ -211,16 +226,33 @@ export default function RetailPOSLayout() {
 
     // Reset identifier resolution when query changes; will re-resolve via effect
     setIdentifierItemId(null)
+    
+    // Debounced server-side search for any query (text or numeric); still keep barcode paths elsewhere
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current)
+    }
+    
+    const trimmedQuery = query.trim()
+    
+    // Trigger server-side search for any non-empty query (length >= 1)
+    if (trimmedQuery.length >= 1) {
+      searchDebounceRef.current = setTimeout(() => {
+        searchProducts(trimmedQuery)
+      }, 300) // 300ms debounce
+    } else if (!trimmedQuery) {
+      // Clear search when query is empty
+      searchProducts('')
+    }
   }
 
   // Handle Enter key for barcode processing
   const handleSearchKeyPress = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && searchQuery.trim()) {
+    if (e.key === 'Enter' && localSearchQuery.trim()) {
       e.preventDefault()
 
       // First: handle scale barcodes regardless of scanner-only setting
-      if (/^[0-9]+$/.test(searchQuery) && scalePrefix && searchQuery.startsWith(scalePrefix)) {
-        const raw = searchQuery.trim()
+      if (/^[0-9]+$/.test(localSearchQuery) && scalePrefix && localSearchQuery.startsWith(scalePrefix)) {
+        const raw = localSearchQuery.trim()
 
         // Enforce presence of single check digit (total 13 digits) for scale barcodes
         if (raw.length !== 13) {
@@ -254,7 +286,7 @@ export default function RetailPOSLayout() {
           const item = menuItems.find(mi => mi.id === base || (mi.barcode && mi.barcode === base))
           if (item) {
             await addOrIncreaseWithQuantity(item, qty)
-            setSearchQuery('')
+            setLocalSearchQuery('')
             setPinnedItemId(null)
             return
           }
@@ -279,27 +311,29 @@ export default function RetailPOSLayout() {
           } catch {
             // ignore
           }
-          setSearchQuery('')
+          setLocalSearchQuery('')
           setPinnedItemId(null)
           return
         }
       }
 
       // Non-scale numeric barcode: only process automatically in scanner-only mode
-      if (useScannerOnly && /^[0-9]+$/.test(searchQuery)) {
-        console.log('Processing as barcode:', searchQuery)
-        handleBarcodeDetected(searchQuery.trim())
-        setSearchQuery('')
+      if (useScannerOnly && /^[0-9]+$/.test(localSearchQuery)) {
+        console.log('Processing as barcode:', localSearchQuery)
+        handleBarcodeDetected(localSearchQuery.trim())
+        setLocalSearchQuery('')
         setPinnedItemId(null)
         return
       }
 
-      // Regular search - do not clear the input
-      console.log('Processing as product search:', searchQuery)
+      // Regular search - trigger server-side search on Enter
+      console.log('Processing as product search:', localSearchQuery)
+      searchProducts(localSearchQuery.trim())
+      
       // Additionally try resolving batch/serial on Enter for user convenience
       ;(async () => {
         try {
-          const res = await fetch(`/api/method/klik_pos.api.item.get_item_by_identifier?code=${encodeURIComponent(searchQuery.trim())}`)
+          const res = await fetch(`/api/method/klik_pos.api.item.get_item_by_identifier?code=${encodeURIComponent(localSearchQuery.trim())}`)
           const data = await res.json()
           console.log('Batch/Serial lookup result:', data)
           if (data?.message?.item_code) {
@@ -321,7 +355,7 @@ export default function RetailPOSLayout() {
             } else if (matchedType === 'serial') {
               window.dispatchEvent(new CustomEvent('cart:setSerialForItem', { detail: { itemCode: item.id, serialNo: matchedValue } }))
             }
-            setSearchQuery('')
+            setLocalSearchQuery('')
             setPinnedItemId(null)
           }
         } catch {
@@ -336,40 +370,40 @@ export default function RetailPOSLayout() {
     if (!useScannerOnly) return
 
     const timer = setTimeout(() => {
-      if (searchQuery.length >= 8 && /^[0-9]+$/.test(searchQuery)) {
-        const parsed = parseScaleBarcode(searchQuery.trim())
+      if (localSearchQuery.length >= 8 && /^[0-9]+$/.test(localSearchQuery)) {
+        const parsed = parseScaleBarcode(localSearchQuery.trim())
         if (parsed.isScale) {
           const base = parsed.baseBarcode
           const qty = parsed.quantity
           const item = menuItems.find(mi => mi.id === base || (mi.barcode && mi.barcode === base))
           if (item) {
             addOrIncreaseWithQuantity(item, qty)
-            setSearchQuery('')
+            setLocalSearchQuery('')
             setPinnedItemId(null)
             return
           }
         }
-        console.log('Auto-processing potential barcode:', searchQuery)
-        handleBarcodeDetected(searchQuery.trim())
-        setSearchQuery('')
+        console.log('Auto-processing potential barcode:', localSearchQuery)
+        handleBarcodeDetected(localSearchQuery.trim())
+        setLocalSearchQuery('')
         setPinnedItemId(null)
       }
     }, 500) // Wait 500ms after last input
 
     return () => clearTimeout(timer)
-  }, [searchQuery, handleBarcodeDetected, useScannerOnly, menuItems, parseScaleBarcode, addOrIncreaseWithQuantity])
+  }, [localSearchQuery, handleBarcodeDetected, useScannerOnly, menuItems, parseScaleBarcode, addOrIncreaseWithQuantity])
 
   // Resolve item by batch/serial/barcode while typing to show in results list (non-blocking)
   useEffect(() => {
     // Skip when empty or when scale typing (handled separately)
-    if (!searchQuery) return
-    const isScaleTyping = !!scalePrefix && /^[0-9]+$/.test(searchQuery) && searchQuery.startsWith(scalePrefix) && searchQuery.length >= 7
+    if (!localSearchQuery) return
+    const isScaleTyping = !!scalePrefix && /^[0-9]+$/.test(localSearchQuery) && localSearchQuery.startsWith(scalePrefix) && localSearchQuery.length >= 7
     if (isScaleTyping) return
 
     let cancelled = false
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/method/klik_pos.api.item.get_item_by_identifier?code=${encodeURIComponent(searchQuery.trim())}`)
+        const res = await fetch(`/api/method/klik_pos.api.item.get_item_by_identifier?code=${encodeURIComponent(localSearchQuery.trim())}`)
         const data = await res.json()
         if (!cancelled && data?.message?.item_code) {
           setIdentifierItemId(data.message.item_code)
@@ -380,12 +414,29 @@ export default function RetailPOSLayout() {
     }, 250)
 
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [searchQuery, scalePrefix])
+  }, [localSearchQuery, scalePrefix])
+  
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current)
+      }
+    }
+  }, [])
 
+  // When server-side search is active, use menuItems directly (already filtered by server)
+  // Only apply local filtering for category and scale barcode typing
   const filteredItems = menuItems.filter((item) => {
     // Availability filter - hide items with 0 quantity if hide_unavailable_items is enabled
     if (hideUnavailableItems && item.available <= 0) {
       return false
+    }
+
+    // If server-side search is active, do NOT apply category filter locally.
+    // Server already filtered; just return the item (respecting availability above).
+    if (serverSearchQuery) {
+      return true
     }
 
     const matchesCategory = selectedCategory === "all" || item.category === selectedCategory
@@ -394,15 +445,15 @@ export default function RetailPOSLayout() {
     // the search starts with that numeric prefix, use only the base part (first 7 chars)
     // for filtering so that extra quantity digits do not hide the item
     const isScaleTyping = !!scalePrefix &&
-      searchQuery &&
-      /^[0-9]+$/.test(searchQuery) &&
-      searchQuery.startsWith(scalePrefix) &&
-      searchQuery.length >= 7
+      localSearchQuery &&
+      /^[0-9]+$/.test(localSearchQuery) &&
+      localSearchQuery.startsWith(scalePrefix) &&
+      localSearchQuery.length >= 7
 
     // If exactly one item is already matched and pinned, keep it visible regardless of extra digits
-    const queryForFilter = pinnedItemId && isScaleTyping ? searchQuery.substring(0, 7) : (isScaleTyping ? searchQuery.substring(0, 7) : searchQuery)
+    const queryForFilter = pinnedItemId && isScaleTyping ? localSearchQuery.substring(0, 7) : (isScaleTyping ? localSearchQuery.substring(0, 7) : '')
 
-    // Search filter - search by name, category, item_code, barcode, or any text content
+    // Local filtering for barcode typing or when no server search
     const matchesSearch =
       queryForFilter === "" ||
       item.name.toLowerCase().includes(queryForFilter.toLowerCase()) ||
@@ -439,8 +490,8 @@ export default function RetailPOSLayout() {
     </div>
   )
 
-  // Show error state with retry option
-  if (error) {
+  // Show error state with retry option (but keep showing products if we have any)
+  if (error && filteredItems.length === 0) {
     const getUserFriendlyError = (errorMessage: string): string => {
       if (errorMessage.includes('HTTP 403') || errorMessage.includes('403')) {
         return "Access denied. Please check your permissions or contact your administrator.";
@@ -497,10 +548,15 @@ export default function RetailPOSLayout() {
           items={filteredItems}
           selectedCategory={selectedCategory}
           onCategoryChange={setSelectedCategory}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+          searchQuery={localSearchQuery}
+          onSearchChange={handleSearchInput}
           onScanBarcode={() => setShowScanner(true)}
           scannerOnly={useScannerOnly}
+          hasMore={hasMore && !serverSearchQuery}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={loadMoreProducts}
+          totalCount={totalCount}
+          isSearching={isSearching}
         />
         <BarcodeScannerModal
           isOpen={showScanner}
@@ -522,12 +578,17 @@ export default function RetailPOSLayout() {
             items={filteredItems}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
-            searchQuery={searchQuery}
+            searchQuery={localSearchQuery}
             onSearchChange={handleSearchInput}
             onSearchKeyPress={handleSearchKeyPress}
             onAddToCart={handleAddToCart}
             onScanBarcode={() => setShowScanner(true)}
             scannerOnly={useScannerOnly}
+            hasMore={hasMore && !serverSearchQuery}
+            isLoadingMore={isLoadingMore}
+            onLoadMore={loadMoreProducts}
+            totalCount={totalCount}
+            isSearching={isSearching}
           />
         </div>
 

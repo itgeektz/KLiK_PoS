@@ -21,6 +21,12 @@ interface MobilePOSLayoutProps {
   onSearchChange: (query: string) => void
   onScanBarcode?: () => void
   scannerOnly?: boolean
+  // Pagination props
+  hasMore?: boolean
+  isLoadingMore?: boolean
+  onLoadMore?: () => void
+  totalCount?: number
+  isSearching?: boolean
 }
 
 export default function MobilePOSLayout({
@@ -31,6 +37,11 @@ export default function MobilePOSLayout({
   onSearchChange,
   onScanBarcode,
   scannerOnly = false,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
+  totalCount = 0,
+  isSearching = false,
 }: MobilePOSLayoutProps) {
   const { t } = useI18n()
   const { user, logout } = useAuth()
@@ -278,8 +289,25 @@ export default function MobilePOSLayout({
               <p className="text-gray-500 dark:text-gray-400">Loading view preferences...</p>
             </div>
           </div>
+        ) : isSearching ? (
+          <div className="flex items-center justify-center h-32">
+            <div className="flex items-center space-x-2">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-beveren-600"></div>
+              <span className="text-gray-500 dark:text-gray-400">Searching...</span>
+            </div>
+          </div>
         ) : (
-          <ProductGrid items={items} onAddToCart={addToCart} isMobile={true} scannerOnly={scannerOnly} viewMode={viewMode} />
+          <ProductGrid 
+            items={items} 
+            onAddToCart={addToCart} 
+            isMobile={true} 
+            scannerOnly={scannerOnly} 
+            viewMode={viewMode}
+            hasMore={hasMore}
+            isLoadingMore={isLoadingMore}
+            onLoadMore={onLoadMore}
+            totalCount={totalCount}
+          />
         )}
       </div>
 

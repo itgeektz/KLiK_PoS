@@ -17,4 +17,3 @@ def get_delivery_personnel_list():
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Error fetching delivery personnel")
 		return {"success": False, "error": str(e)}
-

@@ -83,11 +83,11 @@ export default function DeliveryPersonnelModal({
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 bg-opacity-50" 
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 bg-opacity-50"
       onClick={onClose}
     >
-      <div 
+      <div
         className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 delivery-personnel-modal-content"
         onClick={(e) => e.stopPropagation()}
       >
@@ -134,10 +134,10 @@ export default function DeliveryPersonnelModal({
                   className="w-full pl-10 pr-10 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
                   autoFocus
                 />
-                <ChevronDown 
+                <ChevronDown
                   className={`absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 transition-transform ${
                     isDropdownOpen ? "rotate-180" : ""
-                  }`} 
+                  }`}
                   size={18}
                 />
               </div>
@@ -193,4 +193,3 @@ export default function DeliveryPersonnelModal({
     </div>
   );
 }
-

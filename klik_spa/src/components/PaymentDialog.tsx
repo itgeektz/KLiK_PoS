@@ -196,12 +196,12 @@ export default function PaymentDialog({
   const currencySymbol = posDetails?.currency_symbol;
   // Check if delivery is required - handle both 1/0 and true/false values
   const deliveryRequiredValue = posDetails?.custom_delivery_required;
-  const isDeliveryRequired = deliveryRequiredValue === 1 || 
-                             deliveryRequiredValue === true || 
+  const isDeliveryRequired = deliveryRequiredValue === 1 ||
+                             deliveryRequiredValue === true ||
                              deliveryRequiredValue === "1";
 
-  
-  
+
+
   // Debug log
   useEffect(() => {
     if (posDetails) {
@@ -214,7 +214,7 @@ export default function PaymentDialog({
     if (externalInvoiceData && sharingMode) {
       console.log('External invoice data:', externalInvoiceData);
       console.log('Customer address doc:', externalInvoiceData.customer_address_doc);
-      
+
       // Try multiple sources for customer contact info
       const email = externalInvoiceData.customer_address_doc?.email_id ||
                    externalInvoiceData.customer_email ||
@@ -983,7 +983,7 @@ export default function PaymentDialog({
 
   const handleCompletePayment = async () => {
     console.log("handleCompletePayment called - isDeliveryRequired:", isDeliveryRequired, "selectedDeliveryPersonnel:", selectedDeliveryPersonnel);
-    
+
     // Check if delivery is required
     if (isDeliveryRequired && !selectedDeliveryPersonnel) {
       console.log("Showing delivery personnel modal");

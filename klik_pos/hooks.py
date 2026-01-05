@@ -54,7 +54,7 @@ fixtures = [
 					"POS Profile-custom_allow_write_off",
 					"POS Closing Entry-custom_sales_invoice",
 					"POS Profile-custom_delivery_required",
-     				"Sales Invoice-custom_delivery",
+					"Sales Invoice-custom_delivery",
 					"Sales Invoice-custom_column_break_hnemi",
 					"Sales Invoice-custom_delivery_personnel",
 					"Sales Invoice-custom_delivery_personnel_name",

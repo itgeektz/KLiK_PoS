@@ -689,7 +689,7 @@ def build_sales_invoice_doc(
 	doc.customer = customer
 	doc.due_date = frappe.utils.nowdate()
 	doc.custom_delivery_date = frappe.utils.nowdate()
-	
+
 	# Set delivery personnel if provided
 	if delivery_personnel:
 		doc.custom_delivery_personnel = delivery_personnel

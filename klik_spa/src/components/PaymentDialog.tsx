@@ -56,6 +56,7 @@ import {
   getDefaultEmailMessageTemplate,
   type EmailTemplate
 } from "../services/emailTemplateService";
+import DeliveryPersonnelModal from "./DeliveryPersonnelModal";
 
 interface PaymentDialogProps {
   isOpen: boolean;
@@ -176,6 +177,10 @@ export default function PaymentDialog({
   const [isLoadingEmailTemplates, setIsLoadingEmailTemplates] = useState(false);
   const [isEditingEmail, setIsEditingEmail] = useState(false);
 
+  // Delivery personnel states
+  const [showDeliveryPersonnelModal, setShowDeliveryPersonnelModal] = useState(false);
+  const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
+
   // Hooks
   const { posDetails, loading: posLoading } = usePOSDetails();
   const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
@@ -189,6 +194,20 @@ export default function PaymentDialog({
   const print_receipt_on_order_complete =
     posDetails?.print_receipt_on_order_complete;
   const currencySymbol = posDetails?.currency_symbol;
+  // Check if delivery is required - handle both 1/0 and true/false values
+  const deliveryRequiredValue = posDetails?.custom_delivery_required;
+  const isDeliveryRequired = deliveryRequiredValue === 1 ||
+                             deliveryRequiredValue === true ||
+                             deliveryRequiredValue === "1";
+
+
+
+  // Debug log
+  useEffect(() => {
+    if (posDetails) {
+      console.log("POS Details - custom_delivery_required:", deliveryRequiredValue, "isDeliveryRequired:", isDeliveryRequired);
+    }
+  }, [posDetails, deliveryRequiredValue, isDeliveryRequired]);
 
   // Populate sharing data from external invoice data
   useEffect(() => {
@@ -828,7 +847,7 @@ export default function PaymentDialog({
     }
   };
 
-  const handleCompletePayment = async () => {
+  const processPayment = async (deliveryPersonnel: string | null = null) => {
     if (!selectedCustomer || !selectedCustomer.name) {
       toast.error("Kindly select a customer");
       return;
@@ -916,6 +935,7 @@ export default function PaymentDialog({
       outstandingAmount: outstandingAmount,
       appliedCoupons,
       businessType: posDetails?.business_type,
+      deliveryPersonnel: deliveryPersonnel || null,
     };
 
     try {
@@ -959,6 +979,28 @@ export default function PaymentDialog({
     } finally {
       setIsProcessingPayment(false);
     }
+  };
+
+  const handleCompletePayment = async () => {
+    console.log("handleCompletePayment called - isDeliveryRequired:", isDeliveryRequired, "selectedDeliveryPersonnel:", selectedDeliveryPersonnel);
+
+    // Check if delivery is required
+    if (isDeliveryRequired && !selectedDeliveryPersonnel) {
+      console.log("Showing delivery personnel modal");
+      // Show delivery personnel modal
+      setShowDeliveryPersonnelModal(true);
+      return;
+    }
+
+    console.log("Processing payment directly");
+    // Process payment with selected delivery personnel (or null if not required)
+    await processPayment(selectedDeliveryPersonnel);
+  };
+
+  const handleDeliveryPersonnelSelect = (personnelName: string) => {
+    setSelectedDeliveryPersonnel(personnelName);
+    // Process payment after selection
+    processPayment(personnelName);
   };
 //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleViewInvoice = (invoice: any) => {
@@ -2532,6 +2574,13 @@ export default function PaymentDialog({
           </div>
         )}
       </div>
+
+      {/* Delivery Personnel Modal */}
+      <DeliveryPersonnelModal
+        isOpen={showDeliveryPersonnelModal}
+        onClose={() => setShowDeliveryPersonnelModal(false)}
+        onSelect={handleDeliveryPersonnelSelect}
+      />
     </div>
   );
 }

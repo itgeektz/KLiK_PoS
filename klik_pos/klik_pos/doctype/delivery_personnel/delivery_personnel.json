@@ -22,7 +22,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-05 10:44:49.996044",
+ "modified": "2026-01-06 11:30:29.290923",
  "modified_by": "Administrator",
  "module": "KLiK PoS",
  "name": "Delivery Personnel",
@@ -44,6 +44,7 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
+ "search_fields": "delivery_personnel",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

@@ -26,7 +26,8 @@ import {
   MessageSquarePlus,
   Loader2,
   Pencil,
-  CheckCircle
+  CheckCircle,
+  ChevronDown
 } from "lucide-react";
 import type { CartItem, GiftCoupon } from "../../types";
 import type { Customer } from "../types/customer";
@@ -57,6 +58,7 @@ import {
   type EmailTemplate
 } from "../services/emailTemplateService";
 import DeliveryPersonnelModal from "./DeliveryPersonnelModal";
+import { useDeliveryPersonnel } from "../hooks/useDeliveryPersonnel";
 
 interface PaymentDialogProps {
   isOpen: boolean;
@@ -177,7 +179,7 @@ export default function PaymentDialog({
   const [isLoadingEmailTemplates, setIsLoadingEmailTemplates] = useState(false);
   const [isEditingEmail, setIsEditingEmail] = useState(false);
 
-  // Delivery personnel states
+  // Delivery personnel states (optional, user-controlled via footer field)
   const [showDeliveryPersonnelModal, setShowDeliveryPersonnelModal] = useState(false);
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
 
@@ -185,6 +187,7 @@ export default function PaymentDialog({
   const { posDetails, loading: posLoading } = usePOSDetails();
   const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
   const { salesTaxCharges, defaultTax } = useSalesTaxCharges();
+  const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
   const navigate = useNavigate();
 
   // Determine if this is B2B business type
@@ -982,25 +985,26 @@ export default function PaymentDialog({
   };
 
   const handleCompletePayment = async () => {
-    console.log("handleCompletePayment called - isDeliveryRequired:", isDeliveryRequired, "selectedDeliveryPersonnel:", selectedDeliveryPersonnel);
+    console.log(
+      "handleCompletePayment called - selectedDeliveryPersonnel:",
+      selectedDeliveryPersonnel
+    );
 
-    // Check if delivery is required
-    if (isDeliveryRequired && !selectedDeliveryPersonnel) {
-      console.log("Showing delivery personnel modal");
-      // Show delivery personnel modal
-      setShowDeliveryPersonnelModal(true);
-      return;
-    }
-
-    console.log("Processing payment directly");
-    // Process payment with selected delivery personnel (or null if not required)
+    // Always process payment directly; delivery personnel is optional
     await processPayment(selectedDeliveryPersonnel);
   };
 
   const handleDeliveryPersonnelSelect = (personnelName: string) => {
+    // Called from the footer-triggered modal only; just store selection
     setSelectedDeliveryPersonnel(personnelName);
-    // Process payment after selection
-    processPayment(personnelName);
+    setShowDeliveryPersonnelModal(false);
+  };
+
+  // Get display name for selected delivery personnel
+  const getSelectedDeliveryPersonnelName = () => {
+    if (!selectedDeliveryPersonnel) return null;
+    const person = deliveryPersonnelList.find((p) => p.name === selectedDeliveryPersonnel);
+    return person?.delivery_personnel || selectedDeliveryPersonnel;
   };
 //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleViewInvoice = (invoice: any) => {
@@ -2507,69 +2511,123 @@ export default function PaymentDialog({
         {/* Footer - Action Buttons */}
         {invoiceSubmitted || externalInvoiceData ? (
           <div className="border-t border-gray-200 dark:border-gray-700 p-6 flex-shrink-0 bg-white dark:bg-gray-800">
-            <div className="flex justify-end space-x-4">
-              {invoiceSubmitted && (
-                <button
-                  onClick={() => onClose(true)}
-                  className="bg-beveren-500 px-6 py-2 border border-gray-300 dark:border-gray-600 text-white dark:text-gray-300 rounded-lg font-medium hover:bg-green-700 dark:hover:bg-gray-800 transition-colors"
-                >
-                  New Order
-                </button>
+            <div className="flex items-center justify-between">
+              {/* Delivery Personnel Field - Far Left - Only show if delivery is required */}
+              {isDeliveryRequired && (
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Delivery Personnel
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeliveryPersonnelModal(true)}
+                    disabled={invoiceSubmitted || isProcessingPayment}
+                    className={`w-full max-w-xs px-4 py-2 text-left border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between ${
+                      invoiceSubmitted || isProcessingPayment
+                        ? "cursor-not-allowed opacity-50"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    <span>
+                      {getSelectedDeliveryPersonnelName() || (
+                        <span className="text-gray-500 dark:text-gray-400">Select Delivery Personnel</span>
+                      )}
+                    </span>
+                    <ChevronDown size={16} className="text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2" />
+                  </button>
+                </div>
               )}
-              {externalInvoiceData && (
-                <button
-                  onClick={() => onClose()}
-                  className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  Close
-                </button>
-              )}
+              <div className={`flex justify-end space-x-4 ${isDeliveryRequired ? '' : 'w-full'}`}>
+                {invoiceSubmitted && (
+                  <button
+                    onClick={() => onClose(true)}
+                    className="bg-beveren-500 px-6 py-2 border border-gray-300 dark:border-gray-600 text-white dark:text-gray-300 rounded-lg font-medium hover:bg-green-700 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    New Order
+                  </button>
+                )}
+                {externalInvoiceData && (
+                  <button
+                    onClick={() => onClose()}
+                    className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    Close
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ) : (
           <div className="border-t border-gray-200 dark:border-gray-700 p-6 flex-shrink-0 bg-white dark:bg-gray-800">
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={handleHoldOrder}
-                disabled={
-                  invoiceSubmitted || isProcessingPayment || isHoldingOrder
-                }
-                className={`px-6 py-2 border  border-gray-300 dark:border-gray-600 text-gray-700 rounded-lg font-medium hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex items-center space-x-2 ${
-                  invoiceSubmitted || isProcessingPayment || isHoldingOrder
-                    ? "cursor-not-allowed opacity-50"
-                    : ""
-                }`}
-              >
-                {isHoldingOrder ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>Holding...</span>
-                  </>
-                ) : (
-                  <span>Hold Order</span>
-                )}
-              </button>
-              <button
-                onClick={handleCompletePayment}
-                disabled={isActionButtonDisabled()}
-                className={`px-8 py-2 rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center space-x-2 ${
-                  isB2B
-                    ? "bg-beveren-500 hover:bg-blue-700 text-white"
-                    : "bg-beveren-600 hover:bg-beveren-700 text-white"
-                }`}
-              >
-                {isProcessingPayment ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>{getActionButtonText()}</span>
-                  </>
-                ) : (
-                  <>
-                    <Check size={16} />
-                    <span>{getActionButtonText()}</span>
-                  </>
-                )}
-              </button>
+            <div className="flex items-center justify-between">
+              {/* Delivery Personnel Field - Far Left - Only show if delivery is required */}
+              {isDeliveryRequired && (
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Delivery Personnel
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeliveryPersonnelModal(true)}
+                    disabled={invoiceSubmitted || isProcessingPayment}
+                    className={`w-full max-w-xs px-4 py-2 text-left border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between ${
+                      invoiceSubmitted || isProcessingPayment
+                        ? "cursor-not-allowed opacity-50"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    <span>
+                      {getSelectedDeliveryPersonnelName() || (
+                        <span className="text-gray-500 dark:text-gray-400">Select Delivery Personnel</span>
+                      )}
+                    </span>
+                    <ChevronDown size={16} className="text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2" />
+                  </button>
+                </div>
+              )}
+              <div className={`flex justify-end space-x-4 ${isDeliveryRequired ? '' : 'w-full'}`}>
+                <button
+                  onClick={handleHoldOrder}
+                  disabled={
+                    invoiceSubmitted || isProcessingPayment || isHoldingOrder
+                  }
+                  className={`px-6 py-2 border  border-gray-300 dark:border-gray-600 text-gray-700 rounded-lg font-medium hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex items-center space-x-2 ${
+                    invoiceSubmitted || isProcessingPayment || isHoldingOrder
+                      ? "cursor-not-allowed opacity-50"
+                      : ""
+                  }`}
+                >
+                  {isHoldingOrder ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Holding...</span>
+                    </>
+                  ) : (
+                    <span>Hold Order</span>
+                  )}
+                </button>
+                <button
+                  onClick={handleCompletePayment}
+                  disabled={isActionButtonDisabled()}
+                  className={`px-8 py-2 rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center space-x-2 ${
+                    isB2B
+                      ? "bg-beveren-500 hover:bg-blue-700 text-white"
+                      : "bg-beveren-600 hover:bg-beveren-700 text-white"
+                  }`}
+                >
+                  {isProcessingPayment ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>{getActionButtonText()}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={16} />
+                      <span>{getActionButtonText()}</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}

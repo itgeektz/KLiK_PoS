@@ -67,7 +67,7 @@ fixtures = [
 add_to_apps_screen = [
 	{
 		"name": "klik_pos",
-		"logo": "/assets/klik_pos/logo.png",
+		"logo": "/assets/klik_pos/klik_spa/bev_logo.jpeg",
 		"title": "KLiK PoS",
 		"route": "/klik_pos",
 	}

@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 async function createIcons() {
-	const inputFile = path.join(__dirname, "public", "beveren-logo-180.png");
+	const inputFile = path.join(__dirname, "public", "bev_logo.jpeg");
 	const publicDir = path.join(__dirname, "public");
 
 	// Create different icon sizes
@@ -28,7 +28,7 @@ async function createIcons() {
 		}
 	}
 
-	// Also create a favicon
+	// Also create a favicon (PNG)
 	try {
 		await sharp(inputFile)
 			.resize(32, 32, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } })

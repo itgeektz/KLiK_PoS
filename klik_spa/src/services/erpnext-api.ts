@@ -50,25 +50,17 @@ class ERPNextAPI {
   private sessionId: string | null = null;
 
   constructor() {
-    // When served from Frappe itself (production), use empty baseUrl for same-origin requests
-    // In development with Vite dev server, use full URL
-    const isDevelopment = (import.meta as ImportMeta).env?.DEV;
-    const isServedFromFrappe = !isDevelopment && window.location.pathname.startsWith('/klik_pos');
+    // Prefer explicit base URL when provided.
+    // Otherwise:
+    // - In development, use relative URLs so Vite's proxy forwards to Frappe
+    // - In production (served from Frappe), also use relative URLs (same origin)
+    const envBaseUrl = (import.meta as ImportMeta).env?.VITE_ERPNEXT_BASE_URL;
 
     this.config = {
-      baseUrl: isServedFromFrappe
-        ? '' // Use relative URL for same-origin requests when served from Frappe
-        : ((import.meta as ImportMeta).env?.VITE_ERPNEXT_BASE_URL || 'http://localhost:8000'),
+      baseUrl: envBaseUrl || '',
       apiKey: (import.meta as ImportMeta).env?.VITE_API_KEY || '',
       apiSecret: (import.meta as ImportMeta).env?.VITE_API_SECRET || ''
     };
-
-    // console.log('ERPNext API Config:', {
-    //   isDevelopment,
-    //   baseUrl: this.config.baseUrl || '[using proxy]',
-    //   hasApiKey: !!this.config.apiKey,
-    //   hasApiSecret: !!this.config.apiSecret
-    // });
   }
 
   private getHeaders(includeAuth: boolean = true): HeadersInit {

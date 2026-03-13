@@ -698,6 +698,9 @@ def build_sales_invoice_doc(
 	pos_profile = _get_active_pos_profile()
 	_set_pos_profile_fields(doc, pos_profile, customer, business_type)
 
+	# Ensure batch/serial requirements are satisfied BEFORE building items
+	_validate_and_autofetch_batch_and_serial(items, pos_profile)
+
 	# Set posting details
 	_set_posting_fields(doc)
 
@@ -761,6 +764,111 @@ def _set_pos_profile_fields(doc, pos_profile, customer, business_type):
 	# Determine if this is a POS invoice
 	doc.is_pos = _determine_is_pos(customer, business_type)
 
+
+def _validate_and_autofetch_batch_and_serial(items, pos_profile):
+	"""
+	Validate that all batch/serial requirements are satisfied for POS items.
+
+	Behaviour:
+	- If POS Profile.custom_autofetch_batchserial_ is truthy:
+	  * For batch-tracked items missing batch, try to auto-assign a batch using FIFO.
+	  * If no suitable batch is found, raise a clear error and STOP invoice creation.
+	- If the flag is not set:
+	  * For batch-tracked items missing batch, raise an error and STOP invoice creation.
+	- For serial-tracked items we do NOT auto-assign; user must select serials explicitly.
+	"""
+	if not items:
+		return
+
+	item_codes = [item.get("id") for item in items if item.get("id")]
+	if not item_codes:
+		return
+
+	item_data_map = _batch_fetch_item_data(item_codes)
+	auto_fetch_enabled = int(getattr(pos_profile, "custom_autofetch_batchserial_", 0) or 0)
+
+	for item in items:
+		item_code = item.get("id")
+		if not item_code:
+			continue
+
+		item_db_data = item_data_map.get(item_code, {}) or {}
+		has_batch_no = int(item_db_data.get("has_batch_no") or 0)
+		has_serial_no = int(item_db_data.get("has_serial_no") or 0)
+
+		batch_number = item.get("batchNumber")
+		serial_number = item.get("serialNumber")
+
+		# Serial-number items: always require explicit selection from UI
+		if has_serial_no and not serial_number:
+			frappe.throw(
+				_("Serial number is mandatory for Item {0}. Please select serial numbers before submitting.").format(
+					item_code
+				)
+			)
+
+		# Batch-number items: optionally auto-fetch, otherwise require explicit batch
+		if has_batch_no and not batch_number:
+			if auto_fetch_enabled:
+				# Try to auto-pick a batch using simple FIFO strategy
+				auto_batch = _autofetch_batch_fifo(item_code, pos_profile.warehouse, item.get("quantity"))
+				if not auto_batch:
+					frappe.throw(
+						_(
+							"Serial No / Batch No are mandatory for Item {0} and no suitable batch is available in warehouse {1}."
+						).format(item_code, pos_profile.warehouse)
+					)
+				# Mutate the incoming item structure so downstream code uses this batch
+				item["batchNumber"] = auto_batch
+			else:
+				frappe.throw(
+					_(
+						"Serial No / Batch No are mandatory for Item {0}. Please select a batch before submitting the invoice."
+					).format(item_code)
+				)
+
+
+def _autofetch_batch_fifo(item_code, warehouse, qty):
+	"""
+	Simple FIFO-based batch selector.
+
+	Strategy:
+	- Prefer non-expired batches for the given item.
+	- Order by expiry_date ASC, then creation ASC (FIFO style).
+	- Currently does NOT enforce per-warehouse stock; core ERPNext validations
+	  will still ensure there is sufficient stock when the invoice is submitted.
+	"""
+	from frappe.utils import nowdate
+
+	today = nowdate()
+
+	# Filter by item and non-expired batches; ignore disabled batches
+	batches = frappe.get_all(
+		"Batch",
+		filters={
+			"item": item_code,
+			"disabled": 0,
+			"expiry_date": [">=", today],
+		},
+		fields=["name", "expiry_date", "creation"],
+		order_by="expiry_date asc, creation asc",
+		limit_page_length=1,
+	)
+
+	if not batches:
+		# Fallback: try ANY active batch if no expiry_date / future-dated batches exist
+		batches = frappe.get_all(
+			"Batch",
+			filters={
+				"item": item_code,
+				"disabled": 0,
+			},
+			fields=["name", "creation"],
+			order_by="creation asc",
+			limit_page_length=1,
+		)
+
+	return batches[0].name if batches else None
 
 def _determine_is_pos(customer, business_type):
 	"""Determine if the invoice should be marked as POS based on business type."""

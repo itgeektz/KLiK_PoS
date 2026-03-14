@@ -38,18 +38,21 @@ def get_current_pos_opening_entry():
 
 
 @frappe.whitelist(allow_guest=True)
-def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=False, cashier_name=None):
+def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=False, cashier_name=None, submitted_only=False):
 	"""
 	Get sales invoices with proper filtering based on user role and POS opening entry.
 
 	Args:
 		skip_opening_entry_filter: If True, skip filtering by opening entry (for Invoice History page)
 		cashier_name: Filter by cashier name (full name). If provided, only returns invoices for that cashier.
+		submitted_only: If True, only return submitted invoices (docstatus=1). Use for Sales Dashboard; excludes Draft and Cancelled.
 	"""
 	try:
 		# Convert string to boolean if needed (Frappe passes query params as strings)
 		if isinstance(skip_opening_entry_filter, str):
 			skip_opening_entry_filter = skip_opening_entry_filter.lower() in ("true", "1", "yes")
+		if isinstance(submitted_only, str):
+			submitted_only = submitted_only.lower() in ("true", "1", "yes")
 
 		# Get user IDs for cashier filter if cashier_name is provided
 		cashier_user_ids = None
@@ -60,7 +63,7 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 				return {"success": True, "data": [], "total_count": 0}
 
 		filters, fields = _build_filters_and_fields(
-			skip_opening_entry_filter=skip_opening_entry_filter, cashier_user_ids=cashier_user_ids
+			skip_opening_entry_filter=skip_opening_entry_filter, cashier_user_ids=cashier_user_ids, submitted_only=submitted_only
 		)
 
 		# Build search filters
@@ -113,12 +116,13 @@ def _get_user_ids_by_full_name(full_name):
 		return []
 
 
-def _build_filters_and_fields(skip_opening_entry_filter=False, cashier_user_ids=None):
+def _build_filters_and_fields(skip_opening_entry_filter=False, cashier_user_ids=None, submitted_only=False):
 	"""Build filters and fields list based on user role and metadata.
 
 	Args:
 		skip_opening_entry_filter: If True, skip filtering by opening entry (show all invoices)
 		cashier_user_ids: List of user IDs to filter by. If provided, only returns invoices for these users.
+		submitted_only: If True, only return submitted invoices (docstatus=1); excludes Draft and Cancelled.
 	"""
 	current_opening_entry = get_current_pos_opening_entry()
 
@@ -126,23 +130,28 @@ def _build_filters_and_fields(skip_opening_entry_filter=False, cashier_user_ids=
 	user_roles = frappe.get_roles()
 	is_admin_user = "Administrator" in user_roles or "System Manager" in user_roles
 
+	# Base filters: opening entry (and optionally submitted only)
+	filters = {}
+
 	# Skip opening entry filter if requested (for Invoice History page - show all invoices for cashier)
 	if skip_opening_entry_filter:
 		frappe.logger().info(
 			f"Skipping opening entry filter - showing all invoices for user {frappe.session.user}"
 		)
-		# Don't filter by opening entry - show all invoices
-		filters = {}
 	elif is_admin_user:
 		frappe.logger().info(
 			f"Admin user {frappe.session.user} with roles {user_roles} - showing all POS invoices"
 		)
-		filters = {"custom_pos_opening_entry": ["!=", ""]}
+		filters["custom_pos_opening_entry"] = ["!=", ""]
 	elif current_opening_entry:
-		filters = {"custom_pos_opening_entry": current_opening_entry}
+		filters["custom_pos_opening_entry"] = current_opening_entry
 	else:
 		frappe.logger().info("No active POS opening entry found, showing all POS invoices")
-		filters = {"custom_pos_opening_entry": ["!=", ""]}
+		filters["custom_pos_opening_entry"] = ["!=", ""]
+
+	# Only submitted invoices (for Sales Dashboard): docstatus 1 = Submitted; 0 = Draft, 2 = Cancelled
+	if submitted_only:
+		filters["docstatus"] = 1
 
 	# Check if ZATCA status field exists
 	sales_invoice_meta = frappe.get_meta("Sales Invoice")

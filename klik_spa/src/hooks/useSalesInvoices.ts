@@ -2,7 +2,12 @@
 import { useEffect, useState, useCallback } from "react";
 import type { SalesInvoice, SalesInvoiceItem } from "../../types";
 
-export function useSalesInvoices(searchTerm: string = "", skipOpeningEntryFilter: boolean = false, cashierName?: string) {
+export function useSalesInvoices(
+  searchTerm: string = "",
+  skipOpeningEntryFilter: boolean = false,
+  cashierName?: string,
+  submittedOnly: boolean = false
+) {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -41,8 +46,10 @@ export function useSalesInvoices(searchTerm: string = "", skipOpeningEntryFilter
       const skipOpeningFilter = skipOpeningEntryFilter ? '&skip_opening_entry_filter=true' : '';
       // Filter by cashier name if provided
       const cashierParam = cashierName && cashierName !== 'all' ? `&cashier_name=${encodeURIComponent(cashierName)}` : '';
+      // Only submitted invoices (exclude Draft and Cancelled) - for Sales Dashboard
+      const submittedOnlyParam = submittedOnly ? '&submitted_only=true' : '';
       const response = await fetch(
-        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${searchParam}${skipOpeningFilter}${cashierParam}`,
+        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${searchParam}${skipOpeningFilter}${cashierParam}${submittedOnlyParam}`,
         {
           method: 'GET',
           headers: {
@@ -160,7 +167,7 @@ export function useSalesInvoices(searchTerm: string = "", skipOpeningEntryFilter
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [debouncedSearchTerm, skipOpeningEntryFilter, cashierName]);
+  }, [debouncedSearchTerm, skipOpeningEntryFilter, cashierName, submittedOnly]);
 
   const loadMore = useCallback(() => {
     if (!isLoadingMore && hasMore) {

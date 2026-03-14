@@ -33,7 +33,8 @@ export default function DashboardPage() {
   const isMobile = useMediaQuery("(max-width: 1024px)")
   const { posDetails } = usePOSDetails()
 
-  const { invoices, isLoading: invoicesLoading } = useSalesInvoices()
+  // Only fetch submitted invoices for dashboard (exclude Draft and Cancelled)
+  const { invoices, isLoading: invoicesLoading } = useSalesInvoices("", false, undefined, true)
   const { userInfo, isLoading: userInfoLoading } = useUserInfo()
   // Blank => current POS opening session
   const [timeRange, setTimeRange] = useState("")
@@ -68,7 +69,11 @@ export default function DashboardPage() {
     ]
   }
 
-  const uniqueCashiers = [...new Set(invoices.map((invoice: SalesInvoice) => invoice.cashier))]
+  // Only submitted invoices (exclude Draft and Cancelled) for dashboard stats and cashier list
+  const submittedInvoices = invoices.filter(
+    (inv) => inv.status !== "Draft" && inv.status !== "Cancelled"
+  )
+  const uniqueCashiers = [...new Set(submittedInvoices.map((invoice: SalesInvoice) => invoice.cashier))]
 
   // Set default cashier filter based on user role
   useEffect(() => {
@@ -97,7 +102,7 @@ export default function DashboardPage() {
   }
 
   // Filter data based on selected filters and user role
-  const filteredInvoices = invoices.filter((invoice) => {
+  const filteredInvoices = submittedInvoices.filter((invoice) => {
     const matchesCashier = cashierFilter === "all" || invoice.cashier === cashierFilter
     const matchesPayment = paymentFilter === "all" || invoice.paymentMethod === paymentFilter
 

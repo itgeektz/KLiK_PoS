@@ -90,6 +90,12 @@ export default function DashboardPage() {
     );
   }
 
+  // Sales Dashboard is only for Sales Manager, System Manager or Administrator
+  if (userInfo && !userInfo.is_admin_user) {
+    navigate("/pos", { replace: true });
+    return null;
+  }
+
   // Filter data based on selected filters and user role
   const filteredInvoices = invoices.filter((invoice) => {
     const matchesCashier = cashierFilter === "all" || invoice.cashier === cashierFilter

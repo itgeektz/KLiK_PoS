@@ -547,18 +547,19 @@ def create_and_submit_invoice(data):
 		doc.paid_amount = amount_paid
 		doc.outstanding_amount = 0
 
-		# Save then submit; if submit fails (e.g. negative stock), delete the draft so we don't leave it behind
+		# Save then submit; if submit fails (e.g. negative stock), delete the draft and return error
+		# (do not re-raise: Frappe would rollback the transaction and undo the delete)
 		doc.save(ignore_permissions=True)
 		try:
 			doc.submit()
 		except Exception as submit_err:
-			# Submit failed (e.g. negative stock, validation) - remove the draft and re-raise
 			try:
 				frappe.delete_doc("Sales Invoice", doc.name, force=True, ignore_permissions=True)
 				frappe.db.commit()
 			except Exception as delete_err:
 				frappe.logger().error("Failed to delete draft after submit error: %s", delete_err)
-			raise submit_err
+			frappe.log_error(frappe.get_traceback(), "Submit Invoice Error (e.g. negative stock)")
+			return {"success": False, "message": str(submit_err)}
 
 		payment_entry = None
 		should_create_payment_entry = False

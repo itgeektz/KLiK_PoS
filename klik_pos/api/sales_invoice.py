@@ -2079,6 +2079,38 @@ def create_multi_invoice_return(return_data):
 		return {"success": False, "message": str(e)}
 
 
+def delete_draft_invoices_for_opening_entry(opening_entry_name):
+	"""
+	Delete all draft Sales Invoices linked to the given POS Opening Entry (session).
+	Called on POS close when POS Profile has custom_clear_draft_invoices enabled.
+	"""
+	try:
+		drafts = frappe.get_all(
+			"Sales Invoice",
+			filters={
+				"docstatus": 0,
+				"custom_pos_opening_entry": opening_entry_name,
+			},
+			pluck="name",
+		)
+		deleted = 0
+		for name in drafts:
+			try:
+				doc = frappe.get_doc("Sales Invoice", name)
+				if doc.docstatus == 0:
+					doc.delete()
+					deleted += 1
+			except Exception as e:
+				frappe.logger().error(f"Error deleting draft invoice {name}: {e}")
+		if deleted:
+			frappe.logger().info(f"Cleared {deleted} draft invoice(s) for opening entry {opening_entry_name}")
+		return deleted
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Clear draft invoices on POS close")
+		# Do not raise - closing entry already succeeded
+		return 0
+
+
 @frappe.whitelist()
 def delete_draft_invoice(invoice_id):
 	"""

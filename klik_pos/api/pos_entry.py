@@ -5,8 +5,9 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime, today
 
-# Import for clearing cache
+# Import for clearing cache and clearing draft invoices on close
 from klik_pos.api.cache import clear_backend_cache
+from klik_pos.api.sales_invoice import delete_draft_invoices_for_opening_entry
 from klik_pos.klik_pos.utils import clear_pos_profile_cache, get_current_pos_profile
 
 
@@ -404,6 +405,9 @@ def _create_and_submit_closing_doc(opening_entry, data, payment_data, user):
 	doc.submit()
 	frappe.db.set_value("POS Opening Entry", opening_entry.name, "pos_closing_entry", doc.name)
 
+	# If POS Profile has "Clear draft invoices" enabled, delete all drafts for this session
+	_clear_draft_invoices_on_close_if_enabled(opening_entry)
+
 	# Clear POS profile cache for the current user to ensure fresh data on next session
 	try:
 		clear_pos_profile_cache(user=user)
@@ -412,3 +416,18 @@ def _create_and_submit_closing_doc(opening_entry, data, payment_data, user):
 		frappe.logger().warning("Failed to clear POS profile cache after closing entry", exc_info=True)
 
 	return doc
+
+
+def _clear_draft_invoices_on_close_if_enabled(opening_entry):
+	"""If POS Profile has custom_clear_draft_invoices set, delete all draft invoices for this session."""
+	try:
+		pos_profile_name = opening_entry.get("pos_profile") if isinstance(opening_entry, dict) else getattr(opening_entry, "pos_profile", None)
+		opening_entry_name = opening_entry.get("name") if isinstance(opening_entry, dict) else getattr(opening_entry, "name", None)
+		if not pos_profile_name or not opening_entry_name:
+			return
+		# Check custom field (safe if field does not exist)
+		clear_drafts = frappe.db.get_value("POS Profile", pos_profile_name, "custom_clear_draft_invoices")
+		if clear_drafts:
+			delete_draft_invoices_for_opening_entry(opening_entry_name)
+	except Exception as e:
+		frappe.logger().warning("Failed to clear draft invoices on close: %s", e, exc_info=True)

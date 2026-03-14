@@ -59,6 +59,7 @@ fixtures = [
 					"Sales Invoice-custom_delivery_personnel",
 					"Sales Invoice-custom_delivery_personnel_name",
 					"POS Profile-custom_autofetch_batchserial_",
+                    "POS Profile-custom_clear_draft_invoices"
 				),
 			]
 		],

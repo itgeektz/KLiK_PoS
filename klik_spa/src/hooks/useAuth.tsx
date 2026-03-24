@@ -14,7 +14,23 @@ interface User {
 
 interface AuthContextType {
   user: User | null
-  login: (username: string, password: string) => Promise<{ success: boolean; message: string }>
+  login: (
+    username: string,
+    password: string,
+    otp?: string,
+    tmpId?: string
+  ) => Promise<{
+    success: boolean
+    message: string
+    requires_otp?: boolean
+    tmp_id?: string
+    verification?: {
+      method?: string
+      prompt?: string
+      setup?: boolean
+      token_delivery?: boolean
+    }
+  }>
   logout: () => Promise<void>
   checkSession: () => Promise<boolean>
   loading: boolean
@@ -96,12 +112,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false)
   }, [mounted])
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, otp?: string, tmpId?: string) => {
     try {
       setLoading(true)
 
       // Use the real ERPNext API
-      const result = await erpnextAPI.login(username, password)
+      const result = await erpnextAPI.login(username, password, otp, tmpId)
+
+      if (result.requires_otp) {
+        return {
+          success: false,
+          message: result.message,
+          requires_otp: true,
+          tmp_id: result.tmp_id,
+          verification: result.verification,
+        }
+      }
 
       if (result.success && result.user) {
         console.log("Login successful:", result.user)

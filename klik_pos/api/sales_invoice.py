@@ -553,11 +553,7 @@ def create_and_submit_invoice(data):
 		try:
 			doc.submit()
 		except Exception as submit_err:
-			try:
-				frappe.delete_doc("Sales Invoice", doc.name, force=True, ignore_permissions=True)
-				frappe.db.commit()
-			except Exception as delete_err:
-				frappe.logger().error("Failed to delete draft after submit error: %s", delete_err)
+			frappe.db.rollback()  # ← undo the save + partial submit atomically
 			frappe.log_error(frappe.get_traceback(), "Submit Invoice Error (e.g. negative stock)")
 			return {"success": False, "message": str(submit_err)}
 
@@ -846,48 +842,84 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 					).format(item_code)
 				)
 
-
 def _autofetch_batch_fifo(item_code, warehouse, qty):
-	"""
-	Simple FIFO-based batch selector.
+    from frappe.utils import nowdate
+    today = nowdate()
 
-	Strategy:
-	- Prefer non-expired batches for the given item.
-	- Order by expiry_date ASC, then creation ASC (FIFO style).
-	- Currently does NOT enforce per-warehouse stock; core ERPNext validations
-	  will still ensure there is sufficient stock when the invoice is submitted.
-	"""
-	from frappe.utils import nowdate
+    # Pick oldest batch that actually has sufficient stock in the warehouse
+    batches = frappe.db.sql("""
+        SELECT 
+            sle.batch_no,
+            SUM(sle.actual_qty) as available_qty,
+            b.expiry_date,
+            b.creation
+        FROM `tabStock Ledger Entry` sle
+        INNER JOIN `tabBatch` b ON b.name = sle.batch_no
+        WHERE 
+            sle.item_code = %(item_code)s
+            AND sle.warehouse = %(warehouse)s
+            AND sle.is_cancelled = 0
+            AND b.disabled = 0
+            AND (b.expiry_date IS NULL OR b.expiry_date >= %(today)s)
+        GROUP BY sle.batch_no
+        HAVING available_qty >= %(qty)s
+        ORDER BY b.expiry_date ASC, b.creation ASC
+        LIMIT 1
+    """, {
+        "item_code": item_code,
+        "warehouse": warehouse,
+        "qty": qty,
+        "today": today
+    }, as_dict=True)
 
-	today = nowdate()
+    if not batches:
+        frappe.throw(
+            f"No batch with sufficient stock found for item {item_code} "
+            f"in warehouse {warehouse}. Required: {qty}"
+        )
 
-	# Filter by item and non-expired batches; ignore disabled batches
-	batches = frappe.get_all(
-		"Batch",
-		filters={
-			"item": item_code,
-			"disabled": 0,
-			"expiry_date": [">=", today],
-		},
-		fields=["name", "expiry_date", "creation"],
-		order_by="expiry_date asc, creation asc",
-		limit_page_length=1,
-	)
+    return batches[0].batch_no
+# def _autofetch_batch_fifo(item_code, warehouse, qty):
+# 	"""
+# 	Simple FIFO-based batch selector.
 
-	if not batches:
-		# Fallback: try ANY active batch if no expiry_date / future-dated batches exist
-		batches = frappe.get_all(
-			"Batch",
-			filters={
-				"item": item_code,
-				"disabled": 0,
-			},
-			fields=["name", "creation"],
-			order_by="creation asc",
-			limit_page_length=1,
-		)
+# 	Strategy:
+# 	- Prefer non-expired batches for the given item.
+# 	- Order by expiry_date ASC, then creation ASC (FIFO style).
+# 	- Currently does NOT enforce per-warehouse stock; core ERPNext validations
+# 	  will still ensure there is sufficient stock when the invoice is submitted.
+# 	"""
+# 	from frappe.utils import nowdate
 
-	return batches[0].name if batches else None
+# 	today = nowdate()
+
+# 	# Filter by item and non-expired batches; ignore disabled batches
+# 	batches = frappe.get_all(
+# 		"Batch",
+# 		filters={
+# 			"item": item_code,
+# 			"disabled": 0,
+# 			"expiry_date": [">=", today],
+# 		},
+# 		fields=["name", "expiry_date", "creation"],
+# 		order_by="expiry_date asc, creation asc",
+# 		limit_page_length=1,
+# 	)
+
+# 	if not batches:
+# 		# Fallback: try ANY active batch if no expiry_date / future-dated batches exist
+# 		batches = frappe.get_all(
+# 			"Batch",
+# 			filters={
+# 				"item": item_code,
+# 				"disabled": 0,
+# 			},
+# 			fields=["name", "creation"],
+# 			order_by="creation asc",
+# 			limit_page_length=1,
+# 		)
+
+# 	return batches[0].name if batches else None
 
 def _determine_is_pos(customer, business_type):
 	"""Determine if the invoice should be marked as POS based on business type."""

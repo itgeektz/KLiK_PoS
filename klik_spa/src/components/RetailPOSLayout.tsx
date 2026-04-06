@@ -595,14 +595,22 @@ export default function RetailPOSLayout() {
         {/* Order Summary - 35% width on medium and large screens */}
         <div className="w-[35%] min-w-[420px] max-w-[600px] bg-white shadow-lg overflow-y-auto">
           <OrderSummary
-            cartItems={cartItems}
-            onUpdateQuantity={handleUpdateQuantity}
-            onRemoveItem={handleRemoveItem}
-            onClearCart={handleClearCart}
-            appliedCoupons={appliedCoupons}
-            onApplyCoupon={handleApplyCoupon}
-            onRemoveCoupon={handleRemoveCoupon}
-          />
+  cartItems={cartItems}
+  onUpdateQuantity={handleUpdateQuantity}
+  onRemoveItem={handleRemoveItem}
+  onClearCart={handleClearCart}
+  appliedCoupons={appliedCoupons}
+  onApplyCoupon={handleApplyCoupon}
+  onRemoveCoupon={handleRemoveCoupon}
+  onDuplicateItem={(item) => {
+  addToCart({
+    ...item,
+    id: `${item.item_code || item.id}-${Date.now()}`,
+    item_code: item.item_code || item.id,  // preserve original item_code
+    quantity: 1,
+  })
+}}
+/>
         </div>
       </div>
 

@@ -654,13 +654,22 @@ def parse_invoice_data(data):
 		item_code = item.get("id")
 
 		discount_data = item_discounts.get(item_code, {})
+		batch_number = (
+			item.get("batchNumber")
+			or (discount_data.get("batchNumber"))
+		)
+
+		serial_number = (
+			item.get("serialNumber")
+			or (discount_data.get("serialNumber"))
+		)
 
 		items.append({
 			"id": item_code,
             "quantity": item.get("quantity"),
             "price": item.get("price"),
-            "batchNumber": discount_data.get("batchNumber"),
-            "serialNumber": discount_data.get("serialNumber"),
+            "batchNumber": batch_number,
+            "serialNumber": serial_number,
             "uom": item.get("uom"),
             "discountPercentage": discount_data.get("discountPercentage"),
             "discountAmount": discount_data.get("discountAmount"),

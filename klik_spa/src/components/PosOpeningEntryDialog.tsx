@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { X, CreditCard, Banknote, Wallet, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { formatCurrency } from '../utils/currency';
+import { AlertCircle, Banknote, CheckCircle2, CreditCard, Wallet, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { usePaymentModes } from "../hooks/usePaymentModes";
+import { usePOSDetails, usePOSProfiles } from '../hooks/usePOSProfile';
 import { useCreatePOSOpeningEntry } from '../services/opeiningEntry';
-import { usePaymentModes } from "../hooks/usePaymentModes"
-import { usePOSProfiles, usePOSDetails } from '../hooks/usePOSProfile';
 import { clearAllCache } from '../utils/clearCache';
+import { formatCurrency } from '../utils/currency';
 
 interface PaymentMethod {
   mode_of_payment: string;
@@ -254,7 +254,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
                 <select
                   value={selectedProfile}
                   onChange={(e) => handleProfileChange(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-600"
                   disabled={!!profilesLoading || !!isLoadingPaymentModes}
                 >
                   {(!posProfiles || posProfiles.length === 0) && (
@@ -309,7 +309,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
                           step="0.01"
                           value={method.opening_amount || ''}
                           onChange={(e) => updatePaymentAmount(index, parseFloat(e.target.value) || 0)}
-                          className="w-24 px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="w-24 px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-600"
                           placeholder="0.00"
                           disabled={profilesLoading}
                         />
@@ -319,7 +319,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
 
                   {/* Total */}
                   <div className="mt-4 pt-3 border-t border-gray-200">
-                    <div className="flex justify-between items-center font-semibold">
+                    <div className="flex justify-between items-center font-semibold text-gray-700">
                       <span>Total Opening Balance:</span>
                       <span className="text-green-600">
                         {formatCurrency(totalAmount, posDetails?.currency || 'USD')}

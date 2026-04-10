@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { X, CreditCard, Banknote, Wallet, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { formatCurrency } from '../utils/currency';
+import { AlertCircle, Banknote, CheckCircle2, CreditCard, Wallet, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { usePaymentModes } from "../hooks/usePaymentModes";
+import { usePOSDetails, usePOSProfiles } from '../hooks/usePOSProfile';
 import { useCreatePOSOpeningEntry } from '../services/opeiningEntry';
-import { usePaymentModes } from "../hooks/usePaymentModes"
-import { usePOSProfiles, usePOSDetails } from '../hooks/usePOSProfile';
 import { clearAllCache } from '../utils/clearCache';
+import { formatCurrency } from '../utils/currency';
 
 interface PaymentMethod {
   mode_of_payment: string;

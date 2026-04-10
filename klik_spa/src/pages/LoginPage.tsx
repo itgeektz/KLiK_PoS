@@ -141,7 +141,7 @@ export default function LoginPage() {
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      className="w-full px-4 py-2.5 border-2 border-beveren-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-beveren-500 focus:border-transparent transition-all duration-200 bg-beveren-50/50"
+                      className="w-full px-4 py-2.5 border-2 border-beveren-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-beveren-500 focus:border-transparent transition-all duration-200 bg-beveren-50/50 text-gray-600"
                       placeholder="Username or Email"
                       required
                     />
@@ -163,7 +163,7 @@ export default function LoginPage() {
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-2.5 border-2 border-beveren-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-beveren-500 focus:border-transparent transition-all duration-200 bg-beveren-50/50"
+                      className="w-full px-4 py-2.5 border-2 border-beveren-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-beveren-500 focus:border-transparent transition-all duration-200 bg-beveren-50/50 text-gray-600"
                       placeholder="Password"
                       required
                     />
@@ -194,7 +194,7 @@ export default function LoginPage() {
                       autoComplete="one-time-code"
                       value={otp}
                       onChange={(e) => setOtp(e.target.value)}
-                      className="w-full px-4 py-2.5 border-2 border-beveren-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-beveren-500 focus:border-transparent transition-all duration-200 bg-beveren-50/50"
+                      className="w-full px-4 py-2.5 border-2 border-beveren-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-beveren-500 focus:border-transparent transition-all duration-200 bg-beveren-50/50 text-gray-600"
                       placeholder="Enter OTP code"
                       required
                     />

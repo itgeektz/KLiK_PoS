@@ -68,7 +68,7 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 
 		# Build search filters
 		or_filters = _build_search_filters(search)
-
+		
 		invoices = frappe.get_all(
 			"Sales Invoice",
 			filters=filters,
@@ -79,12 +79,14 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 			start=start,
 		)
 
-		count_rows = frappe.get_all(
-			"Sales Invoice", filters=filters, or_filters=or_filters, fields=["count(name) as total"]
-		)
-		total_count = count_rows[0].total if count_rows else 0
+		total_count = len(frappe.get_all(
+			"Sales Invoice",
+			filters=filters,
+			or_filters=or_filters,
+			pluck="name"
+		))
+		if not invoices:return {"success": True, "data": [], "total_count": total_count}
 
-		# Batch fetch related data
 		invoice_names = [inv.name for inv in invoices]
 		user_ids = list(set([inv.owner for inv in invoices]))
 
@@ -92,7 +94,6 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		payment_methods_map = _batch_fetch_payment_methods(invoice_names)
 		items_map = _batch_fetch_items(invoice_names)
 
-		# Process and enrich invoices
 		_process_invoices(invoices, cashier_names_map, payment_methods_map, items_map)
 
 		return {"success": True, "data": invoices, "total_count": total_count}
@@ -100,7 +101,6 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Error fetching sales invoices")
 		return {"success": False, "error": str(e)}
-
 
 def _get_user_ids_by_full_name(full_name):
 	"""Get user IDs (emails) that match the given full name."""

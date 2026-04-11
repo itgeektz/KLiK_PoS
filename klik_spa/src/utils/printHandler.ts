@@ -43,11 +43,26 @@ export function handlePrintInvoice(invoiceData: Invoice | null) {
     left: 0;
     width: 100%;
     height: 100%;
-    background: white;
+    background: rgba(0, 0, 0, 0.5);
     z-index: 9999;
-    padding: 20px;
     overflow: auto;
+    display: flex;
+    justify-content: center;
   `;
+
+  const printContent = document.createElement('div');
+  printContent.innerHTML = printOverlay.innerHTML;
+  printOverlay.innerHTML = '';
+  printContent.style.cssText = `
+    background: white;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    height: fit-content;
+    min-height: 100%;
+  `;
+  printOverlay.appendChild(printContent);
 
   // Hide the original page content
   document.body.style.cssText = `
@@ -72,15 +87,16 @@ export function handlePrintInvoice(invoiceData: Invoice | null) {
       body * {
         visibility: hidden;
       }
-      .print-overlay, .print-overlay * {
+      .print-overlay .print-content, .print-overlay .print-content * {
         visibility: visible;
       }
-      .print-overlay {
+      .print-overlay .print-content {
         position: absolute !important;
         left: 0 !important;
         top: 0 !important;
         width: 100% !important;
-        height: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
       }
     }
     @page {
@@ -89,6 +105,7 @@ export function handlePrintInvoice(invoiceData: Invoice | null) {
     }
   `;
   printOverlay.className = 'print-overlay';
+  printContent.className = 'print-content';
   document.head.appendChild(printStyles);
 
   console.log('Print overlay created and added');

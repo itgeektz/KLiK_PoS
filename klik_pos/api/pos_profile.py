@@ -135,7 +135,7 @@ def get_pos_details():
 		pos = get_current_pos_profile()
 
 	business_type = pos.custom_business_type
-	print_format = pos.custom_pos_printformat
+	print_format = pos.print_format or pos.custom_pos_printformat
 
 	# Get default customer details if set
 	default_customer = None

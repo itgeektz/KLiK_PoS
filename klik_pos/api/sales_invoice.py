@@ -647,7 +647,33 @@ def parse_invoice_data(data):
 		data = json.loads(data)
 
 	customer = data.get("customer", {}).get("id")
-	items = data.get("items", [])
+	items = []
+	item_discounts = data.get("itemDiscounts", {})
+
+	for item in data.get("items", []):
+		item_code = item.get("id")
+
+		discount_data = item_discounts.get(item_code, {})
+		batch_number = (
+			item.get("batchNumber")
+			or (discount_data.get("batchNumber"))
+		)
+
+		serial_number = (
+			item.get("serialNumber")
+			or (discount_data.get("serialNumber"))
+		)
+
+		items.append({
+			"id": item_code,
+            "quantity": item.get("quantity"),
+            "price": item.get("price"),
+            "batchNumber": batch_number,
+            "serialNumber": serial_number,
+            "uom": item.get("uom"),
+            "discountPercentage": discount_data.get("discountPercentage"),
+            "discountAmount": discount_data.get("discountAmount"),
+		})
 
 	amount_paid = 0.0
 	sales_and_tax_charges = get_current_pos_profile().taxes_and_charges
@@ -775,6 +801,7 @@ def _set_pos_profile_fields(doc, pos_profile, customer, business_type):
 	doc.conversion_rate = 1.0
 	doc.update_stock = 1
 	doc.warehouse = pos_profile.warehouse
+	doc.cost_center = pos_profile.cost_center
 
 	# Determine if this is a POS invoice
 	doc.is_pos = _determine_is_pos(customer, business_type)

@@ -22,6 +22,11 @@ export interface CartItem {
   conversion_factor?: number
 }
 
+export interface PriceListRate {
+  price_list: string
+  rate: number
+}
+
 export interface MenuItem {
   id: string
   name: string
@@ -35,7 +40,9 @@ export interface MenuItem {
   description?: string
   uom?: string
   currency_symbol?: string
-  barcode?: string
+  barcode?: string,
+  cost_price?: number
+  price_lists?: PriceListRate[]
 }
 
 export interface Category {

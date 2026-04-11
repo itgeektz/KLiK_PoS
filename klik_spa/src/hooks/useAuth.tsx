@@ -49,68 +49,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!mounted) return
+    if (!mounted) return;
 
-    // Initialize ERPNext API session
-    erpnextAPI.initializeSession()
+    const syncAuthSession = async () => {
+      erpnextAPI.initializeSession();
 
-    // Check if user is already logged in
-    const token = localStorage.getItem("erpnext_token")
-    const userData = localStorage.getItem("user_data")
-
-
-    if (token && userData) {
       try {
-        const parsedUser = JSON.parse(userData)
+        const freshUserData = await erpnextAPI.getCurrentUserProfile();
 
-        // First, set the user from cached data to avoid login redirect
-        setUser(parsedUser)
+        // Check if server session is active and valid (not Guest)
+        if (freshUserData && freshUserData.name && freshUserData.name !== "Guest") {
+          const updatedUser = {
+            name: freshUserData.name,
+            email: freshUserData.email || freshUserData.name,
+            full_name: freshUserData.full_name || `${freshUserData.first_name || ""} ${freshUserData.last_name || ""}`.trim(),
+            role: freshUserData.role_profile_name || freshUserData.role || "User",
+            first_name: freshUserData.first_name,
+            last_name: freshUserData.last_name,
+            user_image: freshUserData.user_image
+          };
 
-        const refreshUserData = async () => {
-          try {
-            // First validate the session
-            const isSessionValid = await erpnextAPI.validateSession()
-            if (!isSessionValid) {
-              console.warn("Session is invalid, clearing auth data")
-              localStorage.removeItem("erpnext_token")
-              localStorage.removeItem("user_data")
-              localStorage.removeItem("erpnext_sid")
-              setUser(null)
-              return
-            }
-
-            const freshUserData = await erpnextAPI.getCurrentUserProfile()
-            if (freshUserData) {
-              const updatedUser = {
-                name: freshUserData.name || parsedUser.name,
-                email: freshUserData.email || freshUserData.name || parsedUser.email,
-                full_name: freshUserData.full_name || freshUserData.first_name + ' ' + (freshUserData.last_name || '') || parsedUser.full_name,
-                role: freshUserData.role_profile_name || freshUserData.role || parsedUser.role || "User",
-                first_name: freshUserData.first_name,
-                last_name: freshUserData.last_name,
-                user_image: freshUserData.user_image
-              }
-
-              setUser(updatedUser)
-              localStorage.setItem("user_data", JSON.stringify(updatedUser))
-            }
-          } catch (error) {
-            console.warn("Failed to refresh user data, using cached data:", error)
-            // Don't clear the user data if refresh fails - keep using cached data
-          }
+          // Update state and storage to match current server session
+          setUser(updatedUser);
+          localStorage.setItem("erpnext_token", "authenticated");
+          localStorage.setItem("user_data", JSON.stringify(updatedUser));
+        } else {
+          // Explicitly logged out of server (or Guest): Clear everything
+          setUser(null);
+          localStorage.removeItem("erpnext_token");
+          localStorage.removeItem("user_data");
+          localStorage.removeItem("erpnext_sid");
         }
-
-        // Run refresh in background without blocking authentication
-        refreshUserData()
       } catch (error) {
-        console.error("Error parsing user data:", error)
-        localStorage.removeItem("erpnext_token")
-        localStorage.removeItem("user_data")
-        localStorage.removeItem("erpnext_sid")
+        // Fallback for network issues: keep existing state but stop loading
+        console.error("Session sync failed:", error);
+      } finally {
+        setLoading(false);
       }
-    }
-    setLoading(false)
-  }, [mounted])
+    };
+
+    syncAuthSession();
+  }, [mounted]);
 
   const login = async (username: string, password: string, otp?: string, tmpId?: string) => {
     try {

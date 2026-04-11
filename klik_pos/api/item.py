@@ -3,6 +3,7 @@ from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rul
 from erpnext.stock.doctype.batch.batch import get_batch_qty
 from erpnext.stock.utils import get_stock_balance
 from frappe import _
+from frappe.utils import today, getdate
 
 from klik_pos.api.sales_invoice import get_current_pos_opening_entry
 from klik_pos.klik_pos.utils import get_current_pos_profile
@@ -1807,3 +1808,112 @@ def _add_unprocessed_items(result_items, cart_items):
 		cart_item_code = cart_item.get("id") or cart_item.get("item_code")
 		if cart_item_code and cart_item_code not in processed_item_codes:
 			result_items.append(cart_item)
+
+
+@frappe.whitelist()
+def get_full_pricing_and_batch_details(item_code, warehouse=None, customer=None):
+    if not item_code:
+        return {}
+
+    item_doc = frappe.get_doc("Item", item_code)
+    today_date = getdate(today())
+
+    price_filters = {
+        "item_code": item_code,
+        "selling": 1
+    }
+
+    if customer:
+        price_filters["customer"] = customer
+
+    price_lists = frappe.get_all(
+        "Item Price",
+        filters=price_filters,
+        fields=[
+            "price_list",
+            "price_list_rate as rate",
+            "currency",
+            "uom",
+            "customer",
+            "valid_from",
+            "valid_upto",
+            "name",
+            "item_code"
+        ]
+    )
+
+    active_prices = []
+
+    for p in price_lists:
+        valid_from = getdate(p.valid_from) if p.valid_from else None
+        valid_upto = getdate(p.valid_upto) if p.valid_upto else None
+
+        if valid_from and valid_from > today_date:
+            continue
+        if valid_upto and valid_upto < today_date:
+            continue
+
+        note = None
+        if frappe.db.has_column("Item Price", "note"):
+            note = frappe.db.get_value("Item Price", p.name, "note")
+        elif frappe.db.has_column("Item Price", "remarks"):
+            note = frappe.db.get_value("Item Price", p.name, "remarks")
+
+        active_prices.append({
+            "price_list": p.price_list,
+            "rate": p.rate,
+            "currency": p.currency,
+            "uom": p.uom,
+            "customer": p.customer,
+            "note": note
+        })
+
+    batches = frappe.get_all(
+        "Batch",
+        filters={"item": item_code},
+        fields=["name as batch_id", "expiry_date"]
+    )
+
+    batch_ids = [b.batch_id for b in batches]
+
+    sle_filters = {"item_code": item_code}
+    if warehouse:
+        sle_filters["warehouse"] = warehouse
+
+    if batch_ids:
+        sle_filters["batch_no"] = ["in", batch_ids]
+
+    sle_entries = frappe.get_all(
+        "Stock Ledger Entry",
+        filters=sle_filters,
+        fields=["batch_no", "actual_qty"]
+    )
+
+    qty_map = {}
+    for row in sle_entries:
+        if not row.batch_no:
+            continue
+        qty_map[row.batch_no] = qty_map.get(row.batch_no, 0) + (row.actual_qty or 0)
+
+    result_batches = []
+    for b in batches:
+        qty = qty_map.get(b.batch_id, 0)
+        if qty > 0:
+            result_batches.append({
+                "batch_id": b.batch_id,
+                "qty": qty,
+                "expiry_date": b.expiry_date
+            })
+
+    return {
+        "item_name": item_doc.item_name,
+        "item_code": item_doc.item_code,
+        "standard_rate": item_doc.standard_rate or 0,
+        "valuation_rate": item_doc.valuation_rate or 0,
+        "uom": item_doc.stock_uom,
+        "brand": item_doc.brand,
+        "description": item_doc.description,
+        "image": item_doc.image,
+        "price_lists": active_prices,
+        "batches": result_batches
+    }

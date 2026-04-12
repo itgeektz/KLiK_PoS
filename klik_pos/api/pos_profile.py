@@ -176,6 +176,13 @@ def get_pos_details():
 		"custom_allow_write_off": pos.custom_allow_write_off or 0,
 		"custom_ignore_write_off_on_partial_returns": pos.custom_ignore_write_off_on_partial_returns or 1.0,
 		"custom_delivery_required": int(getattr(pos, "custom_delivery_required", 0) or 0),
+		"warehouse": pos.warehouse,
+		"company": pos.company,
+		"country": pos.country,
+		"country_code": (frappe.db.get_value("Country", {"country_name": pos.country}, "code") or "").upper(),
+		"allow_rate_change": pos.allow_rate_change,
+		"allow_discount_change": pos.allow_discount_change,
+		"allow_partial_payment": pos.allow_partial_payment,
 	}
 	return details
 

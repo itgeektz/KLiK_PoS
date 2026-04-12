@@ -3421,6 +3421,7 @@ export default function OrderSummary({
                               step="0.01"
                               value={itemDiscount.customRate !== undefined ? itemDiscount.customRate : item.price}
                               onChange={(e) => handleCustomRateChange(item, parseFloat(e.target.value) || 0)}
+                              readOnly={!posDetails?.allow_rate_change}
                               placeholder="Rate"
                               className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
                             />
@@ -3457,6 +3458,7 @@ export default function OrderSummary({
                                   parseFloat(e.target.value) || 0
                                 )
                               }
+                              readOnly={!posDetails?.allow_discount_change}
                               placeholder="0.00"
                               className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
                             />
@@ -3478,6 +3480,7 @@ export default function OrderSummary({
                                   parseFloat(e.target.value) || 0
                                 )
                               }
+                              readOnly={!posDetails?.allow_discount_change}
                               placeholder="0.0"
                               className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
                             />

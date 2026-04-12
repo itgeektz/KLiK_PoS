@@ -126,50 +126,58 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
         setIsLoading(false)
       }
     }
-
     fetchFullData()
   }, [item.id, warehouse])
 
-  const costPrice = data?.valuation_rate || data?.standard_rate || item.cost_price || 0
-  const profit = item.price - costPrice
-  const profitMargin = costPrice > 0 ? (profit / costPrice) * 100 : 0
+  const sym = item.currency_symbol || "KES "
+  const valuationRate = data?.valuation_rate ?? 0
+  const totalQty = data?.total_bal_qty ?? 0
 
-  const formatCurrency = (amount: number) => {
-    return `${item.currency_symbol}${amount.toFixed(2)}`
-  }
+  const batchesGrouped = (data?.batches ?? []).reduce<Record<string, Batch[]>>((acc, b) => {
+    acc[b.batch_id] = acc[b.batch_id] ?? []
+    acc[b.batch_id].push(b)
+    return acc
+  }, {})
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return "N/A"
-    return new Date(dateString).toLocaleDateString()
-  }
-  
+  const tabs = [
+    { key: "pricing" as const, label: "Pricing & Margins" },
+    { key: "stock" as const, label: data?.has_serial_no ? "Serials & Stock" : "Batches & Stock" },
+    { key: "details" as const, label: "Details" },
+  ]
+
+  const scrollbarStyles = "scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent"
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 duration-300">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-beveren-50 to-white dark:from-gray-800 dark:to-gray-800">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 duration-300">
+
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-beveren-50 to-white dark:from-gray-800 dark:to-gray-800 shrink-0">
           <div className="flex items-center gap-4">
-            {item.image && (
-              <img
-                src={item.image}
-                alt={item.name}
-                className="w-12 h-12 rounded-lg object-cover border border-gray-200 dark:border-gray-600"
-                crossOrigin="anonymous"
-              />
+            {item.image ? (
+              <img src={item.image} alt={item.name} className="w-12 h-12 rounded-xl object-cover border border-gray-200 dark:border-gray-600" crossOrigin="anonymous" />
+            ) : (
+              <div className="w-12 h-12 rounded-xl bg-beveren-100 dark:bg-beveren-900/30 flex items-center justify-center text-beveren-600 dark:text-beveren-400 font-bold text-lg">
+                {item.name?.charAt(0)}
+              </div>
             )}
             <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">{item.name}</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">{item.id}</p>
-              {data?.brand && (
-                <p className="text-xs text-beveren-600 dark:text-beveren-400 mt-0.5">Brand: {data.brand}</p>
-              )}
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">{item.name}</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-0.5">{item.id}</p>
+              {data?.brand && <p className="text-xs text-beveren-600 dark:text-beveren-400 mt-0.5">{data.brand}</p>}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-6 mr-4">
+            <div className="text-right">
+              <p className="text-xs text-gray-400 uppercase font-semibold">Total Stock</p>
+              <p className="text-lg font-bold text-gray-900 dark:text-white">{totalQty.toLocaleString()} <span className="text-sm font-normal text-gray-500">{data?.uom}</span></p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-400 uppercase font-semibold">Valuation Rate</p>
+              <p className="text-lg font-bold text-beveren-600 dark:text-beveren-400">{fmt(valuationRate, sym)}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full shrink-0">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>

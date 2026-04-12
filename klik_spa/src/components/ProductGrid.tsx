@@ -30,12 +30,13 @@ export default function ProductGrid({
   totalCount = 0,
 }: ProductGridProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
-  const visibleItems = items.filter((item) => item.available > 0);
+  const inStockItems = items.filter((item) => item.available > 0);
 
   // Intersection Observer for infinite scroll
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
       const target = entries[0];
+      if (!target) return;
       if (target.isIntersecting && hasMore && !isLoadingMore && onLoadMore) {
         onLoadMore();
       }
@@ -51,15 +52,14 @@ export default function ProductGrid({
     };
 
     const observer = new IntersectionObserver(handleObserver, option);
-    const currentLoadMoreRef = loadMoreRef.current;
 
-    if (currentLoadMoreRef) {
-      observer.observe(currentLoadMoreRef);
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
     }
 
     return () => {
-      if (currentLoadMoreRef) {
-        observer.unobserve(currentLoadMoreRef);
+      if (loadMoreRef.current) {
+        observer.unobserve(loadMoreRef.current);
       }
     };
   }, [handleObserver]);
@@ -69,7 +69,7 @@ export default function ProductGrid({
     return (
       <div className="flex flex-col">
         <ProductLineView
-          items={visibleItems}
+          items={inStockItems}
           onAddToCart={onAddToCart}
           isMobile={isMobile}
           scannerOnly={scannerOnly}
@@ -88,12 +88,12 @@ export default function ProductGrid({
             )}
             {!isLoadingMore && hasMore && (
               <span className="text-gray-400 dark:text-gray-500 text-sm">
-                Showing {visibleItems.length} of {totalCount} items
+                Showing {inStockItems.length} of {totalCount} items
               </span>
             )}
-            {!hasMore && visibleItems.length > 0 && (
+            {!hasMore && inStockItems.length > 0 && (
               <span className="text-gray-400 dark:text-gray-500 text-sm">
-                All {visibleItems.length} items loaded
+                All {inStockItems.length} items loaded
               </span>
             )}
           </div>
@@ -103,7 +103,7 @@ export default function ProductGrid({
   }
 
   // Default grid view
-  if (visibleItems.length === 0) {
+  if (inStockItems.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -128,7 +128,7 @@ export default function ProductGrid({
             : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
         }`}
       >
-        {visibleItems.map((item) => (
+        {inStockItems.map((item) => (
           <ProductCard
             key={item.id}
             item={item}
@@ -152,13 +152,13 @@ export default function ProductGrid({
           )}
           {!isLoadingMore && hasMore && (
             <span className="text-gray-400 dark:text-gray-500 text-sm">
-              Showing {visibleItems.length} of {totalCount} items • Scroll for
+              Showing {inStockItems.length} of {totalCount} items • Scroll for
               more
             </span>
           )}
-          {!hasMore && visibleItems.length > 0 && totalCount > 0 && (
+          {!hasMore && inStockItems.length > 0 && totalCount > 0 && (
             <span className="text-gray-400 dark:text-gray-500 text-sm">
-              All {visibleItems.length} items loaded
+              All {inStockItems.length} items loaded
             </span>
           )}
         </div>

@@ -981,14 +981,14 @@ def get_item_groups_for_pos():
 
 			item_groups = frappe.get_all(
 				"Item Group",
-				filters={"name": ["in", item_group_names], "is_group": 0},
+				filters={"name": ["in", item_group_names], "is_group": 0, "exclude_from_pos": 0},
 				fields=["name", "item_group_name", "parent_item_group"],
 			)
 		else:
 			# Fallback: fetch all leaf item groups
 			item_groups = frappe.get_all(
 				"Item Group",
-				filters={"is_group": 0},
+				filters={"is_group": 0, "exclude_from_pos": 0},
 				fields=["name", "item_group_name"],
 				limit=100,
 				order_by="modified desc",
@@ -1813,257 +1813,108 @@ def _add_unprocessed_items(result_items, cart_items):
 
 @frappe.whitelist()
 def get_full_pricing_and_batch_details(item_code, warehouse=None, customer=None):
-	if not item_code:
-		return {}
-	frappe.log_error("Warehouse", warehouse)
+    if not item_code:
+        return {}
 
-	item_doc = frappe.get_doc("Item", item_code)
-	today_date = getdate(today())
+    item_doc = frappe.get_doc("Item", item_code)
+    today_date = getdate(today())
 
-	price_filters = {"item_code": item_code, "selling": 1}
-	if customer:
-		price_filters["customer"] = customer
+    price_filters = {
+        "item_code": item_code,
+        "selling": 1
+    }
 
-	price_list_records = frappe.get_all(
-		"Item Price",
-		filters=price_filters,
-		fields=[
-			"price_list", "price_list_rate as rate", "currency", "uom",
-			"customer", "valid_from", "valid_upto", "name", "item_code"
-		]
-	)
+    if customer:
+        price_filters["customer"] = customer
 
-	to_datetime = get_datetime(str(today_date) + " 23:59:59")
+    price_lists = frappe.get_all(
+        "Item Price",
+        filters=price_filters,
+        fields=[
+            "price_list",
+            "price_list_rate as rate",
+            "currency",
+            "uom",
+            "customer",
+            "valid_from",
+            "valid_upto",
+            "name",
+            "item_code"
+        ]
+    )
 
-	sle = frappe.qb.DocType("Stock Ledger Entry")
-	item_table = frappe.qb.DocType("Item")
+    active_prices = []
 
-	base_sle_query = (
-		frappe.qb.from_(sle)
-		.inner_join(item_table).on(sle.item_code == item_table.name)
-		.select(
-			sle.item_code, sle.warehouse,
-			sle.actual_qty, sle.stock_value_difference,
-			sle.valuation_rate, sle.qty_after_transaction,
-			sle.voucher_type, sle.voucher_detail_no,
-			sle.posting_date, sle.posting_datetime,
-			sle.batch_no, sle.serial_no,
-			sle.serial_and_batch_bundle, sle.has_serial_no, sle.has_batch_no,
-		)
-		.where(
-			(sle.docstatus < 2)
-			& (sle.is_cancelled == 0)
-			& (sle.item_code == item_code)
-			& (sle.posting_datetime <= to_datetime)
-		)
-		.orderby(sle.posting_datetime)
-		.orderby(sle.creation)
-	)
+    for p in price_lists:
+        valid_from = getdate(p.valid_from) if p.valid_from else None
+        valid_upto = getdate(p.valid_upto) if p.valid_upto else None
 
-	if warehouse:
-		base_sle_query = base_sle_query.where(sle.warehouse == warehouse)
+        if valid_from and valid_from > today_date:
+            continue
+        if valid_upto and valid_upto < today_date:
+            continue
 
-	sle_entries = base_sle_query.run(as_dict=True)
+        note = None
+        if frappe.db.has_column("Item Price", "note"):
+            note = frappe.db.get_value("Item Price", p.name, "note")
+        elif frappe.db.has_column("Item Price", "remarks"):
+            note = frappe.db.get_value("Item Price", p.name, "remarks")
 
-	warehouse_map = {}
-	latest_valuation_rate = flt(item_doc.valuation_rate)
-	serial_map = {}
+        active_prices.append({
+            "price_list": p.price_list,
+            "rate": p.rate,
+            "currency": p.currency,
+            "uom": p.uom,
+            "customer": p.customer,
+            "note": note
+        })
 
-	for entry in sle_entries:
-		wh = entry.warehouse
-		if wh not in warehouse_map:
-			warehouse_map[wh] = {"bal_qty": 0.0, "bal_val": 0.0, "val_rate": 0.0}
+    batches = frappe.get_all(
+        "Batch",
+        filters={"item": item_code},
+        fields=["name as batch_id", "expiry_date"]
+    )
 
-		if entry.voucher_type == "Stock Reconciliation" and not entry.batch_no and not entry.serial_no and not entry.serial_and_batch_bundle:
-			qty_diff = flt(entry.qty_after_transaction) - flt(warehouse_map[wh]["bal_qty"])
-		else:
-			qty_diff = flt(entry.actual_qty)
+    batch_ids = [b.batch_id for b in batches]
 
-		value_diff = flt(entry.stock_value_difference)
-		warehouse_map[wh]["bal_qty"] += qty_diff
-		warehouse_map[wh]["bal_val"] += value_diff
+    sle_filters = {"item_code": item_code}
+    if warehouse:
+        sle_filters["warehouse"] = warehouse
 
-		if entry.valuation_rate:
-			warehouse_map[wh]["val_rate"] = flt(entry.valuation_rate)
-			latest_valuation_rate = flt(entry.valuation_rate)
+    if batch_ids:
+        sle_filters["batch_no"] = ["in", batch_ids]
 
-		if entry.serial_no:
-			for sn in entry.serial_no.split("\n"):
-				sn = sn.strip()
-				if not sn:
-					continue
-				if sn not in serial_map:
-					serial_map[sn] = {"qty": 0.0, "warehouse": wh, "val_rate": 0.0}
-				serial_map[sn]["qty"] += qty_diff
-				if entry.valuation_rate:
-					serial_map[sn]["val_rate"] = flt(entry.valuation_rate)
+    sle_entries = frappe.get_all(
+        "Stock Ledger Entry",
+        filters=sle_filters,
+        fields=["batch_no", "actual_qty"]
+    )
 
-	total_bal_qty = sum(v["bal_qty"] for v in warehouse_map.values())
-	total_bal_val = sum(v["bal_val"] for v in warehouse_map.values())
-	effective_val_rate = (flt(total_bal_val) / flt(total_bal_qty)) if flt(total_bal_qty) else latest_valuation_rate
+    qty_map = {}
+    for row in sle_entries:
+        if not row.batch_no:
+            continue
+        qty_map[row.batch_no] = qty_map.get(row.batch_no, 0) + (row.actual_qty or 0)
 
-	batch_map = {}
+    result_batches = []
+    for b in batches:
+        qty = qty_map.get(b.batch_id, 0)
+        if qty > 0:
+            result_batches.append({
+                "batch_id": b.batch_id,
+                "qty": qty,
+                "expiry_date": b.expiry_date
+            })
 
-	if item_doc.has_batch_no:
-		sle_doc = frappe.qb.DocType("Stock Ledger Entry")
-
-		legacy_query = (
-			frappe.qb.from_(sle_doc)
-			.select(
-				sle_doc.item_code,
-				sle_doc.warehouse,
-				sle_doc.batch_no,
-				sle_doc.posting_date,
-				fn.Sum(sle_doc.actual_qty).as_("actual_qty"),
-				fn.Sum(sle_doc.stock_value_difference).as_("stock_value_difference"),
-			)
-			.where(
-				(sle_doc.docstatus < 2)
-				& (sle_doc.is_cancelled == 0)
-				& (sle_doc.batch_no != "")
-				& (sle_doc.item_code == item_code)
-				& (sle_doc.posting_datetime <= to_datetime)
-			)
-			.groupby(sle_doc.voucher_no, sle_doc.batch_no, sle_doc.item_code, sle_doc.warehouse)
-		)
-
-		if warehouse:
-			legacy_query = legacy_query.where(sle_doc.warehouse == warehouse)
-
-		legacy_entries = legacy_query.run(as_dict=True) or []
-
-		batch_package = frappe.qb.DocType("Serial and Batch Entry")
-
-		bundle_query = (
-			frappe.qb.from_(sle_doc)
-			.inner_join(batch_package)
-			.on(batch_package.parent == sle_doc.serial_and_batch_bundle)
-			.select(
-				sle_doc.item_code,
-				sle_doc.warehouse,
-				batch_package.batch_no,
-				sle_doc.posting_date,
-				fn.Sum(batch_package.qty).as_("actual_qty"),
-				fn.Sum(batch_package.stock_value_difference).as_("stock_value_difference"),
-			)
-			.where(
-				(sle_doc.docstatus < 2)
-				& (sle_doc.is_cancelled == 0)
-				& (sle_doc.has_batch_no == 1)
-				& (sle_doc.item_code == item_code)
-				& (sle_doc.posting_datetime <= to_datetime)
-			)
-			.groupby(sle_doc.voucher_no, batch_package.batch_no, batch_package.warehouse)
-		)
-
-		if warehouse:
-			bundle_query = bundle_query.where(sle_doc.warehouse == warehouse)
-
-		bundle_entries = bundle_query.run(as_dict=True) or []
-
-		for row in legacy_entries + bundle_entries:
-			if not row.batch_no:
-				continue
-			key = (row.batch_no, row.warehouse)
-			if key not in batch_map:
-				batch_map[key] = {"qty": 0.0, "val": 0.0, "warehouse": row.warehouse}
-			batch_map[key]["qty"] += flt(row.actual_qty)
-			batch_map[key]["val"] += flt(row.stock_value_difference)
-
-	batches_raw = frappe.get_all(
-		"Batch",
-		filters={"item": item_code},
-		fields=["name as batch_id", "expiry_date", "manufacturing_date"]
-	)
-
-	result_batches = []
-	for b in batches_raw:
-		for (bid, wh), bdata in batch_map.items():
-			if bid != b.batch_id:
-				continue
-			qty = flt(bdata["qty"])
-			if qty <= 0:
-				continue
-			val = flt(bdata["val"])
-			val_rate = (val / qty) if qty else effective_val_rate
-			result_batches.append({
-				"batch_id": b.batch_id,
-				"qty": qty,
-				"val": val,
-				"val_rate": val_rate,
-				"expiry_date": b.expiry_date,
-				"manufacturing_date": b.manufacturing_date,
-				"warehouse": wh
-			})
-
-	result_serials = []
-	for sn, sdata in serial_map.items():
-		if flt(sdata["qty"]) <= 0:
-			continue
-		result_serials.append({
-			"serial_no": sn,
-			"warehouse": sdata["warehouse"],
-			"val_rate": sdata["val_rate"] or effective_val_rate
-		})
-
-	active_prices = []
-	for p in price_list_records:
-		valid_from = getdate(p.valid_from) if p.valid_from else None
-		valid_upto = getdate(p.valid_upto) if p.valid_upto else None
-		if valid_from and valid_from > today_date:
-			continue
-		if valid_upto and valid_upto < today_date:
-			continue
-
-		note = None
-		if frappe.db.has_column("Item Price", "note"):
-			note = frappe.db.get_value("Item Price", p.name, "note")
-		elif frappe.db.has_column("Item Price", "remarks"):
-			note = frappe.db.get_value("Item Price", p.name, "remarks")
-
-		rate = flt(p.rate)
-		cost = effective_val_rate
-		margin = rate - cost
-		margin_pct = (margin / cost * 100) if cost else 0
-
-		active_prices.append({
-			"price_list": p.price_list,
-			"rate": rate,
-			"currency": p.currency,
-			"uom": p.uom,
-			"customer": p.customer,
-			"note": note,
-			"cost": cost,
-			"margin": margin,
-			"margin_pct": margin_pct
-		})
-
-	warehouse_stock = [
-		{
-			"warehouse": wh,
-			"bal_qty": flt(v["bal_qty"]),
-			"bal_val": flt(v["bal_val"]),
-			"val_rate": flt(v["val_rate"])
-		}
-		for wh, v in warehouse_map.items()
-		if flt(v["bal_qty"]) != 0
-	]
-
-	return {
-		"item_name": item_doc.item_name,
-		"item_code": item_doc.item_code,
-		"standard_rate": item_doc.standard_rate or 0,
-		"valuation_rate": effective_val_rate,
-		"uom": item_doc.stock_uom,
-		"brand": item_doc.brand,
-		"description": item_doc.description,
-		"image": item_doc.image,
-		"has_batch_no": item_doc.has_batch_no,
-		"has_serial_no": item_doc.has_serial_no,
-		"total_bal_qty": total_bal_qty,
-		"total_bal_val": total_bal_val,
-		"price_lists": active_prices,
-		"batches": result_batches,
-		"serials": result_serials,
-		"warehouse_stock": warehouse_stock
-	}
+    return {
+        "item_name": item_doc.item_name,
+        "item_code": item_doc.item_code,
+        "standard_rate": item_doc.standard_rate or 0,
+        "valuation_rate": item_doc.valuation_rate or 0,
+        "uom": item_doc.stock_uom,
+        "brand": item_doc.brand,
+        "description": item_doc.description,
+        "image": item_doc.image,
+        "price_lists": active_prices,
+        "batches": result_batches
+    }

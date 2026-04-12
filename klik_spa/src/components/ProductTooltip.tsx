@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useLayoutEffect } from "react"
 import type { MenuItem } from "../../types"
 
 interface Batch {
@@ -39,6 +39,7 @@ interface ProductTooltipProps {
 export default function ProductTooltip({ item, warehouse = "Stores", onClose, onViewDetails }: ProductTooltipProps) {
   const [data, setData] = useState<ItemFullData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [position, setPosition] = useState({ top: true, left: true })
   const tooltipRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -60,18 +61,43 @@ export default function ProductTooltip({ item, warehouse = "Stores", onClose, on
     fetchFullData()
   }, [item.id, warehouse])
 
+  useLayoutEffect(() => {
+    const el = tooltipRef.current
+    if (!el) return
+
+    const parent = el.offsetParent as HTMLElement
+    if (!parent) return
+
+    const parentRect = parent.getBoundingClientRect()
+
+    const centerY = parentRect.top + parentRect.height / 2
+    const centerX = parentRect.left + parentRect.width / 2
+
+    const screenMidY = window.innerHeight / 2
+    const screenThirdX = window.innerWidth / 3
+
+    setPosition({
+      top: centerY < screenMidY,
+      left: centerX < screenThirdX,
+    })
+  }, [isLoading])
+
   const costPrice = data?.valuation_rate || data?.standard_rate || item.cost_price || 0
 
-  const handleViewDetails = (e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault()
     e.stopPropagation()
     onViewDetails(item)
-    onClose()
   }
 
+  const verticalClass = position.top ? "top-[calc(100%-5px)]" : "bottom-full -mb-2"
+  const horizontalClass = position.left ? "left-0" : "right-0"
+
   return (
-    <div 
+    <div
       ref={tooltipRef}
-      className="absolute z-[100] w-80 bg-white dark:bg-gray-800 shadow-2xl rounded-lg p-4 border border-gray-200 dark:border-gray-700 top-full left-0 -mt-2 text-left"
+      onClick={handleClick}
+      className={`absolute z-[100] w-80 bg-white dark:bg-gray-800 shadow-2xl rounded-lg p-4 border border-gray-200 dark:border-gray-700 ${verticalClass} ${horizontalClass} text-left cursor-pointer`}
     >
       <div className="border-b border-gray-100 dark:border-gray-700 pb-2 mb-3">
         <h3 className="font-bold text-gray-900 dark:text-white leading-tight truncate">{item.name}</h3>
@@ -124,30 +150,6 @@ export default function ProductTooltip({ item, warehouse = "Stores", onClose, on
               )}
             </div>
           </div>
-
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase mb-2">Warehouse Batches</p>
-            <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
-              {data?.batches?.slice(0, 2).map((b, i) => (
-                <div key={i} className="flex justify-between text-[11px] p-1.5 bg-gray-50 dark:bg-gray-700/30 rounded border border-gray-100 dark:border-gray-600">
-                  <span className="font-mono text-gray-600 dark:text-gray-400 truncate max-w-[150px]">{b.batch_id}</span>
-                  <span className="font-black text-blue-600 dark:text-blue-400">{b.qty}</span>
-                </div>
-              ))}
-              {data?.batches && data.batches.length > 2 && (
-                <div className="text-[10px] text-gray-400 text-center pt-1">
-                  +{data.batches.length - 2} more batches
-                </div>
-              )}
-            </div>
-          </div>
-
-          <button
-            onClick={handleViewDetails}
-            className="w-full mt-2 text-center text-xs font-semibold text-beveren-600 dark:text-beveren-400 hover:text-beveren-700 dark:hover:text-beveren-300 py-1.5 border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30 rounded-b transition-colors"
-          >
-            View Full Details →
-          </button>
         </div>
       )}
     </div>

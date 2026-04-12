@@ -107,7 +107,7 @@ export function useBatchData(itemCode: string, warehouse: string): UseBatchRetur
 
     try {
       const response = await fetch(
-        `/api/method/klik_pos.api.item.get_batch_nos_with_qty?item_code=${encodeURIComponent(targetItemCode)}`
+        `/api/method/klik_pos.api.item.item_details.get_batch_nos_with_qty?item_code=${encodeURIComponent(targetItemCode)}`
       );
       const resData = await response.json();
 

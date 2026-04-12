@@ -980,14 +980,14 @@ def get_item_groups_for_pos():
 
 			item_groups = frappe.get_all(
 				"Item Group",
-				filters={"name": ["in", item_group_names], "is_group": 0},
+				filters={"name": ["in", item_group_names], "is_group": 0, "exclude_from_pos": 0},
 				fields=["name", "item_group_name", "parent_item_group"],
 			)
 		else:
 			# Fallback: fetch all leaf item groups
 			item_groups = frappe.get_all(
 				"Item Group",
-				filters={"is_group": 0},
+				filters={"is_group": 0, "exclude_from_pos": 0},
 				fields=["name", "item_group_name"],
 				limit=100,
 				order_by="modified desc",

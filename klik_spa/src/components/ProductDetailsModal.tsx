@@ -1,12 +1,28 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { MenuItem } from "../../types"
+import { usePOSDetails } from "../hooks/usePOSProfile"
 
 interface Batch {
   batch_id: string
   qty: number
+  val_rate: number
   expiry_date?: string
+  manufacturing_date?: string
+  warehouse: string
+}
+
+interface SerialEntry {
+  serial_no: string
+  warehouse: string
+  val_rate: number
+}
+
+interface WarehouseStock {
+  warehouse: string
+  bal_qty: number
+  val_rate: number
 }
 
 interface PriceListEntry {
@@ -16,6 +32,9 @@ interface PriceListEntry {
   uom?: string
   customer?: string
   note?: string
+  cost: number
+  margin: number
+  margin_pct: number
 }
 
 interface ItemFullData {
@@ -25,8 +44,13 @@ interface ItemFullData {
   valuation_rate: number
   price_lists: PriceListEntry[]
   batches: Batch[]
+  serials: SerialEntry[]
+  warehouse_stock: WarehouseStock[]
   uom: string
   brand?: string
+  has_batch_no: number
+  has_serial_no: number
+  total_bal_qty: number
 }
 
 interface ProductDetailsModalProps {

@@ -24,9 +24,9 @@ export default function ProductCard({
   const isDisabled = isOutOfStock || scannerOnly
   const formattedPrice = `${item.currency_symbol}${item.price.toFixed(2)}`
 
-  const handleInfoClick = () => {
-    setShowDetailsModal(true)
+  const handleModalOpen = () => {
     setShowTooltip(false)
+    setShowDetailsModal(true)
   }
 
   const handleModalClose = () => {
@@ -43,35 +43,34 @@ export default function ProductCard({
             ? "opacity-70 cursor-not-allowed"
             : "hover:shadow-lg hover:scale-105 cursor-pointer active:scale-95"
         } ${isMobile ? "touch-manipulation" : ""}`}
-        onClick={() => !isDisabled && onAddToCart(item)}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("button")) return
+          if (!isDisabled) onAddToCart(item)
+        }}
       >
         <div
           className="absolute top-2 left-2 z-[70]"
           onMouseEnter={() => !isMobile && setShowTooltip(true)}
           onMouseLeave={() => !isMobile && setShowTooltip(false)}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (isMobile) {
-              setShowTooltip(!showTooltip)
-            }
-          }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <button 
+          <button
             onClick={(e) => {
+              e.preventDefault()
               e.stopPropagation()
-              handleInfoClick()
+              handleModalOpen()
             }}
-            className="text-gray-600 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm hover:text-blue-500 rounded-full w-6 h-6 flex items-center justify-center text-xs focus:outline-none border border-gray-200 dark:border-gray-600 shadow-sm transition-colors"
+            className="text-gray-600 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm hover:text-blue-500 rounded-full w-6 h-6 flex items-center justify-center text-xs border border-gray-200 dark:border-gray-600 shadow-sm transition-colors"
           >
             ℹ️
           </button>
+
           {showTooltip && !isMobile && (
-            <ProductTooltip 
-              item={item} 
+            <ProductTooltip
+              item={item}
               onClose={() => setShowTooltip(false)}
               onViewDetails={() => {
-                setShowDetailsModal(true)
-                setShowTooltip(false)
+                handleModalOpen()
               }}
             />
           )}
@@ -148,10 +147,7 @@ export default function ProductCard({
       </div>
 
       {showDetailsModal && (
-        <ProductDetailsModal
-          item={item}
-          onClose={handleModalClose}
-        />
+        <ProductDetailsModal item={item} onClose={handleModalClose} />
       )}
     </>
   )

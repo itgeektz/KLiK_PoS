@@ -78,7 +78,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
         params.append('category', category);
       }
       const response = await fetch(
-        `/api/method/klik_pos.api.item.get_items_with_balance_and_price?${params.toString()}`
+        `/api/method/klik_pos.api.item.item_listing.get_items_with_balance_and_price?${params.toString()}`
       );
 
       if (!response.ok) {
@@ -199,7 +199,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
       if (!itemCodes) return {};
 
       const batchResponse = await fetch(
-        `/api/method/klik_pos.api.item.get_items_stock_batch?item_codes=${encodeURIComponent(itemCodes)}`
+        `/api/method/klik_pos.api.item.item_stock.get_items_stock_batch?item_codes=${encodeURIComponent(itemCodes)}`
       );
 
       if (batchResponse.ok) {
@@ -445,7 +445,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
       const itemCodesString = itemCodes.join(',');
 
       const response = await fetch(
-        `/api/method/klik_pos.api.item.get_items_stock_batch?item_codes=${encodeURIComponent(itemCodesString)}`
+        `/api/method/klik_pos.api.item.item_stock.get_items_stock_batch?item_codes=${encodeURIComponent(itemCodesString)}`
       );
 
       if (!response.ok) {
@@ -484,7 +484,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
       const batchUpdatePromises = itemCodes.map(async (itemCode) => {
         try {
           const response = await fetch(
-            `/api/method/klik_pos.api.item.get_batch_nos_with_qty?item_code=${encodeURIComponent(itemCode)}`
+            `/api/method/klik_pos.api.item.item_details.get_batch_nos_with_qty?item_code=${encodeURIComponent(itemCode)}`
           );
           const resData = await response.json();
           // console.log(`Batch API response for ${itemCode}:`, resData);

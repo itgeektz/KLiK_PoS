@@ -293,7 +293,7 @@ export default function RetailPOSLayout() {
 
           // Fallback: resolve item by identifier via API, then add with correct qty
           try {
-            const res = await fetch(`/api/method/klik_pos.api.item.get_item_by_identifier?code=${encodeURIComponent(base)}`)
+            const res = await fetch(`/api/method/klik_pos.api.item.item_search.get_item_by_identifier?code=${encodeURIComponent(base)}`)
             const data = await res.json()
             if (data?.message?.item_code) {
               const fetched: MenuItem = {
@@ -333,7 +333,7 @@ export default function RetailPOSLayout() {
       // Additionally try resolving batch/serial on Enter for user convenience
       ;(async () => {
         try {
-          const res = await fetch(`/api/method/klik_pos.api.item.get_item_by_identifier?code=${encodeURIComponent(localSearchQuery.trim())}`)
+          const res = await fetch(`/api/method/klik_pos.api.item.item_search.get_item_by_identifier?code=${encodeURIComponent(localSearchQuery.trim())}`)
           const data = await res.json()
           console.log('Batch/Serial lookup result:', data)
           if (data?.message?.item_code) {
@@ -403,7 +403,7 @@ export default function RetailPOSLayout() {
     let cancelled = false
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/method/klik_pos.api.item.get_item_by_identifier?code=${encodeURIComponent(localSearchQuery.trim())}`)
+        const res = await fetch(`/api/method/klik_pos.api.item.item_search.get_item_by_identifier?code=${encodeURIComponent(localSearchQuery.trim())}`)
         const data = await res.json()
         if (!cancelled && data?.message?.item_code) {
           setIdentifierItemId(data.message.item_code)

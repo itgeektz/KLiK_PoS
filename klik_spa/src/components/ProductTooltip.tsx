@@ -55,7 +55,7 @@ export default function ProductTooltip({ item, onClose, onViewDetails }: Product
       setIsLoading(true)
       try {
         const response = await fetch(
-          `/api/method/klik_pos.api.item.get_full_pricing_and_batch_details?item_code=${encodeURIComponent(item.id)}&warehouse=${encodeURIComponent(warehouse)}`
+          `/api/method/klik_pos.api.item.item_details.get_full_pricing_and_batch_details?item_code=${encodeURIComponent(item.id)}&warehouse=${encodeURIComponent(warehouse)}`
         )
         const res = await response.json()
         if (res?.message) setData(res.message)

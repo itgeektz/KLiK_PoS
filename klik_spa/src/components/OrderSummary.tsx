@@ -120,7 +120,7 @@
 //         if (itemCode) {
 //           // console.log(`📡 Loading UOMs for item: ${itemCode} with customer: ${selectedCustomer?.id || 'None'}`);
 //           const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
-//           const response = await fetch(`/api/method/klik_pos.api.item.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
+//           const response = await fetch(`/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
 //             method: 'GET',
 //             headers: { 'Content-Type': 'application/json' },
 //             credentials: 'include'
@@ -176,7 +176,7 @@
 //       if (itemCode) {
 //         // console.log(`📡 API Call: get_item_uoms_and_prices for ${itemCode} with customer: ${selectedCustomer?.id || 'None'}`);
 //         const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
-//         const response = await fetch(`/api/method/klik_pos.api.item.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
+//         const response = await fetch(`/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
 //           method: 'GET',
 //           headers: { 'Content-Type': 'application/json' },
 //           credentials: 'include'
@@ -198,7 +198,7 @@
 //               try {
 //                 const itemCode = item.item_code || item.id;
 //                 const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
-//                 const priceResponse = await fetch(`/api/method/klik_pos.api.item.get_item_price_for_customer?item_code=${itemCode}&uom=${encodeURIComponent(newUOM)}${customerParam}`, {
+//                 const priceResponse = await fetch(`/api/method/klik_pos.api.item.item_price.get_item_price_for_customer?item_code=${itemCode}&uom=${encodeURIComponent(newUOM)}${customerParam}`, {
 //                   method: 'GET',
 //                   headers: { 'Content-Type': 'application/json' },
 //                   credentials: 'include'
@@ -1940,7 +1940,7 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
         const itemCode = item.item_code || item.id;
         if (itemCode) {
           const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
-          const response = await fetch(`/api/method/klik_pos.api.item.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
+          const response = await fetch(`/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include'
@@ -1993,7 +1993,7 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
       const itemCode = item.item_code || item.id;
       if (itemCode) {
         const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
-        const response = await fetch(`/api/method/klik_pos.api.item.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
+        const response = await fetch(`/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include'
@@ -2014,7 +2014,7 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
               try {
                 const itemCode = item.item_code || item.id;
                 const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
-                const priceResponse = await fetch(`/api/method/klik_pos.api.item.get_item_price_for_customer?item_code=${itemCode}&uom=${encodeURIComponent(newUOM)}${customerParam}`, {
+                const priceResponse = await fetch(`/api/method/klik_pos.api.item.item_price.get_item_price_for_customer?item_code=${itemCode}&uom=${encodeURIComponent(newUOM)}${customerParam}`, {
                   method: 'GET',
                   headers: { 'Content-Type': 'application/json' },
                   credentials: 'include'

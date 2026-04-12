@@ -27,7 +27,7 @@ export function useItemGroups(): UseItemGroupsReturn {
 
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/method/klik_pos.api.item.get_item_groups_for_pos`);
+      const response = await fetch(`/api/method/klik_pos.api.item.item_groups.get_item_groups_for_pos`);
       const resData = await response.json();
 
       if (

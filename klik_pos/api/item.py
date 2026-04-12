@@ -3,7 +3,8 @@ from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rul
 from erpnext.stock.doctype.batch.batch import get_batch_qty
 from erpnext.stock.utils import get_stock_balance
 from frappe import _
-from frappe.utils import today, getdate
+from frappe.utils import flt, getdate, today, get_datetime
+from pypika import functions as fn
 
 from klik_pos.api.sales_invoice import get_current_pos_opening_entry
 from klik_pos.klik_pos.utils import get_current_pos_profile

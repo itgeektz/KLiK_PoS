@@ -2310,6 +2310,7 @@ export default function OrderSummary({
         batchNumber: string;
         serialNumber: string;
         availableQuantity: number;
+        customRate?: number; 
       }
     >
   >({});
@@ -2457,6 +2458,34 @@ export default function OrderSummary({
         [field]: typeof value === "string" ? value : Math.max(0, value),
       },
     }));
+  };
+
+  // Function to handle custom rate change
+  const handleCustomRateChange = (item: CartItem, newRate: number) => {
+    const originalPrice = item.price;
+    const discountAmount = Math.max(0, originalPrice - newRate);
+    
+    setItemDiscounts((prev) => ({
+      ...prev,
+      [item.id]: {
+        ...(prev[item.id] || {
+          discountPercentage: 0,
+          discountAmount: 0,
+          batchNumber: "",
+          serialNumber: "",
+          availableQuantity: 150,
+        }),
+        customRate: newRate,
+        discountAmount: discountAmount,
+      },
+    }));
+  };
+
+  // Get the amount (rate * quantity) - just for display
+  const getAmount = (item: CartItem) => {
+    const itemDiscount = itemDiscounts[item.id] || {};
+    const effectiveRate = itemDiscount.customRate || item.price;
+    return effectiveRate * item.quantity;
   };
 
   // Filtered customers based on search query
@@ -3175,6 +3204,7 @@ export default function OrderSummary({
                 serialNumber: "",
                 availableQuantity: 150,
               };
+              const amount = getAmount(item);
 
               return (
                 <div
@@ -3379,7 +3409,37 @@ export default function OrderSummary({
                           </div>
                         </div>
 
-                        {/* Row 2: Discount Amount | Discount (%) */}
+                        {/* Row 2: Rate | Amount (readonly) */}
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                              Rate
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={itemDiscount.customRate !== undefined ? itemDiscount.customRate : item.price}
+                              onChange={(e) => handleCustomRateChange(item, parseFloat(e.target.value) || 0)}
+                              placeholder="Rate"
+                              className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
+                            />
+                          </div>
+                          <div>
+                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                              Amount
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={amount}
+                              readOnly
+                              className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white cursor-not-allowed`}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Row 3: Discount Amount | Discount (%) */}
                         <div className="grid grid-cols-2 gap-4 mb-4">
                           <div>
                             <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
@@ -3424,7 +3484,7 @@ export default function OrderSummary({
                           </div>
                         </div>
 
-                        {/* Row 3: Batch | Serial No */}
+                        {/* Row 4: Batch | Serial No */}
                         <div className="grid grid-cols-2 gap-4 mb-4">
                           <div>
                             <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>

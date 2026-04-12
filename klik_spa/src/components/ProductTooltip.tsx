@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState, useRef, useLayoutEffect } from "react"
+import { useEffect, useMemo, useState, useRef, useLayoutEffect } from "react"
 import type { MenuItem } from "../../types"
+import { usePOSDetails } from "../hooks/usePOSProfile";
 
 interface Batch {
   batch_id: string
@@ -36,11 +37,18 @@ interface ProductTooltipProps {
   onViewDetails: (item: MenuItem) => void
 }
 
-export default function ProductTooltip({ item, warehouse = "Stores", onClose, onViewDetails }: ProductTooltipProps) {
+export default function ProductTooltip({ item, onClose, onViewDetails }: ProductTooltipProps) {
   const [data, setData] = useState<ItemFullData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [position, setPosition] = useState({ top: true, left: true })
   const tooltipRef = useRef<HTMLDivElement>(null)
+  const { posDetails, loading } = usePOSDetails();
+  
+    const warehouse = useMemo(() => {
+      if (loading) return null;
+      return posDetails?.warehouse;
+    }, [posDetails, loading]);
+    
 
   useEffect(() => {
     const fetchFullData = async () => {

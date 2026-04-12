@@ -59,15 +59,62 @@ interface ProductDetailsModalProps {
   onClose: () => void
 }
 
-export default function ProductDetailsModal({ item, warehouse = "Stores", onClose }: ProductDetailsModalProps) {
+const fmt = (n: number, sym = "") => `${sym}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"
+const isExpired = (d?: string) => !!d && new Date(d) < new Date()
+const isSoonExpiry = (d?: string) => {
+  if (!d) return false
+  const diff = (new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  return diff >= 0 && diff <= 90
+}
+
+function MarginChip({ pct }: { pct: number }) {
+  const cls = pct >= 30
+    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+    : pct >= 10
+    ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+    : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cls}`}>
+      {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%
+    </span>
+  )
+}
+
+function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: "green" | "red" | "blue" }) {
+  const accentCls = accent === "green"
+    ? "border-l-4 border-l-green-500"
+    : accent === "red"
+    ? "border-l-4 border-l-red-500"
+    : accent === "blue"
+    ? "border-l-4 border-l-beveren-500"
+    : ""
+  return (
+    <div className={`bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600 ${accentCls}`}>
+      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide mb-1">{label}</p>
+      <p className="text-xl font-bold text-gray-900 dark:text-white leading-tight">{value}</p>
+      {sub && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{sub}</p>}
+    </div>
+  )
+}
+
+export default function ProductDetailsModal({ item, onClose }: ProductDetailsModalProps) {
   const [data, setData] = useState<ItemFullData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<"pricing" | "batches" | "details">("pricing")
+  const [activeTab, setActiveTab] = useState<"pricing" | "stock" | "details">("pricing")
+  const [expandedBatch, setExpandedBatch] = useState<string | null>(null)
+  const { posDetails, loading } = usePOSDetails()
+
+  const warehouse = useMemo(() => {
+    if (loading) return null
+    return posDetails?.warehouse
+  }, [posDetails, loading])
 
   useEffect(() => {
     const fetchFullData = async () => {
       setIsLoading(true)
       try {
+        if (!warehouse) return
         const response = await fetch(
           `/api/method/klik_pos.api.item.get_full_pricing_and_batch_details?item_code=${encodeURIComponent(item.id)}&warehouse=${encodeURIComponent(warehouse)}`
         )

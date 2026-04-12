@@ -110,6 +110,11 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
     return posDetails?.warehouse
   }, [posDetails, loading])
 
+  const restrictCostVisibility = useMemo(() => {
+    if (loading) return true
+    return posDetails?.restrict_cost_visibility_in_tooltip ?? true
+  }, [posDetails, loading])
+
   useEffect(() => {
     const fetchFullData = async () => {
       setIsLoading(true)
@@ -140,8 +145,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
   }, {})
 
   const tabs = [
-    { key: "pricing" as const, label: "Pricing & Margins" },
-    { key: "stock" as const, label: data?.has_serial_no ? "Serials & Stock" : "Batches & Stock" },
+    { key: "pricing" as const, label: restrictCostVisibility ? "Price Lists" : "Pricing & Margins" },
     { key: "details" as const, label: "Details" },
   ]
 
@@ -171,10 +175,12 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
               <p className="text-xs text-gray-400 uppercase font-semibold">Total Stock</p>
               <p className="text-lg font-bold text-gray-900 dark:text-white">{totalQty.toLocaleString()} <span className="text-sm font-normal text-gray-500">{data?.uom}</span></p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-gray-400 uppercase font-semibold">Valuation Rate</p>
-              <p className="text-lg font-bold text-beveren-600 dark:text-beveren-400">{fmt(valuationRate, sym)}</p>
-            </div>
+            {!restrictCostVisibility && (
+              <div className="text-right">
+                <p className="text-xs text-gray-400 uppercase font-semibold">Valuation Rate</p>
+                <p className="text-lg font-bold text-beveren-600 dark:text-beveren-400">{fmt(valuationRate, sym)}</p>
+              </div>
+            )}
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full shrink-0">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -211,23 +217,23 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
 
               {activeTab === "pricing" && (
                 <>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    <StatCard label="Valuation Rate" value={fmt(valuationRate, sym)} sub={`Per ${data?.uom ?? "unit"}`} accent="blue" />
-                    <StatCard label="Standard Rate" value={fmt(data?.standard_rate ?? 0, sym)} sub="Item master" />
-                    <StatCard label="Total Qty" value={`${totalQty.toLocaleString()} ${data?.uom ?? ""}`} sub="On hand" />
-                  </div>
-
                   <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Price List Analysis</h3>
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                      {restrictCostVisibility ? "Available Price Lists" : "Price List Analysis"}
+                    </h3>
                     <div className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto ${scrollbarStyles}`}>
-                      <table className="w-full text-sm min-w-[900px]">
+                      <table className="w-full text-sm min-w-[600px]">
                         <thead>
                           <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
                             <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase sticky left-0 bg-gray-50 dark:bg-gray-700/50 z-10 border-r border-gray-200 dark:border-gray-600">Price List</th>
                             <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Selling Rate</th>
-                            <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Cost (Val.)</th>
-                            <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Margin</th>
-                            <th className="text-center p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Margin %</th>
+                            {!restrictCostVisibility && (
+                              <>
+                                <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Cost (Val.)</th>
+                                <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Margin</th>
+                                <th className="text-center p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Margin %</th>
+                              </>
+                            )}
                             <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">UOM</th>
                             <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase min-w-[150px]">Customer</th>
                             <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase min-w-[200px]">Note</th>
@@ -238,11 +244,15 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                             <tr key={idx} className="border-b border-gray-100 dark:border-gray-700/60 hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
                               <td className="p-4 font-medium text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800 z-10 border-r border-gray-200 dark:border-gray-600 whitespace-nowrap">{pl.price_list}</td>
                               <td className="p-4 text-right font-bold text-beveren-600 dark:text-beveren-400 whitespace-nowrap">{fmt(pl.rate, `${pl.currency} `)}</td>
-                              <td className="p-4 text-right text-gray-500 dark:text-gray-400 whitespace-nowrap">{fmt(pl.cost, `${pl.currency} `)}</td>
-                              <td className={`p-4 text-right font-semibold whitespace-nowrap ${pl.margin >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                                {pl.margin >= 0 ? "+" : ""}{fmt(pl.margin, `${pl.currency} `)}
-                              </td>
-                              <td className="p-4 text-center whitespace-nowrap"><MarginChip pct={pl.margin_pct} /></td>
+                              {!restrictCostVisibility && (
+                                <>
+                                  <td className="p-4 text-right text-gray-500 dark:text-gray-400 whitespace-nowrap">{fmt(pl.cost, `${pl.currency} `)}</td>
+                                  <td className={`p-4 text-right font-semibold whitespace-nowrap ${pl.margin >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                                    {pl.margin >= 0 ? "+" : ""}{fmt(pl.margin, `${pl.currency} `)}
+                                  </td>
+                                  <td className="p-4 text-center whitespace-nowrap"><MarginChip pct={pl.margin_pct} /></td>
+                                </>
+                              )}
                               <td className="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap">{pl.uom ?? data?.uom ?? "—"}</td>
                               <td className="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                 {pl.customer ? (
@@ -257,14 +267,14 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                               <td className="p-4 text-gray-500 dark:text-gray-400 text-xs italic max-w-[250px] truncate">
                                 {pl.note || "—"}
                               </td>
-                            </tr>
+                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   </div>
 
-                  {(data?.warehouse_stock ?? []).length > 0 && (
+                  {!restrictCostVisibility && (data?.warehouse_stock ?? []).length > 0 && (
                     <div className="space-y-3">
                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Warehouse Valuations</h3>
                       <div className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto ${scrollbarStyles}`}>
@@ -279,7 +289,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                                   {pl.price_list} {pl.customer ? `(${pl.customer})` : ""} Margin
                                 </th>
                               ))}
-                            </tr>
+                             </tr>
                           </thead>
                           <tbody>
                             {(data?.warehouse_stock ?? []).map((ws, idx) => (
@@ -296,30 +306,15 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                                     </td>
                                   )
                                 })}
-                              </tr>
+                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
                     </div>
                   )}
-                </>
-              )}
 
-              {activeTab === "stock" && (
-                <>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <StatCard label="Total Qty" value={`${totalQty.toLocaleString()} ${data?.uom ?? ""}`} sub="All warehouses" accent="blue" />
-                    <StatCard label="Valuation Rate" value={fmt(valuationRate, sym)} sub="Moving average" />
-                    <StatCard
-                      label={data?.has_serial_no ? "Serial Nos" : "Unique Batches"}
-                      value={String(data?.has_serial_no ? (data?.serials?.length ?? 0) : Object.keys(batchesGrouped).length)}
-                      sub="With positive stock"
-                    />
-                    <StatCard label="Warehouses" value={String(data?.warehouse_stock?.length ?? 0)} sub="Locations with stock" />
-                  </div>
-
-                  {!data?.has_serial_no && Object.keys(batchesGrouped).length > 0 && (
+                  {!restrictCostVisibility && !data?.has_serial_no && Object.keys(batchesGrouped).length > 0 && (
                     <div className="space-y-3">
                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Batch Breakdown</h3>
                       <div className="space-y-3">
@@ -392,7 +387,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                                             {pl.price_list} {pl.customer ? `(${pl.customer})` : ""}
                                           </th>
                                         ))}
-                                      </tr>
+                                       </tr>
                                     </thead>
                                     <tbody>
                                       {rows.map((r, ri) => (
@@ -409,7 +404,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                                               </td>
                                             )
                                           })}
-                                        </tr>
+                                         </tr>
                                       ))}
                                     </tbody>
                                   </table>
@@ -422,7 +417,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                     </div>
                   )}
 
-                  {!!data?.has_serial_no && (data?.serials ?? []).length > 0 && (
+                  {!restrictCostVisibility && !!data?.has_serial_no && (data?.serials ?? []).length > 0 && (
                     <div className="space-y-3">
                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Serial Number Details</h3>
                       <div className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto ${scrollbarStyles}`}>
@@ -437,7 +432,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                                   {pl.price_list} {pl.customer ? `(${pl.customer})` : ""}
                                 </th>
                               ))}
-                            </tr>
+                             </tr>
                           </thead>
                           <tbody>
                             {data.serials.map((s, idx) => (
@@ -450,10 +445,70 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                                   const mp = s.val_rate > 0 ? (m / s.val_rate) * 100 : 0
                                   return <td key={pl.price_list} className="p-4 text-center border-l border-gray-100 dark:border-gray-700/40"><MarginChip pct={mp} /></td>
                                 })}
-                              </tr>
+                               </tr>
                             ))}
                           </tbody>
                         </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {restrictCostVisibility && data?.batches && data.batches.length > 0 && (
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Batch Stock Information</h3>
+                      <div className="space-y-2">
+                        {Object.entries(batchesGrouped).map(([batchId, rows]) => {
+                          const totalBatchQty = rows.reduce((s, r) => s + r.qty, 0)
+                          const exp = rows[0]?.expiry_date
+                          const mfg = rows[0]?.manufacturing_date
+                          const expired = isExpired(exp)
+                          const soonExp = isSoonExpiry(exp)
+                          return (
+                            <div key={batchId} className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono text-sm font-bold text-gray-900 dark:text-white">{batchId}</span>
+                                    {expired && (
+                                      <span className="text-[10px] uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">Expired</span>
+                                    )}
+                                    {!expired && soonExp && (
+                                      <span className="text-[10px] uppercase px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300">Expiring Soon</span>
+                                    )}
+                                  </div>
+                                  {exp && (
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Expiry: {fmtDate(exp)}</p>
+                                  )}
+                                  {mfg && (
+                                    <p className="text-xs text-gray-400 mt-1">Manufactured: {fmtDate(mfg)}</p>
+                                  )}
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Locations: {rows.map(r => r.warehouse).join(", ")}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-[10px] text-gray-400 uppercase font-bold">Available Stock</p>
+                                  <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalBatchQty.toLocaleString()} <span className="text-sm font-normal">{data.uom}</span></p>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {restrictCostVisibility && !!data?.has_serial_no && data?.serials && data.serials.length > 0 && (
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Serial Numbers</h3>
+                      <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                        <div className="flex flex-wrap gap-2">
+                          {data.serials.map((s, idx) => (
+                            <span key={idx} className="font-mono text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600">
+                              {s.serial_no}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -469,8 +524,10 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                     { label: "UOM", value: data?.uom ?? "—" },
                     { label: "Brand", value: data?.brand ?? "—" },
                     { label: "Tracking", value: data?.has_serial_no ? "Serial Number Tracking" : data?.has_batch_no ? "Batch Tracking" : "Basic (No Tracking)" },
-                    { label: "Standard Rate", value: fmt(data?.standard_rate ?? 0, sym) },
-                    { label: "Valuation Method", value: "Moving Average" },
+                    ...(!restrictCostVisibility ? [
+                      { label: "Standard Rate", value: fmt(data?.standard_rate ?? 0, sym) },
+                      { label: "Valuation Method", value: "Moving Average" },
+                    ] : []),
                     { label: "Warehouse", value: warehouse ?? "—" },
                   ].map(({ label, value, mono }) => (
                     <div key={label} className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">

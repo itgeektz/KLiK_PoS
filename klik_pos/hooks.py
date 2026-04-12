@@ -60,7 +60,8 @@ fixtures = [
 					"Sales Invoice-custom_delivery_personnel_name",
 					"POS Profile-custom_autofetch_batchserial_",
                     "POS Profile-custom_clear_draft_invoices",
-                    "Item Group-custom_exclude_from_pos"
+                    "Item Group-custom_exclude_from_pos",
+                    "POS Profile-restrict_cost_visibility_in_tooltip"
 				),
 			]
 		],

@@ -134,6 +134,7 @@ doctype_js = {
     "Sales Invoice": "public/js/sales_invoice.js",
     "Company": "public/js/company.js",
     "Sales Person": "public/js/sales_person.js",
+    "POS Profile": "public/js/pos_profile.js",
 }
 # Add a button to Company to create random customers (client-side will call the whitelisted method)
 doctype_js.update({"Company": "public/js/company.js"})

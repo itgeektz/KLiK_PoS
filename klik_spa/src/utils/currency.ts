@@ -138,3 +138,19 @@ export const formatCurrencyCompact = (amount: number, currency?: string): string
   const symbol = getCurrencySymbol(currency || 'USD');
   return `${symbol}${amount.toFixed(2)}`;
 };
+
+/**
+ * Format amount with a pre-rendered currency symbol and thousands separators.
+ * @param amount - Amount to format
+ * @param currencySymbol - Currency symbol to prefix
+ * @returns Formatted string (e.g., "KES 9,900.00")
+ */
+export const formatCurrencyWithSymbol = (amount: number, currencySymbol?: string): string => {
+  const safeAmount = Number(amount || 0);
+  const symbol = currencySymbol || '$';
+
+  return `${symbol} ${safeAmount.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};

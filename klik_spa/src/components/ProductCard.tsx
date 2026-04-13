@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { MenuItem } from "../../types";
 import ProductTooltip from "./ProductTooltip";
 import ProductDetailsModal from "./ProductDetailsModal";
+import { formatCurrencyWithSymbol } from "../utils/currency";
 
 interface ProductCardProps {
   item: MenuItem;
@@ -22,12 +23,10 @@ export default function ProductCard({
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const isOutOfStock = item.available <= 0;
   const isDisabled = isOutOfStock || scannerOnly;
-  const formattedPrice = `${item.currency_symbol} ${Number(
-    item.price || 0,
-  ).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  const formattedPrice = formatCurrencyWithSymbol(
+    item.price,
+    item.currency_symbol,
+  );
 
   const handleModalOpen = () => {
     setShowTooltip(false);

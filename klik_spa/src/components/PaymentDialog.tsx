@@ -2,12 +2,10 @@
 
 import { useState, useEffect, useMemo } from "react";
 import {
-
   subtractCurrency,
   calculateRemainingAmount,
   calculateTotalPayments,
   roundCurrency,
-
 } from "../utils/currencyMath";
 import { getUserFriendlyError } from "../utils/errorMessages";
 import { extractErrorFromException } from "../utils/errorExtraction";
@@ -29,6 +27,7 @@ import {
   CheckCircle,
   ChevronDown
 } from "lucide-react";
+import { verifyPin, getRememberedSalesperson, clearRememberedSalesperson } from "../services/salesPerson";
 import type { CartItem, GiftCoupon } from "../../types";
 import type { Customer } from "../types/customer";
 import { toast } from "react-toastify";
@@ -135,7 +134,6 @@ export default function PaymentDialog({
   initialSharingMode = null,
   externalInvoiceData = null,
   itemDiscounts = {},
-
 }: PaymentDialogProps) {
   const [selectedSalesTaxCharges, setSelectedSalesTaxCharges] = useState("");
   const [paymentAmounts, setPaymentAmounts] = useState<PaymentAmount>({});
@@ -183,6 +181,23 @@ export default function PaymentDialog({
   const [showDeliveryPersonnelModal, setShowDeliveryPersonnelModal] = useState(false);
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
 
+  // Salesperson PIN states
+  const [currentSalesperson, setCurrentSalesperson] = useState<{
+    name: string;
+    salesperson_name: string;
+  } | null>(null);
+  const [salespersonPin, setSalespersonPin] = useState("");
+  const [salespersonPinError, setSalespersonPinError] = useState("");
+  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+  const [rememberSalesperson, setRememberSalesperson] = useState(() => {
+    const pref = localStorage.getItem("pos_remember_salesperson");
+    return pref === null ? true : pref === "true";
+  });
+
+  // Tax PIN states
+  const [taxPin, setTaxPin] = useState("");
+
+
   // Hooks
   const { posDetails, loading: posLoading } = usePOSDetails();
   const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
@@ -203,7 +218,104 @@ export default function PaymentDialog({
                              deliveryRequiredValue === true ||
                              deliveryRequiredValue === "1";
 
+  const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
+  const isWalkinCustomer = selectedCustomer?.is_walkin === 1;
 
+  // Device ID helper (persisted per browser)
+  const getDeviceId = () => {
+    let device_id = localStorage.getItem("pos_device_id");
+    if (!device_id) {
+      device_id = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem("pos_device_id", device_id);
+    }
+    return device_id;
+  };
+
+  // Salesperson: check remembered on dialog open
+  useEffect(() => {
+    if (!isOpen || !requiresSalespersonPin) return;
+    const pref = localStorage.getItem("pos_remember_salesperson");
+    const shouldRemember = pref === null ? true : pref === "true";
+    if (!shouldRemember || currentSalesperson) return;
+
+    setIsVerifyingPin(true);
+    (async () => {
+      try {
+        const result = await getRememberedSalesperson(getDeviceId());
+        if (result?.success) {
+          setCurrentSalesperson({ name: result.salesperson, salesperson_name: result.salesperson_name });
+        }
+      } catch (err) {
+        console.error("Error fetching remembered salesperson:", err);
+      } finally {
+        setIsVerifyingPin(false);
+      }
+    })();
+  }, [isOpen, requiresSalespersonPin]);
+
+  // Reset Tax PIN when dialog opens for a new transaction
+  useEffect(() => {
+    if (isOpen) setTaxPin("");
+  }, [isOpen]);
+
+  const handleVerifyPin = async () => {
+    const pin = salespersonPin.trim();
+    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+      setSalespersonPinError("Please enter a valid 4-digit PIN");
+      return;
+    }
+    setIsVerifyingPin(true);
+    setSalespersonPinError("");
+    try {
+      const result = await verifyPin(pin, getDeviceId());
+      if (result?.success) {
+        setCurrentSalesperson({ name: result.salesperson, salesperson_name: result.salesperson_name });
+        setSalespersonPin("");
+        toast.success(`Welcome, ${result.salesperson_name}!`);
+
+        if (!rememberSalesperson) {
+          try {
+            await clearRememberedSalesperson(getDeviceId());
+          } catch (err) {
+            console.error("Error clearing remembered salesperson:", err);
+          }
+        }
+      } else {
+        setSalespersonPinError(result?.message || "Invalid PIN. Please try again.");
+        setSalespersonPin("");
+      }
+    } catch (err: any) {
+      setSalespersonPinError(err?.message || "An error occurred. Please try again.");
+      setSalespersonPin("");
+    } finally {
+      setIsVerifyingPin(false);
+    }
+  };
+
+  const handleClearSalesperson = async () => {
+    setCurrentSalesperson(null);
+    setSalespersonPin("");
+    setSalespersonPinError("");
+    try {
+      await clearRememberedSalesperson(getDeviceId());
+    } catch (err) {
+      console.error("Error clearing remembered salesperson:", err);
+    }
+  };
+
+  const handleRememberSalespersonChange = async (checked: boolean) => {
+    setRememberSalesperson(checked);
+    localStorage.setItem("pos_remember_salesperson", String(checked));
+    if (!checked) {
+      setCurrentSalesperson(null);
+      setSalespersonPin("");
+      try {
+        await clearRememberedSalesperson(getDeviceId());
+      } catch (err) {
+        console.error("Error clearing remembered salesperson:", err);
+      }
+    }
+  };
 
   // Debug log
   useEffect(() => {
@@ -497,7 +609,6 @@ export default function PaymentDialog({
   }, [isOpen, modes, calculations.grandTotal, isB2B, isB2C]);
 
   useEffect(() => {
-
     if (modes.length > 0 && Object.keys(paymentAmounts).length > 0) {
       const defaultMode = modes.find((mode) => mode.default === 1);
       if (defaultMode) {
@@ -511,8 +622,6 @@ export default function PaymentDialog({
           (current[1] || 0) > (max[1] || 0) ? current : max
         );
         const [highestMethodId, highestAmount] = highestAmountMethod;
-
-
 
         if (highestAmount > 0 && excess > 0) {
           // Subtract excess from the method with highest amount
@@ -645,7 +754,6 @@ export default function PaymentDialog({
     // Set the selected method to grand total
     newPaymentAmounts[methodId] = grandTotal;
 
-
     setLastModifiedMethodId(methodId); // Track which method was just modified
     setPaymentAmounts(newPaymentAmounts);
     setActiveMethodId(methodId);
@@ -685,7 +793,6 @@ export default function PaymentDialog({
 
     const numericAmount = roundCurrency(parseFloat(amount) || 0);
     // const grandTotal = calculations.grandTotal;
-
 
     // Update the payment amount and let the adjustment useEffect handle the logic
     setLastModifiedMethodId(methodId);
@@ -953,6 +1060,8 @@ export default function PaymentDialog({
       appliedCoupons,
       businessType: posDetails?.business_type,
       deliveryPersonnel: deliveryPersonnel || null,
+      salesperson: currentSalesperson?.name || null,
+      tax_id: taxPin || null,
     };
 
     try {
@@ -999,10 +1108,12 @@ export default function PaymentDialog({
   };
 
   const handleCompletePayment = async () => {
-    console.log(
-      "handleCompletePayment called - selectedDeliveryPersonnel:",
-      selectedDeliveryPersonnel
-    );
+    if (requiresSalespersonPin && !currentSalesperson) {
+      toast.error(
+        "Please verify your salesperson PIN before completing payment"
+      );
+      return;
+    }
 
     // Always process payment directly; delivery personnel is optional
     await processPayment(selectedDeliveryPersonnel);
@@ -1046,6 +1157,8 @@ export default function PaymentDialog({
       appliedCoupons,
       status: "held",
       businessType: posDetails?.business_type,
+      salesperson: currentSalesperson?.name || null,
+      tax_id: taxPin || null,
     };
 
     try {
@@ -1258,9 +1371,98 @@ export default function PaymentDialog({
                 {/* Payment Methods - Only show for B2C */}
                 {(isB2C || isB2B) && (
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                      Payment Methods
-                    </h2>
+                    {/* Header row: title + inline salesperson PIN */}
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Payment Methods
+                      </h2>
+                      {requiresSalespersonPin &&
+                        !invoiceSubmitted &&
+                        (isVerifyingPin ? (
+                          <div className="flex items-center gap-1.5 text-gray-400 text-xs">
+                            <Loader2 size={12} className="animate-spin" />
+                            <span>Checking...</span>
+                          </div>
+                        ) : currentSalesperson ? (
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-beveren-50 dark:bg-beveren-900/20 border border-beveren-200 dark:border-beveren-800">
+                              <div className="w-5 h-5 rounded-full bg-beveren-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                                {currentSalesperson.salesperson_name
+                                  .slice(0, 2)
+                                  .toUpperCase()}
+                              </div>
+                              <span className="text-xs font-medium text-beveren-700 dark:text-beveren-300">
+                                {currentSalesperson.salesperson_name}
+                              </span>
+                            </div>
+                            <button
+                              onClick={handleClearSalesperson}
+                              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5"
+                            >
+                              Switch
+                            </button>
+                            {/* <button
+                              onClick={() =>
+                                handleRememberSalespersonChange(
+                                  !rememberSalesperson
+                                )
+                              }
+                              className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${rememberSalesperson ? "bg-beveren-500" : "bg-gray-300 dark:bg-gray-600"}`}
+                              title={
+                                rememberSalesperson
+                                  ? "Forget on this device"
+                                  : "Remember on this device"
+                              }
+                            >
+                              <span
+                                className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${rememberSalesperson ? "left-[18px]" : "left-0.5"}`}
+                              />
+                            </button> */}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-2">
+                              <div className="flex gap-1">
+                                {[0, 1, 2, 3].map((i) => (
+                                  <div
+                                    key={i}
+                                    className={`w-2 h-2 rounded-full transition-all ${salespersonPin.length > i ? "bg-beveren-600 scale-110" : "bg-gray-300 dark:bg-gray-600"}`}
+                                  />
+                                ))}
+                              </div>
+                              <input
+                                type="password"
+                                value={salespersonPin}
+                                onChange={(e) => {
+                                  setSalespersonPin(
+                                    e.target.value
+                                      .replace(/\D/g, "")
+                                      .slice(0, 4)
+                                  );
+                                  setSalespersonPinError("");
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleVerifyPin();
+                                }}
+                                maxLength={4}
+                                placeholder="PIN"
+                                className="w-14 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-center tracking-widest focus:ring-1 focus:ring-beveren-500 focus:outline-none"
+                              />
+                              <button
+                                onClick={handleVerifyPin}
+                                className="p-1.5 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
+                              >
+                                <Check size={13} />
+                              </button>
+                            </div>
+                            {salespersonPinError && (
+                              <span className="text-[11px] text-red-500 dark:text-red-400">
+                                {salespersonPinError}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                    </div>
                     <div className="flex space-x-3 overflow-x-auto pb-2">
                       {paymentMethods.map((method) => (
                         <div
@@ -1320,6 +1522,33 @@ export default function PaymentDialog({
                 {/* Round Off */}
                 <div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* <div>
+                      {isWalkinCustomer && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            {invoiceSubmitted ? 'Customer Tax ID' : 'Customer Tax ID (optional)'}
+                            
+                          </label>
+                          <input
+                            type="text"
+                            value={taxPin}
+                            onChange={(e) =>
+                              setTaxPin(e.target.value.toUpperCase())
+                            }
+                            onBlur={() =>
+                              setTaxPin((v) => v.trim().toUpperCase())
+                            }
+                            placeholder="A123456789P"
+                            disabled={invoiceSubmitted || isProcessingPayment}
+                            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white uppercase tracking-widest ${
+                              invoiceSubmitted || isProcessingPayment
+                                ? "cursor-not-allowed opacity-50"
+                                : ""
+                            }`}
+                          />
+                        </div>
+                      )}
+                    </div> */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Round Off
@@ -1517,7 +1746,7 @@ export default function PaymentDialog({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {isB2B ? "Invoice Submission" : "Payment Processing"}
+            Order Complete
           </h2>
 
           {invoiceSubmitted ? (
@@ -1981,6 +2210,135 @@ export default function PaymentDialog({
             ) : (
               // Original payment content
               <div className="space-y-6">
+                {/* Salesperson PIN Section */}
+                {requiresSalespersonPin && !invoiceSubmitted ? (
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Sales Person
+                      </h3>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={rememberSalesperson}
+                          onChange={(e) =>
+                            handleRememberSalespersonChange(e.target.checked)
+                          }
+                          className="w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          Remember
+                        </span>
+                      </label>
+                    </div>
+                    {isVerifyingPin ? (
+                      <div className="flex items-center justify-center py-4 space-x-2 text-gray-500">
+                        <Loader2 size={16} className="animate-spin" />
+                        <span className="text-sm">Verifying...</span>
+                      </div>
+                    ) : currentSalesperson ? (
+                      <div className="flex items-center justify-between bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 rounded-lg p-2">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-beveren-500 to-beveren-700 text-white flex items-center justify-center font-semibold text-sm">
+                            {currentSalesperson.salesperson_name
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {currentSalesperson.salesperson_name}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {currentSalesperson.name}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleClearSalesperson}
+                            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Enter Your 4-Digit PIN
+                        </label>
+                        <div className="flex space-x-2">
+                          <input
+                            type="password"
+                            value={salespersonPin}
+                            onChange={(e) => {
+                              setSalespersonPin(
+                                e.target.value.replace(/\D/g, "").slice(0, 4)
+                              );
+                              setSalespersonPinError("");
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleVerifyPin();
+                            }}
+                            maxLength={4}
+                            placeholder="••••"
+                            className="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-center text-xl tracking-widest"
+                          />
+                          <button
+                            onClick={handleVerifyPin}
+                            disabled={isVerifyingPin}
+                            className="px-4 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 disabled:opacity-50 transition-colors flex items-center space-x-2"
+                          >
+                            <Check size={16} />
+                            <span>Verify</span>
+                          </button>
+                        </div>
+                        {salespersonPinError && (
+                          <p className="text-sm text-red-600 dark:text-red-400 border-l-2 border-red-500 pl-2 mt-1">
+                            {salespersonPinError}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : currentSalesperson ? (
+                  // Show salesperson (read-only if invoice submitted)
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">
+                      Sales Person
+                    </p>
+                    <div className="flex items-center justify-between bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 rounded-lg p-2">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-beveren-500 to-beveren-700 text-white flex items-center justify-center font-semibold text-sm">
+                            {currentSalesperson.salesperson_name
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {currentSalesperson.salesperson_name}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {currentSalesperson.name}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Only allow change if NOT submitted */}
+                        {!invoiceSubmitted && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleClearSalesperson}
+                              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        )}
+                    </div>
+                  </div>
+                ) : null}
+
                 {/* Payment Methods */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -2030,7 +2388,6 @@ export default function PaymentDialog({
                               >
                                 <CheckCircle size={16} />
                               </button>
-
                             </div>
                           </div>
                           <input
@@ -2114,6 +2471,33 @@ export default function PaymentDialog({
                           ? `(${formatCurrency(calculations.taxAmount)})`
                           : formatCurrency(calculations.taxAmount)}
                       </div>
+                    </div>
+                    <div className="md:col-span-2">
+                      {isWalkinCustomer && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            {invoiceSubmitted ? 'Customer Tax ID' : 'Customer Tax ID (optional)'}
+                            
+                          </label>
+                          <input
+                            type="text"
+                            value={taxPin}
+                            onChange={(e) =>
+                              setTaxPin(e.target.value.toUpperCase())
+                            }
+                            onBlur={() =>
+                              setTaxPin((v) => v.trim().toUpperCase())
+                            }
+                            placeholder="A123456789P"
+                            disabled={invoiceSubmitted || isProcessingPayment}
+                            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white uppercase tracking-widest ${
+                              invoiceSubmitted || isProcessingPayment
+                                ? "cursor-not-allowed opacity-50"
+                                : ""
+                            }`}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2280,7 +2664,7 @@ export default function PaymentDialog({
                     KLiK PoS
                   </h4>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {isB2B ? "Sales Invoice" : "Sales Invoice"}
+                    Sales Invoice
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-500">
                     {currentDate}

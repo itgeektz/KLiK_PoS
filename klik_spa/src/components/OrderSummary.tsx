@@ -2556,6 +2556,7 @@ export default function OrderSummary({
             preferredPaymentMethod: 'Cash',
             tags: erpCustomer.custom_tags?.split(',').filter(Boolean) || [],
             status: erpCustomer.custom_status || 'active',
+            is_walkin: erpCustomer.is_walkin,
             createdAt: erpCustomer.creation || new Date().toISOString()
           };
 
@@ -2589,6 +2590,7 @@ export default function OrderSummary({
           preferredPaymentMethod: 'Cash',
           tags: [],
           status: 'active',
+          is_walkin: 0,
           createdAt: new Date().toISOString()
         };
 

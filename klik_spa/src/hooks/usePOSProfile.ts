@@ -102,9 +102,21 @@ export function usePOSProfiles() {
   return { profiles, loading, error }
 }
 
+export type POSCompanyDetails = {
+    name?: string;
+    company_name?: string;
+    abbr?: string;
+    tax_id?: string;
+    phone_no?: string;
+    email?: string;
+    country?: string;
+    default_currency?: string;
+};
+
 
 export type POSDetails = {
   name?: string;
+  company?: POSCompanyDetails;
   currency?: string;
   currency_symbol?: string;
   is_zatca_enabled?: boolean;

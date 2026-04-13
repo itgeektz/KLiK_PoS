@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { getPrintFormatHTML } from "./getPrintHTML.js";
 import { usePOSDetails } from "../hooks/usePOSProfile.js";
@@ -35,7 +34,7 @@ export default function PrintPreview({ invoice }: PrintPreviewProps) {
           doctype: 'Sales Invoice',
           name: invoiceName
         };
-        const { html, style } = await getPrintFormatHTML(invoiceForAPI, printFormat);
+        const { html, style } = await getPrintFormatHTML(invoiceForAPI, printFormat as string);
         setHtml(html);
         setStyle(style);
       } catch (err) {

@@ -448,6 +448,12 @@ export default function InvoiceViewPage() {
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.address_line1}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.email_id}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.phone}</p>
+                        {invoice.tax_id && (
+                          <div className="mt-4">
+                            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Tax ID:</h4>
+                            <p className="text-sm text-gray-900 dark:text-white font-medium">{invoice.tax_id}</p>
+                          </div>
+                        )}
                       </div>
                       <div className="text-right">
                         <div className="space-y-2">
@@ -674,7 +680,7 @@ export default function InvoiceViewPage() {
               </div>
 
               {/* Customer Details - 30% */}
-              <div className="lg:col-span-1">
+              <div className="lg:col-span-1 space-y-4">
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                   <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                     <div className="flex items-center justify-between">
@@ -784,6 +790,39 @@ export default function InvoiceViewPage() {
                     </div>
                   </div>
                 </div>
+                {invoice.sales_team && invoice.sales_team.length > 0 ? (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Sales Team</h4>
+                      </div>
+                      <div className="px-6 py-4 space-y-4">
+                        {invoice.sales_team.map((member: any, idx: number) => {
+                          const displayName = member.sales_person ||  "Unknown";
+                          const contact_no = member.contact_no || '';
+                          // const allocated_amount = member.allocated_amount ? formatCurrency(member.allocated_amount, invoice.currency) : null;
+                          const percent = member.allocated_percentage || null;
+                          return (
+                            <div key={idx} className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-beveren-500 to-beveren-700 text-white flex items-center justify-center font-semibold text-xs">
+                                  {String(displayName).slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</div>
+                                  {contact_no && <div className="text-xs text-gray-500 dark:text-gray-400">{contact_no}</div>}
+                                </div>
+                              </div>
+                              {percent ? (
+                                <div className="text-sm text-gray-600 dark:text-gray-400">{percent}%</div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No sales team assigned.</p>
+                )}
               </div>
             </div>
           </div>

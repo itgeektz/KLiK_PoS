@@ -1627,7 +1627,7 @@ export default function PaymentDialog({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {isB2B ? "Invoice Submission" : "Payment Processing"}
+            Order Complete
           </h2>
 
           {invoiceSubmitted ? (
@@ -2545,7 +2545,7 @@ export default function PaymentDialog({
                     KLiK PoS
                   </h4>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {isB2B ? "Sales Invoice" : "Sales Invoice"}
+                    Sales Invoice
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-500">
                     {currentDate}

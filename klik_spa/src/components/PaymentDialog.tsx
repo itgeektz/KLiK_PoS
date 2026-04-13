@@ -1368,9 +1368,98 @@ export default function PaymentDialog({
                 {/* Payment Methods - Only show for B2C */}
                 {(isB2C || isB2B) && (
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                      Payment Methods
-                    </h2>
+                    {/* Header row: title + inline salesperson PIN */}
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Payment Methods
+                      </h2>
+                      {requiresSalespersonPin &&
+                        !invoiceSubmitted &&
+                        (isVerifyingPin ? (
+                          <div className="flex items-center gap-1.5 text-gray-400 text-xs">
+                            <Loader2 size={12} className="animate-spin" />
+                            <span>Checking...</span>
+                          </div>
+                        ) : currentSalesperson ? (
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-beveren-50 dark:bg-beveren-900/20 border border-beveren-200 dark:border-beveren-800">
+                              <div className="w-5 h-5 rounded-full bg-beveren-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                                {currentSalesperson.salesperson_name
+                                  .slice(0, 2)
+                                  .toUpperCase()}
+                              </div>
+                              <span className="text-xs font-medium text-beveren-700 dark:text-beveren-300">
+                                {currentSalesperson.salesperson_name}
+                              </span>
+                            </div>
+                            <button
+                              onClick={handleClearSalesperson}
+                              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5"
+                            >
+                              Switch
+                            </button>
+                            {/* <button
+                              onClick={() =>
+                                handleRememberSalespersonChange(
+                                  !rememberSalesperson
+                                )
+                              }
+                              className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${rememberSalesperson ? "bg-beveren-500" : "bg-gray-300 dark:bg-gray-600"}`}
+                              title={
+                                rememberSalesperson
+                                  ? "Forget on this device"
+                                  : "Remember on this device"
+                              }
+                            >
+                              <span
+                                className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${rememberSalesperson ? "left-[18px]" : "left-0.5"}`}
+                              />
+                            </button> */}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-2">
+                              <div className="flex gap-1">
+                                {[0, 1, 2, 3].map((i) => (
+                                  <div
+                                    key={i}
+                                    className={`w-2 h-2 rounded-full transition-all ${salespersonPin.length > i ? "bg-beveren-600 scale-110" : "bg-gray-300 dark:bg-gray-600"}`}
+                                  />
+                                ))}
+                              </div>
+                              <input
+                                type="password"
+                                value={salespersonPin}
+                                onChange={(e) => {
+                                  setSalespersonPin(
+                                    e.target.value
+                                      .replace(/\D/g, "")
+                                      .slice(0, 4)
+                                  );
+                                  setSalespersonPinError("");
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleVerifyPin();
+                                }}
+                                maxLength={4}
+                                placeholder="PIN"
+                                className="w-14 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-center tracking-widest focus:ring-1 focus:ring-beveren-500 focus:outline-none"
+                              />
+                              <button
+                                onClick={handleVerifyPin}
+                                className="p-1.5 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
+                              >
+                                <Check size={13} />
+                              </button>
+                            </div>
+                            {salespersonPinError && (
+                              <span className="text-[11px] text-red-500 dark:text-red-400">
+                                {salespersonPinError}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                    </div>
                     <div className="flex space-x-3 overflow-x-auto pb-2">
                       {paymentMethods.map((method) => (
                         <div
@@ -1430,6 +1519,33 @@ export default function PaymentDialog({
                 {/* Round Off */}
                 <div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="">
+                      {isWalkinCustomer && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            {invoiceSubmitted ? 'Customer Tax ID' : 'Customer Tax ID (optional)'}
+                            
+                          </label>
+                          <input
+                            type="text"
+                            value={taxPin}
+                            onChange={(e) =>
+                              setTaxPin(e.target.value.toUpperCase())
+                            }
+                            onBlur={() =>
+                              setTaxPin((v) => v.trim().toUpperCase())
+                            }
+                            placeholder="A123456789P"
+                            disabled={invoiceSubmitted || isProcessingPayment}
+                            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white uppercase tracking-widest ${
+                              invoiceSubmitted || isProcessingPayment
+                                ? "cursor-not-allowed opacity-50"
+                                : ""
+                            }`}
+                          />
+                        </div>
+                      )}
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Round Off

@@ -54,6 +54,7 @@ export async function addDraftInvoiceToCart(invoiceId: string): Promise<boolean>
       email_id: invoiceData.customer_email || '',
       phone: invoiceData.customer_mobile_no || '',
       mobile_no: invoiceData.customer_mobile_no || '',
+      is_walkin: invoiceData.customer_is_walkin || 0,
       territory: '',
       customer_group: '',
       customer_type: 'individual',

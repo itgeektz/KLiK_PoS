@@ -194,6 +194,10 @@ export default function PaymentDialog({
     return pref === null ? true : pref === "true";
   });
 
+  // Tax PIN states
+  const [taxPin, setTaxPin] = useState("");
+
+
   // Hooks
   const { posDetails, loading: posLoading } = usePOSDetails();
   const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
@@ -215,6 +219,7 @@ export default function PaymentDialog({
                              deliveryRequiredValue === "1";
 
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
+  const isWalkinCustomer = selectedCustomer?.is_walkin === 1;
 
   // Device ID helper (persisted per browser)
   const getDeviceId = () => {
@@ -248,6 +253,11 @@ export default function PaymentDialog({
     })();
   }, [isOpen, requiresSalespersonPin]);
 
+  // Reset Tax PIN when dialog opens for a new transaction
+  useEffect(() => {
+    if (isOpen) setTaxPin("");
+  }, [isOpen]);
+
   const handleVerifyPin = async () => {
     const pin = salespersonPin.trim();
     if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
@@ -266,7 +276,7 @@ export default function PaymentDialog({
         if (!rememberSalesperson) {
           try {
             await clearRememberedSalesperson(getDeviceId());
-          } catch {
+          } catch (err) {
             console.error("Error clearing remembered salesperson:", err);
           }
         }
@@ -1048,6 +1058,7 @@ export default function PaymentDialog({
       businessType: posDetails?.business_type,
       deliveryPersonnel: deliveryPersonnel || null,
       salesperson: currentSalesperson?.name || null,
+      tax_id: taxPin || null,
     };
 
     try {
@@ -1144,6 +1155,7 @@ export default function PaymentDialog({
       status: "held",
       businessType: posDetails?.business_type,
       salesperson: currentSalesperson?.name || null,
+      tax_id: taxPin || null,
     };
 
     try {
@@ -2340,6 +2352,33 @@ export default function PaymentDialog({
                           ? `(${formatCurrency(calculations.taxAmount)})`
                           : formatCurrency(calculations.taxAmount)}
                       </div>
+                    </div>
+                    <div className="md:col-span-2">
+                      {isWalkinCustomer && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            {invoiceSubmitted ? 'Customer Tax ID' : 'Customer Tax ID (optional)'}
+                            
+                          </label>
+                          <input
+                            type="text"
+                            value={taxPin}
+                            onChange={(e) =>
+                              setTaxPin(e.target.value.toUpperCase())
+                            }
+                            onBlur={() =>
+                              setTaxPin((v) => v.trim().toUpperCase())
+                            }
+                            placeholder="A123456789P"
+                            disabled={invoiceSubmitted || isProcessingPayment}
+                            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white uppercase tracking-widest ${
+                              invoiceSubmitted || isProcessingPayment
+                                ? "cursor-not-allowed opacity-50"
+                                : ""
+                            }`}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

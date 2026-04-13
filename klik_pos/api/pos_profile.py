@@ -150,6 +150,7 @@ def get_pos_details():
 			"territory": customer_doc.territory,
 			"customer_group": customer_doc.customer_group,
 			"default_currency": customer_doc.default_currency,
+			"is_walkin": getattr(customer_doc, "custom_is_walkin", 0),
 		}
 	details = {
 		"name": pos.name,

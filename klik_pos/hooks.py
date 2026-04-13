@@ -61,7 +61,8 @@ fixtures = [
 					"POS Profile-custom_autofetch_batchserial_",
 					"POS Profile-custom_clear_draft_invoices",
 					"Sales Person-pos_pin",
-					"POS Profile-custom_sales_person_pin_required"
+					"POS Profile-custom_sales_person_pin_required",
+     				"Customer-custom_is_walkin"
 				),
 			]
 		],

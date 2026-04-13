@@ -224,6 +224,7 @@ export interface Customer {
   customer_group:string
   customer_type:string
   phone: string
+  is_walkin: number
   address: {
     street: string
     city: string

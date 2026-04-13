@@ -224,6 +224,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
 					"custom_total_orders": customer_stats.get("total_orders", 0),
 					"custom_total_spent": customer_stats.get("total_spent", 0),
 					"custom_last_visit": customer_stats.get("last_visit"),
+					"is_walkin": getattr(doc, "custom_is_walkin", 0),
 					# "exchange_rate": get_currency_exchange_rate(company_currency, doc.default_currency)
 				}
 			)
@@ -381,6 +382,7 @@ def get_customer_info(customer_name: str):
 			"creation": customer.creation,
 			"contact_data": contact_data,
 			"address_data": address_data,
+			"is_walkin": getattr(customer, "custom_is_walkin", 0),
 		}
 
 		# Add ZATCA details for company customers

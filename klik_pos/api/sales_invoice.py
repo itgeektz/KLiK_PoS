@@ -522,6 +522,7 @@ def create_and_submit_invoice(data):
 			business_type,
 			roundoff_amount,
 			delivery_personnel,
+			salesperson,
 		) = parse_invoice_data(data)
 
 		# Validate required fields
@@ -541,6 +542,7 @@ def create_and_submit_invoice(data):
 			roundoff_amount,
 			include_payments=True,
 			delivery_personnel=delivery_personnel,
+			salesperson=salesperson,
 		)
 
 		doc.base_paid_amount = amount_paid
@@ -620,6 +622,7 @@ def create_draft_invoice(data):
 			business_type,
 			roundoff_amount,
 			delivery_personnel,
+			salesperson,
 		) = parse_invoice_data(data)
 		doc = build_sales_invoice_doc(
 			customer,
@@ -631,6 +634,7 @@ def create_draft_invoice(data):
 			roundoff_amount,
 			include_payments=True,
 			delivery_personnel=delivery_personnel,
+			salesperson=salesperson,
 		)
 		doc.insert(ignore_permissions=True)
 
@@ -673,6 +677,9 @@ def parse_invoice_data(data):
 	# Extract delivery personnel
 	delivery_personnel = data.get("deliveryPersonnel")
 
+	# Extract salesperson
+	salesperson = data.get("salesperson")
+
 	if not customer or not items:
 		frappe.throw(_("Customer and items are required"))
 
@@ -685,6 +692,7 @@ def parse_invoice_data(data):
 		business_type,
 		roundoff_amount,
 		delivery_personnel,
+		salesperson,
 	)
 
 
@@ -698,6 +706,7 @@ def build_sales_invoice_doc(
 	roundoff_amount=0.0,
 	include_payments=False,
 	delivery_personnel=None,
+	salesperson=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -708,6 +717,13 @@ def build_sales_invoice_doc(
 	# Set delivery personnel if provided
 	if delivery_personnel:
 		doc.custom_delivery_personnel = delivery_personnel
+
+	# Set salesperson in sales team
+	if salesperson:
+		doc.append("sales_team", {
+			"sales_person": salesperson,
+			"allocated_percentage": 100,
+		})
 
 	# Configure POS profile and company settings
 	pos_profile = _get_active_pos_profile()

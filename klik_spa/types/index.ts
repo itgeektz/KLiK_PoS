@@ -147,6 +147,13 @@ export interface SalesInvoice {
   total:number;
   taxes:[];
   owner:string;
+  sales_team: Array<{
+    sales_person: string;
+    contact_no?: string;
+    allocated_amount?: number;
+    allocated_percentage?: number;
+  }>;
+  tax_id: string;
 }
 
 

@@ -59,7 +59,9 @@ fixtures = [
 					"Sales Invoice-custom_delivery_personnel",
 					"Sales Invoice-custom_delivery_personnel_name",
 					"POS Profile-custom_autofetch_batchserial_",
-                    "POS Profile-custom_clear_draft_invoices",
+					"POS Profile-custom_clear_draft_invoices",
+					"Sales Person-pos_pin",
+					"POS Profile-custom_sales_person_pin_required"
 				),
 			]
 		],
@@ -81,6 +83,7 @@ doc_events = {
 			"klik_pos.api.sales_invoice.set_base_roundoff_amount",
 			"klik_pos.api.sales_invoice.set_grand_total_with_roundoff",
 		],
+		"before_submit": "klik_pos.overrides.sales_invoice.validate_sales_person_on_submit",
 		# "before_save": [
 		# 	"klik_pos.api.sales_invoice.sync_return_payments_before_save",
 		# ],
@@ -90,6 +93,7 @@ doc_events = {
 			"klik_pos.api.pos_entry.validate_opening_entry",
 		],
 	},
+	"Sales Person": {"before_save": "klik_pos.overrides.sales_person.validate_unique_pos_pin"},
 }
 
 override_doctype_class = {
@@ -120,7 +124,7 @@ before_migrate = ["klik_pos.setup.pos_opening_entry_links.ensure_pos_opening_ent
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {"Sales Invoice": "public/js/sales_invoice.js", "Company": "public/js/company.js"}
+doctype_js = {"Sales Invoice": "public/js/sales_invoice.js", "Company": "public/js/company.js", "Sales Person": "public/js/sales_person.js"}
 # Add a button to Company to create random customers (client-side will call the whitelisted method)
 doctype_js.update({"Company": "public/js/company.js"})
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}

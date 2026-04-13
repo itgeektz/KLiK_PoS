@@ -124,6 +124,27 @@ def _get_profile_default_status(profile_name, user):
 	return {"is_default": is_default, "in_applicable_users": in_applicable_users}
 
 
+def _get_company_summary(company_name):
+	"""
+	Return a compact summary of `Company`.
+	"""
+	try:
+		company = frappe.get_doc("Company", company_name)
+		return {
+			"name": company.name,
+			"company_name": getattr(company, "company_name", None),
+			"abbr": getattr(company, "abbr", None),
+			"tax_id": getattr(company, "tax_id", None),
+			"phone_no": getattr(company, "phone_no", None),
+			"email": getattr(company, "email", None),
+			"country": getattr(company, "country", None),
+			"default_currency": getattr(company, "default_currency", None),
+		}
+	except Exception as e:
+		frappe.logger().warning(f"Could not fetch company {company_name}: {e}")
+		return {}
+
+
 @frappe.whitelist()
 def get_pos_details():
 	# Determine active POS Profile: prefer the one from the current open entry if any
@@ -152,11 +173,13 @@ def get_pos_details():
 			"default_currency": customer_doc.default_currency,
 			"is_walkin": getattr(customer_doc, "custom_is_walkin", 0),
 		}
+
 	details = {
 		"name": pos.name,
 		"business_type": business_type,
 		"print_format": print_format,
 		"currency": pos.currency,
+  		"company": _get_company_summary(pos.company),
 		"currency_symbol": frappe.db.get_value("Currency", pos.currency, "symbol") or pos.currency,
 		"print_receipt_on_order_complete": pos.print_receipt_on_order_complete,
 		"custom_use_scanner_fully": pos.custom_use_scanner_fully,

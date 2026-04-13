@@ -62,7 +62,7 @@ export default function AddCustomerModal({
       city: "",
       state: "",
       zipCode: "",
-      country: "Saudi Arabia",
+      country: posDetails?.company?.country ?? "Saudi Arabia",
     },
     status: "active" as Customer["status"],
     vatNumber: "",
@@ -138,7 +138,7 @@ export default function AddCustomerModal({
           city: customer.address?.city || "",
           state: customer.address?.state || "",
           zipCode: customer.address?.zipCode || "",
-          country: customer.address?.country || "Saudi Arabia",
+          country: customer.address?.country || posDetails?.company?.country || "Saudi Arabia",
         },
         status: customer.status,
         vatNumber: customer.taxId || "",
@@ -167,6 +167,18 @@ export default function AddCustomerModal({
       formInitializedRef.current = true;
     }
   }, [customer?.id, customer?.name, prefilledName, prefilledData, customer]); // Only depend on stable customer properties
+
+  useEffect(() => {
+    if (posDetails?.company?.country && !isEditing) {
+      setFormData((prev) => ({
+        ...prev,
+        address: {
+          ...prev.address,
+          country: posDetails?.company?.country ?? "Saudi Arabia",
+        },
+      }));
+    }
+  }, [posDetails?.company?.country, isEditing]);
 
   // Reset form initialization when customer changes
   useEffect(() => {
@@ -789,7 +801,7 @@ export default function AddCustomerModal({
                       <PhoneInput
                         id="phone"
                         international
-                        defaultCountry="SA"
+                        defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || "SA"}
                         value={formData.phone}
                         onChange={(value: string | undefined) =>
                           setFormData((prev) => ({ ...prev, phone: value || "" }))
@@ -897,7 +909,7 @@ export default function AddCustomerModal({
                   <PhoneInput
                     id="phone"
                     international
-                    defaultCountry="SA"
+                    defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || "SA"}
                     value={formData.phone}
                     onChange={(value: string | undefined) =>
                       setFormData((prev) => ({ ...prev, phone: value || "" }))

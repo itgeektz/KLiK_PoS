@@ -2123,8 +2123,7 @@ export default function OrderSummary({
               isMobile ? "py-3 text-base" : "py-2 text-sm"
             }`}
           >
-            Checkout {currency_symbol}
-            {total.toFixed(2)}
+            {`Checkout ${formatCurrencyWithSymbol(total, currency_symbol)}`}
           </button>
         </div>
       )}

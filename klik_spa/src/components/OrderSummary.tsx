@@ -15,7 +15,10 @@ import type { CartItem, GiftCoupon } from "../../types";
 import type { Customer } from "../types/customer";
 import PaymentDialog from "./PaymentDialog";
 import AddCustomerModal from "./AddCustomerModal";
-import { createDraftSalesInvoice } from "../services/salesInvoice";
+import {
+  createDraftSalesInvoice,
+  validateCheckoutInvoice,
+} from "../services/salesInvoice";
 import { useCustomers } from "../hooks/useCustomers";
 import { useProducts } from "../hooks/useProducts";
 import { toast } from "react-toastify";
@@ -561,6 +564,7 @@ export default function OrderSummary({
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [isValidatingCheckout, setIsValidatingCheckout] = useState(false);
   const {
     customers,
     isLoading,
@@ -822,6 +826,55 @@ export default function OrderSummary({
       return false;
     }
     return true;
+  };
+
+  const buildCheckoutValidationPayload = () => {
+    const normalizedItemDiscounts: Record<string, any> = {};
+    const items = cartItems.map((item) => {
+      const itemCode = item.item_code || item.id;
+      const discountData = itemDiscounts[itemCode] || itemDiscounts[item.id] || {};
+
+      normalizedItemDiscounts[itemCode] = {
+        ...(normalizedItemDiscounts[itemCode] || {}),
+        ...discountData,
+      };
+
+      return {
+        id: itemCode,
+        quantity: item.quantity,
+        price: getDiscountedPrice(item),
+        uom: item.uom || "Nos",
+        batchNumber: discountData.batchNumber || null,
+        serialNumber: discountData.serialNumber || null,
+      };
+    });
+
+    return {
+      customer: { id: selectedCustomer?.id },
+      items,
+      itemDiscounts: normalizedItemDiscounts,
+      businessType: posDetails?.business_type,
+    };
+  };
+
+  const handleCheckoutClick = async () => {
+    if (!validateCustomer() || isValidatingCheckout) {
+      return;
+    }
+
+    setIsValidatingCheckout(true);
+    try {
+      await validateCheckoutInvoice(buildCheckoutValidationPayload());
+      setShowPaymentDialog(true);
+    } catch (error) {
+      const errorMessage = extractErrorFromException(
+        error,
+        "Checkout validation failed",
+      );
+      toast.error(errorMessage);
+    } finally {
+      setIsValidatingCheckout(false);
+    }
   };
 
   const handleCustomerSelect = (customer: Customer) => {
@@ -2117,15 +2170,15 @@ export default function OrderSummary({
 
           {/* Pay Button */}
           <button
-            onClick={() => {
-              if (!validateCustomer()) return;
-              setShowPaymentDialog(true);
-            }}
-            className={`w-full bg-beveren-600 text-white rounded-xl font-semibold hover:bg-beveren-700 transition-colors ${
+            onClick={handleCheckoutClick}
+            disabled={isValidatingCheckout}
+            className={`w-full bg-beveren-600 text-white rounded-xl font-semibold hover:bg-beveren-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
               isMobile ? "py-3 text-base" : "py-2 text-sm"
             }`}
           >
-            {`Checkout ${formatCurrencyWithSymbol(total, currency_symbol)}`}
+            {isValidatingCheckout
+              ? "Checking cart..."
+              : `Checkout ${formatCurrencyWithSymbol(total, currency_symbol)}`}
           </button>
         </div>
       )}

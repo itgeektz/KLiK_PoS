@@ -387,6 +387,51 @@ def get_invoice_details(invoice_id):
 		return {"success": False, "error": str(e)}
 
 
+@frappe.whitelist()
+def validate_checkout_invoice(data):
+	"""
+	Pre-validate invoice payload at checkout time without creating any document.
+	This catches batch/serial and item-account issues early before payment submission.
+	"""
+	try:
+		(
+			customer,
+			items,
+			amount_paid,
+			sales_and_tax_charges,
+			mode_of_payment,
+			business_type,
+			roundoff_amount,
+			delivery_personnel,
+			is_credit_sale,
+			due_date,
+			salesperson,
+			tax_id,
+		) = parse_invoice_data(data)
+
+		# Build-only validation (no insert/save/submit).
+		build_sales_invoice_doc(
+			customer,
+			items,
+			amount_paid,
+			sales_and_tax_charges,
+			mode_of_payment,
+			business_type,
+			roundoff_amount,
+			include_payments=False,
+			delivery_personnel=delivery_personnel,
+			is_credit_sale=is_credit_sale,
+			due_date=due_date,
+			salesperson=salesperson,
+			tax_id=tax_id,
+		)
+
+		return {"success": True, "message": "Checkout validation passed"}
+
+	except Exception as e:
+		return {"success": False, "message": str(e)}
+
+
 def _get_invoice_items_with_returns(invoice_id, customer):
 	"""
 	Fetch invoice items and calculate returned/available quantities.

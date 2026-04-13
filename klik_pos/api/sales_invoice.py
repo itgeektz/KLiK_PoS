@@ -522,6 +522,8 @@ def create_and_submit_invoice(data):
 			business_type,
 			roundoff_amount,
 			delivery_personnel,
+			is_credit_sale,
+			due_date,
 		) = parse_invoice_data(data)
 
 		# Validate required fields
@@ -541,6 +543,8 @@ def create_and_submit_invoice(data):
 			roundoff_amount,
 			include_payments=True,
 			delivery_personnel=delivery_personnel,
+			is_credit_sale=is_credit_sale,
+			due_date=due_date,
 		)
 
 		doc.base_paid_amount = amount_paid
@@ -620,6 +624,8 @@ def create_draft_invoice(data):
 			business_type,
 			roundoff_amount,
 			delivery_personnel,
+			is_credit_sale,
+			due_date,
 		) = parse_invoice_data(data)
 		doc = build_sales_invoice_doc(
 			customer,
@@ -631,6 +637,8 @@ def create_draft_invoice(data):
 			roundoff_amount,
 			include_payments=True,
 			delivery_personnel=delivery_personnel,
+			is_credit_sale=is_credit_sale,
+			due_date=due_date,
 		)
 		doc.insert(ignore_permissions=True)
 
@@ -646,9 +654,18 @@ def parse_invoice_data(data):
 	if isinstance(data, str):
 		data = json.loads(data)
 
+	def _as_bool(value):
+		if isinstance(value, str):
+			return value.lower() in ("true", "1", "yes", "on")
+		return bool(value)
+
 	customer = data.get("customer", {}).get("id")
 	items = []
 	item_discounts = data.get("itemDiscounts", {})
+	is_credit_sale = _as_bool(data.get("isCreditSale") or data.get("is_credit_sale"))
+	due_date = data.get("dueDate") or data.get("due_date")
+	mode_of_payment = None
+	default_payment_mode = None
 
 	for item in data.get("items", []):
 		item_code = item.get("id")
@@ -678,7 +695,6 @@ def parse_invoice_data(data):
 	amount_paid = 0.0
 	sales_and_tax_charges = get_current_pos_profile().taxes_and_charges
 	business_type = data.get("businessType")
-	mode_of_payment = None
 
 	# Extract round-off data from frontend
 	roundoff_amount = data.get("roundOffAmount", 0.0)
@@ -692,6 +708,12 @@ def parse_invoice_data(data):
 
 	if data.get("paymentMethods"):
 		mode_of_payment = data.get("paymentMethods")
+
+	if is_credit_sale:
+		default_payment_mode = _get_default_payment_mode()
+		mode_of_payment = _normalize_credit_sale_payment_methods(mode_of_payment, default_payment_mode)
+		if not _has_positive_payment_amount(mode_of_payment):
+			amount_paid = 0.0
 
 	if data.get("SalesTaxCharges"):
 		sales_and_tax_charges = data.get("SalesTaxCharges")
@@ -711,6 +733,8 @@ def parse_invoice_data(data):
 		business_type,
 		roundoff_amount,
 		delivery_personnel,
+		is_credit_sale,
+		due_date,
 	)
 
 
@@ -724,11 +748,13 @@ def build_sales_invoice_doc(
 	roundoff_amount=0.0,
 	include_payments=False,
 	delivery_personnel=None,
+	is_credit_sale=False,
+	due_date=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
 	doc.customer = customer
-	doc.due_date = frappe.utils.nowdate()
+	doc.due_date = due_date or frappe.utils.nowdate()
 	doc.custom_delivery_date = frappe.utils.nowdate()
 
 	# Set delivery personnel if provided
@@ -763,6 +789,9 @@ def build_sales_invoice_doc(
 	# Add payment information
 	if include_payments:
 		_add_payment_entries(doc, mode_of_payment)
+
+	if is_credit_sale and due_date:
+		doc.due_date = due_date
 
 	return doc
 
@@ -1151,6 +1180,60 @@ def _add_payment_entries(doc, mode_of_payment):
 			"payments",
 			{"mode_of_payment": payment["method"], "amount": payment["amount"]},
 		)
+
+
+def _get_default_payment_mode():
+	"""Return the default payment mode for the active POS profile, or a safe fallback."""
+	try:
+		pos_profile = get_current_pos_profile()
+		payment_methods = frappe.get_all(
+			"POS Payment Method",
+			filters={"parent": pos_profile.name},
+			fields=["mode_of_payment", "default"],
+			order_by="idx asc",
+		)
+
+		if not payment_methods:
+			return None
+
+		default_mode = next((row["mode_of_payment"] for row in payment_methods if row.get("default") in (1, True)), None)
+		return default_mode or payment_methods[0].get("mode_of_payment")
+	except Exception:
+		return None
+
+
+def _normalize_credit_sale_payment_methods(payment_methods, default_payment_mode):
+	"""Ensure credit sales carry a zero-amount default payment row when no amount is entered."""
+	if not isinstance(payment_methods, list):
+		payment_methods = []
+
+	if _has_positive_payment_amount(payment_methods):
+		return payment_methods
+
+	if payment_methods:
+		for payment in payment_methods:
+			if not payment.get("amount"):
+				payment["amount"] = 0.0
+		return payment_methods
+
+	if default_payment_mode:
+		return [{"method": default_payment_mode, "amount": 0.0}]
+
+	return payment_methods
+
+
+def _has_positive_payment_amount(payment_methods):
+	"""Check whether any payment method has a positive amount."""
+	if not isinstance(payment_methods, list):
+		return False
+
+	for payment in payment_methods:
+		try:
+			if flt(payment.get("amount") or 0) > 0:
+				return True
+		except Exception:
+			continue
+	return False
 
 
 def get_tax_template(template_name):

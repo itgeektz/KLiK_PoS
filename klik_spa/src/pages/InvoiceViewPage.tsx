@@ -450,7 +450,7 @@ export default function InvoiceViewPage() {
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.phone}</p>
                         {invoice.tax_id && (
                           <div className="mt-4">
-                            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Customer Tax ID:</h4>
+                            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Tax ID:</h4>
                             <p className="text-sm text-gray-900 dark:text-white font-medium">{invoice.tax_id}</p>
                           </div>
                         )}

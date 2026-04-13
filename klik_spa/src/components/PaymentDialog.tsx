@@ -1552,6 +1552,45 @@ export default function PaymentDialog({
                   </div>
                 )}
 
+                <div className="space-y-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleCreditSaleToggle}
+                    disabled={invoiceSubmitted || isProcessingPayment}
+                    className={`w-full py-3 rounded-lg border font-medium transition-colors ${
+                      isCreditSale
+                        ? "bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600"
+                    } ${
+                      invoiceSubmitted || isProcessingPayment
+                        ? "cursor-not-allowed opacity-50"
+                        : ""
+                    }`}
+                  >
+                    {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
+                  </button>
+
+                  {isCreditSale && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Due Date
+                      </label>
+                      <input
+                        type="date"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        min={new Date().toISOString().split("T")[0]}
+                        disabled={invoiceSubmitted || isProcessingPayment}
+                        className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
+                          invoiceSubmitted || isProcessingPayment
+                            ? "cursor-not-allowed opacity-50"
+                            : ""
+                        }`}
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* Tax Type Indicator */}
 
                 {/* Round Off */}
@@ -1720,44 +1759,6 @@ export default function PaymentDialog({
                 </div>
 
                 {/* Action Buttons */}
-                <div className="space-y-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={handleCreditSaleToggle}
-                    disabled={invoiceSubmitted || isProcessingPayment}
-                    className={`w-full py-3 rounded-lg border font-medium transition-colors ${
-                      isCreditSale
-                        ? "bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
-                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600"
-                    } ${
-                      invoiceSubmitted || isProcessingPayment
-                        ? "cursor-not-allowed opacity-50"
-                        : ""
-                    }`}
-                  >
-                    {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
-                  </button>
-
-                  {isCreditSale && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Due Date
-                      </label>
-                      <input
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        min={new Date().toISOString().split("T")[0]}
-                        disabled={invoiceSubmitted || isProcessingPayment}
-                        className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
-                          invoiceSubmitted || isProcessingPayment
-                            ? "cursor-not-allowed opacity-50"
-                            : ""
-                        }`}
-                      />
-                    </div>
-                  )}
-                </div>
 
                 <div className="space-y-3 pt-6">
                   <button
@@ -2502,6 +2503,45 @@ export default function PaymentDialog({
                   </div>
                 </div>
 
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={handleCreditSaleToggle}
+                    disabled={invoiceSubmitted || isProcessingPayment}
+                    className={`w-full py-3 rounded-lg border font-medium transition-colors ${
+                      isCreditSale
+                        ? "bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600"
+                    } ${
+                      invoiceSubmitted || isProcessingPayment
+                        ? "cursor-not-allowed opacity-50"
+                        : ""
+                    }`}
+                  >
+                    {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
+                  </button>
+
+                  {isCreditSale && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Due Date
+                      </label>
+                      <input
+                        type="date"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        min={new Date().toISOString().split("T")[0]}
+                        disabled={invoiceSubmitted || isProcessingPayment}
+                        className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
+                          invoiceSubmitted || isProcessingPayment
+                            ? "cursor-not-allowed opacity-50"
+                            : ""
+                        }`}
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* Tax Section */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -2713,45 +2753,6 @@ export default function PaymentDialog({
                       )}
                     </div>
                   </div>
-                </div>
-
-                <div className="space-y-3">
-                  <button
-                    type="button"
-                    onClick={handleCreditSaleToggle}
-                    disabled={invoiceSubmitted || isProcessingPayment}
-                    className={`w-full py-3 rounded-lg border font-medium transition-colors ${
-                      isCreditSale
-                        ? "bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
-                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600"
-                    } ${
-                      invoiceSubmitted || isProcessingPayment
-                        ? "cursor-not-allowed opacity-50"
-                        : ""
-                    }`}
-                  >
-                    {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
-                  </button>
-
-                  {isCreditSale && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Due Date
-                      </label>
-                      <input
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        min={new Date().toISOString().split("T")[0]}
-                        disabled={invoiceSubmitted || isProcessingPayment}
-                        className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
-                          invoiceSubmitted || isProcessingPayment
-                            ? "cursor-not-allowed opacity-50"
-                            : ""
-                        }`}
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
             )}

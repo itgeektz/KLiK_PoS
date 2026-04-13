@@ -49,6 +49,30 @@ export async function createSalesInvoice(data: any) {
   return result.message;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function validateCheckoutInvoice(data: any) {
+  const csrfToken = window.csrf_token;
+
+  const response = await fetch('/api/method/klik_pos.api.sales_invoice.validate_checkout_invoice', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken
+    },
+    body: JSON.stringify({ data }),
+    credentials: 'include'
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || !result.message || result.message.success === false) {
+    const errorMessage = extractErrorMessage(result, 'Checkout validation failed');
+    throw new Error(errorMessage);
+  }
+
+  return result.message;
+}
+
 export async function createSalesReturn(invoiceName: string) {
   const csrfToken = window.csrf_token;
 

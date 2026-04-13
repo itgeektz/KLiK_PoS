@@ -974,42 +974,36 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 				)
 
 def _autofetch_batch_fifo(item_code, warehouse, qty):
-    from frappe.utils import nowdate
-    today = nowdate()
+	from erpnext.stock.doctype.batch.batch import get_batch_qty
+	from frappe.utils import getdate, nowdate
 
-    # Pick oldest batch that actually has sufficient stock in the warehouse
-    batches = frappe.db.sql("""
-        SELECT 
-            sle.batch_no,
-            SUM(sle.actual_qty) as available_qty,
-            b.expiry_date,
-            b.creation
-        FROM `tabStock Ledger Entry` sle
-        INNER JOIN `tabBatch` b ON b.name = sle.batch_no
-        WHERE 
-            sle.item_code = %(item_code)s
-            AND sle.warehouse = %(warehouse)s
-            AND sle.is_cancelled = 0
-            AND b.disabled = 0
-            AND (b.expiry_date IS NULL OR b.expiry_date >= %(today)s)
-        GROUP BY sle.batch_no
-        HAVING available_qty >= %(qty)s
-        ORDER BY b.expiry_date ASC, b.creation ASC
-        LIMIT 1
-    """, {
-        "item_code": item_code,
-        "warehouse": warehouse,
-        "qty": qty,
-        "today": today
-    }, as_dict=True)
+	today = nowdate()
+	required_qty = flt(qty or 0)
 
-    if not batches:
-        frappe.throw(
-            f"No batch with sufficient stock found for item {item_code} "
-            f"in warehouse {warehouse}. Required: {qty}"
-        )
+	# Walk batches in FIFO order and return the first usable batch.
+	batches = frappe.get_all(
+		"Batch",
+		filters={
+			"item": item_code,
+			"disabled": 0,
+		},
+		fields=["name", "batch_id", "expiry_date", "creation"],
+		order_by="expiry_date asc, creation asc",
+	)
 
-    return batches[0].batch_no
+	for batch in batches:
+		if batch.expiry_date and getdate(batch.expiry_date) < getdate(today):
+			continue
+
+		available_qty = flt(get_batch_qty(batch_no=batch.name, warehouse=warehouse) or 0)
+		if available_qty >= required_qty:
+			return batch.name
+
+	frappe.throw(
+		f"No batch with sufficient stock found for item {item_code} "
+		f"in warehouse {warehouse}. Required: {qty}"
+	)
+
 # def _autofetch_batch_fifo(item_code, warehouse, qty):
 # 	"""
 # 	Simple FIFO-based batch selector.

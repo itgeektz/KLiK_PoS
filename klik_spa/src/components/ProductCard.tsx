@@ -37,7 +37,7 @@ export default function ProductCard({
     <>
       <div
         className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-visible transition-all duration-200 relative flex flex-col ${
-          showTooltip ? "z-[60]" : "z-10"
+          showTooltip ? "z-[2]" : "z-1"
         } ${
           isDisabled
             ? "opacity-70 cursor-not-allowed"

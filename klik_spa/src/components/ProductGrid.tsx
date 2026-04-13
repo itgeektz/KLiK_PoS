@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import ProductCard from "./ProductCard";
 import ProductLineView from "./ProductLineView";
 import type { MenuItem } from "../../types";
+import { usePOSDetails } from "../hooks/usePOSProfile";
 
 interface ProductGridProps {
   items: MenuItem[];
@@ -29,8 +30,20 @@ export default function ProductGrid({
   onLoadMore,
   totalCount = 0,
 }: ProductGridProps) {
+  const { posDetails, loading } = usePOSDetails();
+
+  const hideUnavailable = useMemo(() => {
+    if (loading) return null;
+    return posDetails?.hide_unavailable ?? false;
+  }, [posDetails, loading]);
+
   const loadMoreRef = useRef<HTMLDivElement>(null);
-  const inStockItems = items.filter((item) => item.available > 0);
+
+  const inStockItems = useMemo(
+    () =>
+      hideUnavailable ? items.filter((item) => item.available > 0) : items,
+    [items, hideUnavailable],
+  );
 
   // Intersection Observer for infinite scroll
   const handleObserver = useCallback(

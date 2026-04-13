@@ -475,11 +475,13 @@ def _get_address_and_customer_info(invoice):
 	customer_state = ""
 	customer_pincode = ""
 	customer_country = ""
+	customer_is_walkin = 0
 
 	if invoice.customer:
 		customer_doc = frappe.get_doc("Customer", invoice.customer)
 		customer_email = customer_doc.email_id or ""
 		customer_mobile_no = customer_doc.mobile_no or ""
+		customer_is_walkin = customer_doc.custom_is_walkin
 
 		# Extract address fields
 		if customer_address_doc:
@@ -499,6 +501,7 @@ def _get_address_and_customer_info(invoice):
 		"customer_state": customer_state,
 		"customer_pincode": customer_pincode,
 		"customer_country": customer_country,
+		"customer_is_walkin": customer_is_walkin,
 	}
 
 
@@ -524,6 +527,8 @@ def create_and_submit_invoice(data):
 			delivery_personnel,
 			is_credit_sale,
 			due_date,
+			salesperson,
+			tax_id,
 		) = parse_invoice_data(data)
 
 		# Validate required fields
@@ -545,6 +550,8 @@ def create_and_submit_invoice(data):
 			delivery_personnel=delivery_personnel,
 			is_credit_sale=is_credit_sale,
 			due_date=due_date,
+			salesperson=salesperson,
+   		tax_id=tax_id,
 		)
 
 		doc.base_paid_amount = amount_paid
@@ -626,6 +633,8 @@ def create_draft_invoice(data):
 			delivery_personnel,
 			is_credit_sale,
 			due_date,
+			salesperson,
+			tax_id,
 		) = parse_invoice_data(data)
 		doc = build_sales_invoice_doc(
 			customer,
@@ -639,6 +648,8 @@ def create_draft_invoice(data):
 			delivery_personnel=delivery_personnel,
 			is_credit_sale=is_credit_sale,
 			due_date=due_date,
+			salesperson=salesperson,
+			tax_id=tax_id,
 		)
 		doc.insert(ignore_permissions=True)
 
@@ -721,6 +732,10 @@ def parse_invoice_data(data):
 	# Extract delivery personnel
 	delivery_personnel = data.get("deliveryPersonnel")
 
+	# Extract salesperson and tax_id
+	salesperson = data.get("salesperson")
+	tax_id = data.get("tax_id")
+
 	if not customer or not items:
 		frappe.throw(_("Customer and items are required"))
 
@@ -735,6 +750,8 @@ def parse_invoice_data(data):
 		delivery_personnel,
 		is_credit_sale,
 		due_date,
+		salesperson,
+		tax_id,
 	)
 
 
@@ -750,6 +767,8 @@ def build_sales_invoice_doc(
 	delivery_personnel=None,
 	is_credit_sale=False,
 	due_date=None,
+	salesperson=None,
+	tax_id=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -760,6 +779,17 @@ def build_sales_invoice_doc(
 	# Set delivery personnel if provided
 	if delivery_personnel:
 		doc.custom_delivery_personnel = delivery_personnel
+
+	# Set tax ID if provided
+	if tax_id:
+		doc.tax_id = tax_id
+
+	# Set salesperson in sales team
+	if salesperson:
+		doc.append("sales_team", {
+			"sales_person": salesperson,
+			"allocated_percentage": 100,
+		})
 
 	# Configure POS profile and company settings
 	pos_profile = _get_active_pos_profile()

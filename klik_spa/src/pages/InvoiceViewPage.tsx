@@ -39,7 +39,7 @@ import DisplayPrintPreview from "../utils/invoicePrint";
 import { handlePrintInvoice } from "../utils/printHandler";
 import SingleInvoiceReturn from "../components/SingleInvoiceReturn";
 import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
-import { formatCurrency } from "../utils/currency";
+import { formatCurrencyWithSymbol } from "../utils/currency";
 import AddCustomerModal from "../components/AddCustomerModal";
 
 export default function InvoiceViewPage() {
@@ -448,6 +448,12 @@ export default function InvoiceViewPage() {
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.address_line1}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.email_id}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{invoice.customer_address_doc?.phone}</p>
+                        {invoice.tax_id && (
+                          <div className="mt-4">
+                            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Tax ID:</h4>
+                            <p className="text-sm text-gray-900 dark:text-white font-medium">{invoice.tax_id}</p>
+                          </div>
+                        )}
                       </div>
                       <div className="text-right">
                         <div className="space-y-2">
@@ -505,10 +511,10 @@ export default function InvoiceViewPage() {
                               {item.qty}
                             </td>
                             <td className="px-6 py-4 text-right text-sm text-gray-900 dark:text-white">
-                              {formatCurrency(item.rate, invoice.currency)}
+                              {formatCurrencyWithSymbol(item.rate, invoice.currency)}
                             </td>
                             <td className="px-6 py-4 text-right text-sm font-medium text-gray-900 dark:text-white">
-                              {formatCurrency(item.amount, invoice.currency)}
+                              {formatCurrencyWithSymbol(item.amount, invoice.currency)}
                             </td>
                           </tr>
                         ))}
@@ -543,14 +549,14 @@ export default function InvoiceViewPage() {
                             </div>
                             <span className="text-beveren-900 dark:text-beveren-100 font-semibold">
                                          {/* @ts-expect-error just ignore */}
-                              {formatCurrency(tax.tax_amount, invoice.currency)}
+                              {formatCurrencyWithSymbol(tax.tax_amount, invoice.currency)}
                             </span>
                           </div>
                         ))}
                         <div className="flex justify-between items-center text-sm pt-2 border-t border-beveren-200 dark:border-beveren-700">
                           <span className="text-beveren-700 dark:text-beveren-300 font-semibold">Total Tax:</span>
                           <span className="text-beveren-900 dark:text-beveren-100 font-bold">
-                            {formatCurrency(invoice.total_taxes_and_charges, invoice.currency)}
+                            {formatCurrencyWithSymbol(invoice.total_taxes_and_charges, invoice.currency)}
                           </span>
                         </div>
                       </div>
@@ -563,27 +569,27 @@ export default function InvoiceViewPage() {
                       <div className="w-80 space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600 dark:text-gray-400">Subtotal:</span>
-                          <span className="text-gray-900 dark:text-white">{formatCurrency(invoice.total, invoice.currency)}</span>
+                          <span className="text-gray-900 dark:text-white">{formatCurrencyWithSymbol(invoice.total, invoice.currency)}</span>
                         </div>
 
                         {invoice.total_taxes_and_charges > 0 && (
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600 dark:text-gray-400">Tax:</span>
-                            <span className="text-gray-900 dark:text-white">{formatCurrency(invoice.total_taxes_and_charges, invoice.currency)}</span>
+                            <span className="text-gray-900 dark:text-white">{formatCurrencyWithSymbol(invoice.total_taxes_and_charges, invoice.currency)}</span>
                           </div>
                         )}
 
                         {invoice.rounding_adjustment !== 0 && (
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600 dark:text-gray-400">Rounding:</span>
-                            <span className="text-gray-900 dark:text-white">{formatCurrency(invoice.rounding_adjustment, invoice.currency)}</span>
+                            <span className="text-gray-900 dark:text-white">{formatCurrencyWithSymbol(invoice.rounding_adjustment, invoice.currency)}</span>
                           </div>
                         )}
 
                         {invoice.giftCardDiscount > 0 && (
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600 dark:text-gray-400">Gift Card Discount:</span>
-                            <span className="text-green-600 dark:text-green-400">-{formatCurrency(invoice.giftCardDiscount, invoice.currency)}</span>
+                            <span className="text-green-600 dark:text-green-400">-{formatCurrencyWithSymbol(invoice.giftCardDiscount, invoice.currency)}</span>
                           </div>
                         )}
 
@@ -591,27 +597,27 @@ export default function InvoiceViewPage() {
 
                         <div className="flex justify-between text-lg font-bold">
                           <span className="text-gray-900 dark:text-white">Grand Total:</span>
-                          <span className="text-gray-900 dark:text-white">{formatCurrency(invoice.grand_total, invoice.currency)}</span>
+                          <span className="text-gray-900 dark:text-white">{formatCurrencyWithSymbol(invoice.grand_total, invoice.currency)}</span>
                         </div>
 
                         {invoice.paid_amount > 0 && (
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600 dark:text-gray-400">Paid Amount:</span>
-                            <span className="text-beveren-600 dark:text-beveren-400">{formatCurrency(invoice.paid_amount, invoice.currency)}</span>
+                            <span className="text-beveren-600 dark:text-beveren-400">{formatCurrencyWithSymbol(invoice.paid_amount, invoice.currency)}</span>
                           </div>
                         )}
 
                         {invoice.outstanding_amount > 0 && (
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600 dark:text-gray-400">Outstanding:</span>
-                            <span className="text-orange-600 dark:text-orange-400">{formatCurrency(invoice.outstanding_amount, invoice.currency)}</span>
+                            <span className="text-orange-600 dark:text-orange-400">{formatCurrencyWithSymbol(invoice.outstanding_amount, invoice.currency)}</span>
                           </div>
                         )}
 
                         {invoice.status === "Refunded" && invoice.refundAmount && (
                           <div className="flex justify-between text-sm border-t border-gray-300 dark:border-gray-600 pt-2">
                             <span className="text-red-600 dark:text-red-400">Refunded Amount:</span>
-                            <span className="text-red-600 dark:text-red-400">{formatCurrency(invoice.refundAmount, invoice.currency)}</span>
+                            <span className="text-red-600 dark:text-red-400">{formatCurrencyWithSymbol(invoice.refundAmount, invoice.currency)}</span>
                           </div>
                         )}
                       </div>
@@ -624,7 +630,7 @@ export default function InvoiceViewPage() {
                       <h4 className="text-sm font-medium text-purple-900 dark:text-purple-100 mb-2">Gift Card Applied:</h4>
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-purple-700 dark:text-purple-300">Code: {invoice.giftCardCode}</span>
-                        <span className="text-sm font-semibold text-purple-900 dark:text-purple-100">-{formatCurrency(invoice.giftCardDiscount, invoice.currency)}</span>
+                        <span className="text-sm font-semibold text-purple-900 dark:text-purple-100">-{formatCurrencyWithSymbol(invoice.giftCardDiscount, invoice.currency)}</span>
                       </div>
                     </div>
                   )}
@@ -651,12 +657,12 @@ export default function InvoiceViewPage() {
                       <div className="space-y-2">
                         <div className="flex justify-between">
                           <span className="text-orange-700 dark:text-orange-300">Paid Amount:</span>
-                          <span className="text-orange-900 dark:text-orange-100 font-semibold">{formatCurrency(invoice.paid_amount || 0, invoice.currency)}</span>
+                          <span className="text-orange-900 dark:text-orange-100 font-semibold">{formatCurrencyWithSymbol(invoice.paid_amount || 0, invoice.currency)}</span>
                         </div>
                         {invoice.outstanding_amount > 0 && (
                           <div className="flex justify-between">
                             <span className="text-red-700 dark:text-red-300">Outstanding:</span>
-                            <span className="text-red-900 dark:text-red-100 font-semibold">{formatCurrency(invoice.outstanding_amount, invoice.currency)}</span>
+                            <span className="text-red-900 dark:text-red-100 font-semibold">{formatCurrencyWithSymbol(invoice.outstanding_amount, invoice.currency)}</span>
                           </div>
                         )}
                       </div>
@@ -674,7 +680,7 @@ export default function InvoiceViewPage() {
               </div>
 
               {/* Customer Details - 30% */}
-              <div className="lg:col-span-1">
+              <div className="lg:col-span-1 space-y-4">
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                   <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                     <div className="flex items-center justify-between">
@@ -756,7 +762,7 @@ export default function InvoiceViewPage() {
                                 <div>
                                   <p className="text-xs text-orange-700 dark:text-orange-300 font-medium">Total Spent</p>
                                   <p className="text-xs font-small text-orange-900 dark:text-orange-100">
-                                    {formatCurrency(customerStats.total_spent, invoice.currency)}
+                                    {formatCurrencyWithSymbol(customerStats.total_spent, invoice.currency)}
                                   </p>
                                 </div>
                               </div>
@@ -784,6 +790,39 @@ export default function InvoiceViewPage() {
                     </div>
                   </div>
                 </div>
+                {invoice.sales_team && invoice.sales_team.length > 0 ? (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Sales Team</h4>
+                      </div>
+                      <div className="px-6 py-4 space-y-4">
+                        {invoice.sales_team.map((member: any, idx: number) => {
+                          const displayName = member.sales_person ||  "Unknown";
+                          const contact_no = member.contact_no || '';
+                          // const allocated_amount = member.allocated_amount ? formatCurrency(member.allocated_amount, invoice.currency) : null;
+                          const percent = member.allocated_percentage || null;
+                          return (
+                            <div key={idx} className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-beveren-500 to-beveren-700 text-white flex items-center justify-center font-semibold text-xs">
+                                  {String(displayName).slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</div>
+                                  {contact_no && <div className="text-xs text-gray-500 dark:text-gray-400">{contact_no}</div>}
+                                </div>
+                              </div>
+                              {percent ? (
+                                <div className="text-sm text-gray-600 dark:text-gray-400">{percent}%</div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No sales team assigned.</p>
+                )}
               </div>
             </div>
           </div>

@@ -238,16 +238,6 @@ export default function LoginPage() {
             </button>
           </form>
         </div>
-
-        {/* Footer */}
-        <div className="text-center mt-6">
-          <p className="text-sm text-beveren-600">
-            Powered by{" "}
-            <a href="https://beverensoftware.com" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">
-              Beveren Software
-            </a>
-          </p>
-        </div>
       </div>
     </div>
   )

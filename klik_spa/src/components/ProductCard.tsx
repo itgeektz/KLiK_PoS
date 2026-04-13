@@ -1,15 +1,16 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import type { MenuItem } from "../../types"
-import ProductTooltip from "./ProductTooltip"
-import ProductDetailsModal from "./ProductDetailsModal"
+import { useState } from "react";
+import type { MenuItem } from "../../types";
+import ProductTooltip from "./ProductTooltip";
+import ProductDetailsModal from "./ProductDetailsModal";
+import { formatCurrencyWithSymbol } from "../utils/currency";
 
 interface ProductCardProps {
-  item: MenuItem
-  onAddToCart: (item: MenuItem) => void
-  isMobile?: boolean
-  scannerOnly?: boolean
+  item: MenuItem;
+  onAddToCart: (item: MenuItem) => void;
+  isMobile?: boolean;
+  scannerOnly?: boolean;
 }
 
 export default function ProductCard({
@@ -18,34 +19,37 @@ export default function ProductCard({
   isMobile = false,
   scannerOnly = false,
 }: ProductCardProps) {
-  const [showTooltip, setShowTooltip] = useState(false)
-  const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const isOutOfStock = item.available <= 0
-  const isDisabled = isOutOfStock || scannerOnly
-  const formattedPrice = `${item.currency_symbol}${item.price.toFixed(2)}`
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const isOutOfStock = item.available <= 0;
+  const isDisabled = isOutOfStock || scannerOnly;
+  const formattedPrice = formatCurrencyWithSymbol(
+    item.price,
+    item.currency_symbol,
+  );
 
   const handleModalOpen = () => {
-    setShowTooltip(false)
-    setShowDetailsModal(true)
-  }
+    setShowTooltip(false);
+    setShowDetailsModal(true);
+  };
 
   const handleModalClose = () => {
-    setShowDetailsModal(false)
-  }
+    setShowDetailsModal(false);
+  };
 
   return (
     <>
       <div
         className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-visible transition-all duration-200 relative flex flex-col ${
-          showTooltip ? "z-[60]" : "z-10"
+          showTooltip ? "z-[2]" : "z-1"
         } ${
           isDisabled
             ? "opacity-70 cursor-not-allowed"
             : "hover:shadow-lg hover:scale-105 cursor-pointer active:scale-95"
         } ${isMobile ? "touch-manipulation" : ""}`}
         onClick={(e) => {
-          if ((e.target as HTMLElement).closest("button")) return
-          if (!isDisabled) onAddToCart(item)
+          if ((e.target as HTMLElement).closest("button")) return;
+          if (!isDisabled) onAddToCart(item);
         }}
       >
         <div
@@ -56,9 +60,9 @@ export default function ProductCard({
         >
           <button
             onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              handleModalOpen()
+              e.preventDefault();
+              e.stopPropagation();
+              handleModalOpen();
             }}
             className="text-gray-600 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm hover:text-blue-500 rounded-full w-6 h-6 flex items-center justify-center text-xs border border-gray-200 dark:border-gray-600 shadow-sm transition-colors"
           >
@@ -70,7 +74,7 @@ export default function ProductCard({
               item={item}
               onClose={() => setShowTooltip(false)}
               onViewDetails={() => {
-                handleModalOpen()
+                handleModalOpen();
               }}
             />
           )}
@@ -150,5 +154,5 @@ export default function ProductCard({
         <ProductDetailsModal item={item} onClose={handleModalClose} />
       )}
     </>
-  )
+  );
 }

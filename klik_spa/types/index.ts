@@ -154,6 +154,13 @@ export interface SalesInvoice {
   total:number;
   taxes:[];
   owner:string;
+  sales_team: Array<{
+    sales_person: string;
+    contact_no?: string;
+    allocated_amount?: number;
+    allocated_percentage?: number;
+  }>;
+  tax_id: string;
 }
 
 
@@ -224,6 +231,7 @@ export interface Customer {
   customer_group:string
   customer_type:string
   phone: string
+  is_walkin: number
   address: {
     street: string
     city: string

@@ -21,6 +21,7 @@ export interface Customer {
   companyName?: string
   contactPerson?: string
   taxId?: string
+  is_walkin?: number
   industry?: string
   employeeCount?: string
   registrationScheme?: string

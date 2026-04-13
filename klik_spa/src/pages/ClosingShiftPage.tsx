@@ -997,7 +997,7 @@ export default function ClosingShiftPage() {
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
                 {Object.values(paymentStats).map((stat) => (
                   // @ts-expect-error just ignore for now
                   <div key={stat.name} className="flex items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">

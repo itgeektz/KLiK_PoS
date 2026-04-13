@@ -1783,7 +1783,6 @@ export default function OrderSummary({
                       {discountedTotal < originalTotal ? (
                         <div>
                           <p className="text-gray-400 line-through text-xs">
-                            {/* {currency_symbol}-{originalTotal.toFixed(2)} */}
                             {formatCurrencyWithSymbol(
                               originalTotal,
                               currency_symbol,
@@ -1794,7 +1793,6 @@ export default function OrderSummary({
                               isMobile ? "text-base" : "text-sm"
                             }`}
                           >
-                            {/* {currency_symbol}-{discountedTotal.toFixed(2)} */}
                             {formatCurrencyWithSymbol(
                               discountedTotal,
                               currency_symbol,
@@ -2045,7 +2043,11 @@ export default function OrderSummary({
                                 itemDiscount.discountAmount > 0 &&
                                 " + "}
                               {itemDiscount.discountAmount > 0 &&
-                                `${itemDiscount.discountAmount.toFixed(2)} off`}
+                                formatCurrencyWithSymbol(
+                                  itemDiscount.discountAmount,
+                                  currency_symbol
+                                )
+                              }
                             </span>
                             <span className="text-xs font-semibold text-green-800 dark:text-green-300">
                               Save {formatCurrencyWithSymbol(

@@ -26,7 +26,7 @@ import { usePOSDetails } from "../hooks/usePOSProfile";
 import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
 import { useCustomerPermission } from "../hooks/useCustomerPermission";
 import { useCartStore } from "../stores/cartStore";
-
+import { formatCurrencyWithSymbol } from "../utils/currency";
 
 interface OrderSummaryProps {
   cartItems: CartItem[];
@@ -47,7 +47,11 @@ interface QuantityInputProps {
   isMobile?: boolean;
 }
 
-const QuantityInput = ({ item, onUpdateQuantity, isMobile }: QuantityInputProps) => {
+const QuantityInput = ({
+  item,
+  onUpdateQuantity,
+  isMobile,
+}: QuantityInputProps) => {
   const [inputValue, setInputValue] = useState(item.quantity.toString());
   const [isEditing, setIsEditing] = useState(false);
 
@@ -108,10 +112,15 @@ interface UOMSelectFieldProps {
   selectedCustomer?: { id: string } | null;
 }
 
-const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSelectFieldProps) => {
-  const [availableUOMs, setAvailableUOMs] = useState<string[]>(['Nos']);
-  const [selectedUOM, setSelectedUOM] = useState<string>(item.uom || 'Nos'); //Mania: Local state for selected UOM
-  const [searchQuery, setSearchQuery] = useState<string>('');
+const UOMSelectField = ({
+  item,
+  onUOMChange,
+  isMobile,
+  selectedCustomer,
+}: UOMSelectFieldProps) => {
+  const [availableUOMs, setAvailableUOMs] = useState<string[]>(["Nos"]);
+  const [selectedUOM, setSelectedUOM] = useState<string>(item.uom || "Nos"); //Mania: Local state for selected UOM
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
 
   useEffect(() => {
@@ -120,12 +129,17 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
         // Use item_code if available, otherwise fallback to item.id
         const itemCode = item.item_code || item.id;
         if (itemCode) {
-          const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
-          const response = await fetch(`/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include'
-          });
+          const customerParam = selectedCustomer?.id
+            ? `&customer=${selectedCustomer.id}`
+            : "";
+          const response = await fetch(
+            `/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`,
+            {
+              method: "GET",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+            },
+          );
 
           if (response.ok) {
             const data = await response.json();
@@ -135,17 +149,17 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
               const uoms = data.message.uoms.map((uom: any) => uom.uom);
               setAvailableUOMs(uoms);
             } else {
-              setAvailableUOMs(['Nos']);
+              setAvailableUOMs(["Nos"]);
             }
           } else {
-            setAvailableUOMs(['Nos']);
+            setAvailableUOMs(["Nos"]);
           }
         } else {
-          setAvailableUOMs(['Nos']);
+          setAvailableUOMs(["Nos"]);
         }
       } catch (error) {
-        console.error('❌ Error loading item-specific UOMs:', error);
-        setAvailableUOMs(['Nos']);
+        console.error("❌ Error loading item-specific UOMs:", error);
+        setAvailableUOMs(["Nos"]);
       }
     };
 
@@ -154,72 +168,98 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
 
   // Sync local state with item UOM changes
   useEffect(() => {
-    setSelectedUOM(item.uom || 'Nos');
+    setSelectedUOM(item.uom || "Nos");
   }, [item.uom]);
 
   // Filter UOMs based on search query
-  const filteredUOMs = availableUOMs.filter(uom =>
-    uom.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredUOMs = availableUOMs.filter((uom) =>
+    uom.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const handleUOMSelect = async (newUOM: string) => {
     // Update local state immediately for UI responsiveness
     setSelectedUOM(newUOM);
     setIsDropdownOpen(false);
-    setSearchQuery('');
+    setSearchQuery("");
 
     // Update UOM and price using item UOMs and prices API
     try {
       // Use item_code if available, otherwise fallback to item.id
       const itemCode = item.item_code || item.id;
       if (itemCode) {
-        const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
-        const response = await fetch(`/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include'
-        });
+        const customerParam = selectedCustomer?.id
+          ? `&customer=${selectedCustomer.id}`
+          : "";
+        const response = await fetch(
+          `/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`,
+          {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+          },
+        );
 
         if (response.ok) {
           const data = await response.json();
 
           if (data?.message?.uoms) {
             //eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const selectedUOMData = data.message.uoms.find((uom: any) => uom.uom === newUOM);
+            const selectedUOMData = data.message.uoms.find(
+              (uom: any) => uom.uom === newUOM,
+            );
             if (selectedUOMData && selectedUOMData.price !== undefined) {
               console.log(`✅ Found UOM data for ${newUOM}:`, selectedUOMData);
               onUOMChange(item.id, newUOM, selectedUOMData.price);
             } else {
-              console.warn(`⚠️ UOM data not found for ${newUOM}. Available UOMs:`, data.message.uoms.map((u: any) => u.uom));
+              console.warn(
+                `⚠️ UOM data not found for ${newUOM}. Available UOMs:`,
+                data.message.uoms.map((u: any) => u.uom),
+              );
               // Fallback: try to calculate price using fetch_item_price API
               try {
                 const itemCode = item.item_code || item.id;
-                const customerParam = selectedCustomer?.id ? `&customer=${selectedCustomer.id}` : '';
-                const priceResponse = await fetch(`/api/method/klik_pos.api.item.item_price.get_item_price_for_customer?item_code=${itemCode}&uom=${encodeURIComponent(newUOM)}${customerParam}`, {
-                  method: 'GET',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'include'
-                });
+                const customerParam = selectedCustomer?.id
+                  ? `&customer=${selectedCustomer.id}`
+                  : "";
+                const priceResponse = await fetch(
+                  `/api/method/klik_pos.api.item.item_price.get_item_price_for_customer?item_code=${itemCode}&uom=${encodeURIComponent(newUOM)}${customerParam}`,
+                  {
+                    method: "GET",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                  },
+                );
                 if (priceResponse.ok) {
                   const priceData = await priceResponse.json();
-                  if (priceData?.message?.success && priceData.message.price > 0) {
-                    console.log(`✅ Got price from fallback API for ${newUOM}:`, priceData.message.price);
+                  if (
+                    priceData?.message?.success &&
+                    priceData.message.price > 0
+                  ) {
+                    console.log(
+                      `✅ Got price from fallback API for ${newUOM}:`,
+                      priceData.message.price,
+                    );
                     onUOMChange(item.id, newUOM, priceData.message.price);
                   } else {
-                    console.error(`❌ Fallback API returned invalid price for ${newUOM}`);
+                    console.error(
+                      `❌ Fallback API returned invalid price for ${newUOM}`,
+                    );
                   }
                 }
               } catch (fallbackError) {
-                console.error(`❌ Error in fallback price fetch for ${newUOM}:`, fallbackError);
+                console.error(
+                  `❌ Error in fallback price fetch for ${newUOM}:`,
+                  fallbackError,
+                );
               }
             }
           } else {
-            console.error('❌ No UOMs data in API response');
+            console.error("❌ No UOMs data in API response");
           }
         }
       }
     } catch (error) {
-      console.error('❌ Error fetching UOM pricing:', error);
+      console.error("❌ Error fetching UOM pricing:", error);
     }
   };
 
@@ -234,8 +274,18 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
         } px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-left flex items-center justify-between`}
       >
         <span>{selectedUOM}</span>
-        <svg className={`w-4 h-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        <svg
+          className={`w-4 h-4 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
         </svg>
       </button>
 
@@ -263,7 +313,9 @@ const UOMSelectField = ({ item, onUOMChange, isMobile, selectedCustomer }: UOMSe
                   type="button"
                   onClick={() => handleUOMSelect(uom)}
                   className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                    uom === selectedUOM ? 'bg-beveren-50 dark:bg-beveren-900/20 text-beveren-600 dark:text-beveren-400' : 'text-gray-900 dark:text-white'
+                    uom === selectedUOM
+                      ? "bg-beveren-50 dark:bg-beveren-900/20 text-beveren-600 dark:text-beveren-400"
+                      : "text-gray-900 dark:text-white"
                   }`}
                 >
                   {uom}
@@ -292,13 +344,22 @@ interface BatchSelectFieldProps {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const BatchSelectField = ({ itemId: _itemId, itemCode: _itemCode, options, value, onChange, isMobile }: BatchSelectFieldProps) => {
+const BatchSelectField = ({
+  itemId: _itemId,
+  itemCode: _itemCode,
+  options,
+  value,
+  onChange,
+  isMobile,
+}: BatchSelectFieldProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const filtered = options.filter(o => o.batch_id.toLowerCase().includes(query.toLowerCase()));
+  const filtered = options.filter((o) =>
+    o.batch_id.toLowerCase().includes(query.toLowerCase()),
+  );
 
   const handleSelect = (batchId: string) => {
-    const selectedQty = options.find(b => b.batch_id === batchId)?.qty || 0;
+    const selectedQty = options.find((b) => b.batch_id === batchId)?.qty || 0;
     onChange(batchId, selectedQty);
     setIsOpen(false);
     setQuery("");
@@ -312,7 +373,19 @@ const BatchSelectField = ({ itemId: _itemId, itemCode: _itemCode, options, value
         className={`w-full ${isMobile ? "text-xs" : "text-xs"} px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-left flex items-center justify-between`}
       >
         <span className="truncate">{value || "Select Batch"}</span>
-        <svg className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+        <svg
+          className={`w-3 h-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
       </button>
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-44 overflow-hidden">
@@ -327,17 +400,21 @@ const BatchSelectField = ({ itemId: _itemId, itemCode: _itemCode, options, value
             />
           </div>
           <div className="max-h-36 overflow-y-auto">
-            {filtered.length > 0 ? filtered.map((b) => (
-              <button
-                key={b.batch_id}
-                type="button"
-                onClick={() => handleSelect(b.batch_id)}
-                className={`w-full px-2 py-1 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${value === b.batch_id ? 'bg-beveren-50 dark:bg-beveren-900/20 text-beveren-600 dark:text-beveren-400' : 'text-gray-900 dark:text-white'}`}
-              >
-                {b.batch_id} - {b.qty}
-              </button>
-            )) : (
-              <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400">No matches</div>
+            {filtered.length > 0 ? (
+              filtered.map((b) => (
+                <button
+                  key={b.batch_id}
+                  type="button"
+                  onClick={() => handleSelect(b.batch_id)}
+                  className={`w-full px-2 py-1 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${value === b.batch_id ? "bg-beveren-50 dark:bg-beveren-900/20 text-beveren-600 dark:text-beveren-400" : "text-gray-900 dark:text-white"}`}
+                >
+                  {b.batch_id} - {b.qty}
+                </button>
+              ))
+            ) : (
+              <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400">
+                No matches
+              </div>
             )}
           </div>
         </div>
@@ -357,10 +434,19 @@ interface SerialSelectFieldProps {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const SerialSelectField = ({ itemId: _itemId, itemCode: _itemCode, options, value, onChange, isMobile }: SerialSelectFieldProps) => {
+const SerialSelectField = ({
+  itemId: _itemId,
+  itemCode: _itemCode,
+  options,
+  value,
+  onChange,
+  isMobile,
+}: SerialSelectFieldProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const filtered = options.filter(sn => sn.toLowerCase().includes(query.toLowerCase()));
+  const filtered = options.filter((sn) =>
+    sn.toLowerCase().includes(query.toLowerCase()),
+  );
 
   const handleSelect = (sn: string) => {
     onChange(sn);
@@ -376,7 +462,19 @@ const SerialSelectField = ({ itemId: _itemId, itemCode: _itemCode, options, valu
         className={`w-full ${isMobile ? "text-xs" : "text-xs"} px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-left flex items-center justify-between`}
       >
         <span className="truncate">{value || "Select Serial"}</span>
-        <svg className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+        <svg
+          className={`w-3 h-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
       </button>
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-44 overflow-hidden">
@@ -391,17 +489,21 @@ const SerialSelectField = ({ itemId: _itemId, itemCode: _itemCode, options, valu
             />
           </div>
           <div className="max-h-36 overflow-y-auto">
-            {filtered.length > 0 ? filtered.map((sn) => (
-              <button
-                key={sn}
-                type="button"
-                onClick={() => handleSelect(sn)}
-                className={`w-full px-2 py-1 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${value === sn ? 'bg-beveren-50 dark:bg-beveren-900/20 text-beveren-600 dark:text-beveren-400' : 'text-gray-900 dark:text-white'}`}
-              >
-                {sn}
-              </button>
-            )) : (
-              <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400">No matches</div>
+            {filtered.length > 0 ? (
+              filtered.map((sn) => (
+                <button
+                  key={sn}
+                  type="button"
+                  onClick={() => handleSelect(sn)}
+                  className={`w-full px-2 py-1 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${value === sn ? "bg-beveren-50 dark:bg-beveren-900/20 text-beveren-600 dark:text-beveren-400" : "text-gray-900 dark:text-white"}`}
+                >
+                  {sn}
+                </button>
+              ))
+            ) : (
+              <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400">
+                No matches
+              </div>
             )}
           </div>
         </div>
@@ -421,10 +523,16 @@ export default function OrderSummary({
   onRemoveCoupon,
   isMobile = false,
 }: OrderSummaryProps) {
-  const { selectedCustomer, setSelectedCustomer, updateUOM, updatePricesForCustomer } = useCartStore();
+  const {
+    selectedCustomer,
+    setSelectedCustomer,
+    updateUOM,
+    updatePricesForCustomer,
+  } = useCartStore();
 
   // Track if user has manually removed the default customer
-  const [userRemovedDefaultCustomer, setUserRemovedDefaultCustomer] = useState(false);
+  const [userRemovedDefaultCustomer, setUserRemovedDefaultCustomer] =
+    useState(false);
 
   // Track if this is the initial load to prevent price recalculation on page refresh
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -443,20 +551,36 @@ export default function OrderSummary({
     if (!isInitialLoad && selectedCustomer && cartItems.length > 0) {
       updatePricesForCustomer(selectedCustomer.id);
     }
-  }, [selectedCustomer?.id, cartItems.length, isInitialLoad, updatePricesForCustomer]);
+  }, [
+    selectedCustomer?.id,
+    cartItems.length,
+    isInitialLoad,
+    updatePricesForCustomer,
+  ]);
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-  const { customers, isLoading, refetch: refetchCustomers } = useCustomers(customerSearchQuery);
+  const {
+    customers,
+    isLoading,
+    refetch: refetchCustomers,
+  } = useCustomers(customerSearchQuery);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { refetch: _refetchProducts, refreshStockOnly, updateStockForItems: _updateStockForItems, updateBatchQuantitiesForItems } = useProducts();
+  const {
+    refetch: _refetchProducts,
+    refreshStockOnly,
+    updateStockForItems: _updateStockForItems,
+    updateBatchQuantitiesForItems,
+  } = useProducts();
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { posDetails, loading: _posLoading } = usePOSDetails();
   const { checkCustomerPermission } = useCustomerPermission();
 
   // Get customer statistics for the selected customer
-  const { statistics: customerStats } = useCustomerStatistics(selectedCustomer?.id || null);
+  const { statistics: customerStats } = useCustomerStatistics(
+    selectedCustomer?.id || null,
+  );
   const [prefilledCustomerName, setPrefilledCustomerName] = useState("");
   const [prefilledData, setPrefilledData] = useState<{
     name?: string;
@@ -467,19 +591,22 @@ export default function OrderSummary({
   const currency_symbol = posDetails?.currency_symbol;
 
   // UOM change handler
-  const handleUOMChange = useCallback((itemId: string, selectedUOM: string, newPrice: number) => {
-    const currentItem = cartItems.find(item => item.id === itemId);
-    if (currentItem) {
-      console.log(`  Before Update:`, {
-        name: currentItem.name,
-        uom: currentItem.uom,
-        price: currentItem.price,
-        quantity: currentItem.quantity
-      });
-    }
+  const handleUOMChange = useCallback(
+    (itemId: string, selectedUOM: string, newPrice: number) => {
+      const currentItem = cartItems.find((item) => item.id === itemId);
+      if (currentItem) {
+        console.log(`  Before Update:`, {
+          name: currentItem.name,
+          uom: currentItem.uom,
+          price: currentItem.price,
+          quantity: currentItem.quantity,
+        });
+      }
 
-    updateUOM(itemId, selectedUOM, newPrice);
-  }, [updateUOM, cartItems]);
+      updateUOM(itemId, selectedUOM, newPrice);
+    },
+    [updateUOM, cartItems],
+  );
 
   // State for item-level discounts and details
   const [itemDiscounts, setItemDiscounts] = useState<
@@ -500,9 +627,7 @@ export default function OrderSummary({
     Record<string, { batch_id: string; qty: number }[]>
   >({});
 
-  const [itemSerials, setItemSerials] = useState<
-    Record<string, string[]>
-  >({});
+  const [itemSerials, setItemSerials] = useState<Record<string, string[]>>({});
 
   // Pending pre-selections when item not yet in cart
   const [pendingPreselect, setPendingPreselect] = useState<
@@ -529,7 +654,7 @@ export default function OrderSummary({
     if (itemDiscount.discountAmount > 0) {
       discountedPrice = Math.max(
         0,
-        discountedPrice - itemDiscount.discountAmount
+        discountedPrice - itemDiscount.discountAmount,
       );
     }
 
@@ -552,14 +677,14 @@ export default function OrderSummary({
   // Calculate coupon discount
   const couponDiscount = appliedCoupons.reduce(
     (sum, coupon) => sum + coupon.value,
-    0
+    0,
   );
 
   // Calculate final total
   const total = Math.max(0, subtotal - couponDiscount);
 
   const handleCustomerSearchKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement>
+    e: React.KeyboardEvent<HTMLInputElement>,
   ) => {
     if (e.key === "Enter" && customerSearchQuery.trim() !== "") {
       // Check if there are no matching customers
@@ -614,7 +739,11 @@ export default function OrderSummary({
         setPrefilledCustomerName(trimmedValue);
         setShowAddCustomerModal(true);
         setShowCustomerDropdown(false);
-      } else if (filteredCustomers.length === 1 && !userRemovedDefaultCustomer && filteredCustomers[0]) {
+      } else if (
+        filteredCustomers.length === 1 &&
+        !userRemovedDefaultCustomer &&
+        filteredCustomers[0]
+      ) {
         handleCustomerSelect(filteredCustomers[0]);
       }
     }
@@ -624,7 +753,7 @@ export default function OrderSummary({
   const updateItemDiscount = (
     itemId: string,
     field: string,
-    value: number | string
+    value: number | string,
   ) => {
     setItemDiscounts((prev) => ({
       ...prev,
@@ -683,8 +812,8 @@ export default function OrderSummary({
               .includes(customerSearchQuery.toLowerCase()) ||
             customer.phone.includes(customerSearchQuery) ||
             customer.tags.some((tag) =>
-              tag.toLowerCase().includes(customerSearchQuery.toLowerCase())
-            )
+              tag.toLowerCase().includes(customerSearchQuery.toLowerCase()),
+            ),
         );
 
   const validateCustomer = () => {
@@ -702,12 +831,16 @@ export default function OrderSummary({
     setUserRemovedDefaultCustomer(false); // Reset flag when user explicitly selects a customer
   };
 
-  const handleSaveCustomer = async (newCustomer: Partial<Customer> & { customer_name?: string }) => {
+  const handleSaveCustomer = async (
+    newCustomer: Partial<Customer> & { customer_name?: string },
+  ) => {
     // Automatically select the newly created customer in the cart
     if (newCustomer && newCustomer.customer_name) {
       try {
         // Fetch the full customer data using the customer_name returned from backend
-        const response = await fetch(`/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(newCustomer.customer_name)}`);
+        const response = await fetch(
+          `/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(newCustomer.customer_name)}`,
+        );
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -721,28 +854,31 @@ export default function OrderSummary({
           const customerToSelect: Customer = {
             id: erpCustomer.name,
             name: erpCustomer.customer_name || erpCustomer.name,
-            email: erpCustomer.email_id || '',
-            phone: erpCustomer.mobile_no || '',
-            type: erpCustomer.customer_type === "Company" ? "company" : "individual",
+            email: erpCustomer.email_id || "",
+            phone: erpCustomer.mobile_no || "",
+            type:
+              erpCustomer.customer_type === "Company"
+                ? "company"
+                : "individual",
             address: {
-              street: '',
-              city: '',
-              state: '',
-              zipCode: '',
-              country: 'Saudi Arabia'
+              street: "",
+              city: "",
+              state: "",
+              zipCode: "",
+              country: "Saudi Arabia",
             },
             loyaltyPoints: erpCustomer.custom_loyalty_points || 0,
             totalSpent: erpCustomer.custom_total_spent || 0,
             totalOrders: erpCustomer.custom_total_orders || 0,
-            preferredPaymentMethod: 'Cash',
-            tags: erpCustomer.custom_tags?.split(',').filter(Boolean) || [],
-            status: erpCustomer.custom_status || 'active',
+            preferredPaymentMethod: "Cash",
+            tags: erpCustomer.custom_tags?.split(",").filter(Boolean) || [],
+            status: erpCustomer.custom_status || "active",
             is_walkin: erpCustomer.is_walkin,
-            createdAt: erpCustomer.creation || new Date().toISOString()
+            createdAt: erpCustomer.creation || new Date().toISOString(),
           };
 
           setSelectedCustomer(customerToSelect);
-          setCustomerSearchQuery(''); // Clear the search query
+          setCustomerSearchQuery(""); // Clear the search query
 
           // Also refresh the customers list to include the new customer
           if (refetchCustomers) {
@@ -750,33 +886,33 @@ export default function OrderSummary({
           }
         }
       } catch (error) {
-        console.error('Error fetching customer details:', error);
+        console.error("Error fetching customer details:", error);
         // Fallback: create a basic customer object from the returned data
         const customerToSelect: Customer = {
-          id: newCustomer.customer_name || '',
-          name: newCustomer.customer_name || '',
-          email: '',
-          phone: '',
-          type: 'individual',
+          id: newCustomer.customer_name || "",
+          name: newCustomer.customer_name || "",
+          email: "",
+          phone: "",
+          type: "individual",
           address: {
-            street: '',
-            city: '',
-            state: '',
-            zipCode: '',
-            country: 'Saudi Arabia'
+            street: "",
+            city: "",
+            state: "",
+            zipCode: "",
+            country: "Saudi Arabia",
           },
           loyaltyPoints: 0,
           totalSpent: 0,
           totalOrders: 0,
-          preferredPaymentMethod: 'Cash',
+          preferredPaymentMethod: "Cash",
           tags: [],
-          status: 'active',
+          status: "active",
           is_walkin: 0,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
         };
 
         setSelectedCustomer(customerToSelect);
-        setCustomerSearchQuery('');
+        setCustomerSearchQuery("");
       }
     }
 
@@ -787,7 +923,10 @@ export default function OrderSummary({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleCompletePayment = async (paymentData: any) => {
-    console.log("OrderSummary: Payment completed, invoice created - modal stays open for preview", paymentData);
+    console.log(
+      "OrderSummary: Payment completed, invoice created - modal stays open for preview",
+      paymentData,
+    );
     // Don't close modal or clear cart - let user see invoice preview
     // Cart will be cleared when modal is closed via "New Order" button
   };
@@ -799,7 +938,9 @@ export default function OrderSummary({
     if (paymentCompleted) {
       handleClearCart();
     } else {
-      console.log("OrderSummary: Payment was not completed - keeping cart items");
+      console.log(
+        "OrderSummary: Payment was not completed - keeping cart items",
+      );
     }
 
     // Refresh stock so cashier can see updated availability
@@ -812,12 +953,15 @@ export default function OrderSummary({
       }
 
       // Also update batch quantities for items that were in the cart
-      const cartItemCodes = cartItems.map(item => item.item_code || item.id);
+      const cartItemCodes = cartItems.map((item) => item.item_code || item.id);
       if (cartItemCodes.length > 0) {
         try {
           await updateBatchQuantitiesForItems(cartItemCodes);
         } catch (error) {
-          console.error("OrderSummary: Failed to update batch quantities:", error);
+          console.error(
+            "OrderSummary: Failed to update batch quantities:",
+            error,
+          );
         }
       }
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -850,7 +994,10 @@ export default function OrderSummary({
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("Error creating draft invoice:", error);
-      const errorMessage = extractErrorFromException(error, "Failed to create draft invoice");
+      const errorMessage = extractErrorFromException(
+        error,
+        "Failed to create draft invoice",
+      );
       toast.error(errorMessage);
     }
   };
@@ -888,16 +1035,18 @@ export default function OrderSummary({
   // Creates a fresh cart line for the same product (qty 1, no batch/serial/discount
   // pre-filled) so the cashier can pick a different batch, serial or UOM.
   const handleDuplicateItem = (item: CartItem) => {
-  //   const duplicatedItem: CartItem = {
-  //   ...item,
-  //   id: `${item.id}-${Date.now()}`, // unique id for the new line
-  //   quantity: 1,
-  // };
-  // addToCart(duplicatedItem); // or however your cart handles adding items
+    //   const duplicatedItem: CartItem = {
+    //   ...item,
+    //   id: `${item.id}-${Date.now()}`, // unique id for the new line
+    //   quantity: 1,
+    // };
+    // addToCart(duplicatedItem); // or however your cart handles adding items
     if (onDuplicateItem) {
       // Let the parent add the line via its own cart logic (generates a new unique id)
       onDuplicateItem(item);
-      toast.info(`Duplicated "${item.item_code}" — set batch / serial / UOM as needed`);
+      toast.info(
+        `Duplicated "${item.item_code}" — set batch / serial / UOM as needed`,
+      );
     } else {
       toast.warning("Duplicate is not supported in this context");
     }
@@ -938,49 +1087,68 @@ export default function OrderSummary({
 
   // Set default customer from POS profile when available
   useEffect(() => {
-    if (posDetails?.default_customer && !selectedCustomer && !_posLoading && !userRemovedDefaultCustomer) {
+    if (
+      posDetails?.default_customer &&
+      !selectedCustomer &&
+      !_posLoading &&
+      !userRemovedDefaultCustomer
+    ) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const defaultCustomer = posDetails.default_customer as any;
 
       // Use the new API to check if user has permission to access the default customer
-      checkCustomerPermission(defaultCustomer.id).then((result) => {
-        if (result.success && result.has_permission) {
-          // Transform the default customer data to match the Customer interface
-          const transformedCustomer: Customer = {
-            id: defaultCustomer.id,
-            name: defaultCustomer.name,
-            email: defaultCustomer.email || '',
-            phone: defaultCustomer.phone || '',
-            type: (defaultCustomer.customer_type === "Company" ? "company" : "individual") as 'individual' | 'company',
-            address: {
-              street: "",
-              city: "",
-              state: "",
-              zipCode: "",
-              country: "Saudi Arabia",
-            },
-            loyaltyPoints: 0,
-            totalSpent: 0,
-            totalOrders: 0,
-            preferredPaymentMethod: "Cash" as const,
-            notes: "",
-            tags: [],
-            status: "active",
-            createdAt: new Date().toISOString(),
-            defaultCurrency: defaultCustomer.default_currency || undefined,
-          };
+      checkCustomerPermission(defaultCustomer.id)
+        .then((result) => {
+          if (result.success && result.has_permission) {
+            // Transform the default customer data to match the Customer interface
+            const transformedCustomer: Customer = {
+              id: defaultCustomer.id,
+              name: defaultCustomer.name,
+              email: defaultCustomer.email || "",
+              phone: defaultCustomer.phone || "",
+              type: (defaultCustomer.customer_type === "Company"
+                ? "company"
+                : "individual") as "individual" | "company",
+              address: {
+                street: "",
+                city: "",
+                state: "",
+                zipCode: "",
+                country: "Saudi Arabia",
+              },
+              loyaltyPoints: 0,
+              totalSpent: 0,
+              totalOrders: 0,
+              preferredPaymentMethod: "Cash" as const,
+              notes: "",
+              tags: [],
+              status: "active",
+              createdAt: new Date().toISOString(),
+              defaultCurrency: defaultCustomer.default_currency || undefined,
+            };
 
-          setSelectedCustomer(transformedCustomer);
-          setCustomerSearchQuery(transformedCustomer.name);
-          setShowCustomerDropdown(false);
-        } else {
-          console.log("User does not have permission to access default customer:", defaultCustomer.id, result);
-        }
-      }).catch((error) => {
-        console.error("Error checking default customer permission:", error);
-      });
+            setSelectedCustomer(transformedCustomer);
+            setCustomerSearchQuery(transformedCustomer.name);
+            setShowCustomerDropdown(false);
+          } else {
+            console.log(
+              "User does not have permission to access default customer:",
+              defaultCustomer.id,
+              result,
+            );
+          }
+        })
+        .catch((error) => {
+          console.error("Error checking default customer permission:", error);
+        });
     }
-  }, [posDetails, selectedCustomer, _posLoading, userRemovedDefaultCustomer, checkCustomerPermission]);
+  }, [
+    posDetails,
+    selectedCustomer,
+    _posLoading,
+    userRemovedDefaultCustomer,
+    checkCustomerPermission,
+  ]);
 
   useEffect(() => {
     const fetchAndSetInfo = async () => {
@@ -989,7 +1157,7 @@ export default function OrderSummary({
 
       for (const item of cartItems) {
         const key = item.item_code || item.id;
-        if (key && key !== 'undefined') {
+        if (key && key !== "undefined") {
           if (!newBatches[key]) {
             try {
               const batches = await getBatches(item.id);
@@ -1007,7 +1175,9 @@ export default function OrderSummary({
             }
           }
         } else {
-          console.log(`OrderSummary: Skipping initial info loading for key "${key}"`);
+          console.log(
+            `OrderSummary: Skipping initial info loading for key "${key}"`,
+          );
         }
       }
 
@@ -1025,21 +1195,25 @@ export default function OrderSummary({
     const handleBatchUpdate = (event: CustomEvent) => {
       const { updatedItems } = event.detail;
 
-      setItemBatches(prevBatches => {
+      setItemBatches((prevBatches) => {
         const newBatches = { ...prevBatches };
 
         //eslint-disable-next-line @typescript-eslint/no-explicit-any
-        updatedItems.forEach(({ itemCode, batches }: { itemCode: string; batches: any[] }) => {
-          if (itemCode && itemCode !== 'undefined') {
-            newBatches[itemCode] = batches;
-          } else {
-            console.log(`OrderSummary: Skipping invalid itemCode: "${itemCode}"`);
-          }
-        });
+        updatedItems.forEach(
+          ({ itemCode, batches }: { itemCode: string; batches: any[] }) => {
+            if (itemCode && itemCode !== "undefined") {
+              newBatches[itemCode] = batches;
+            } else {
+              console.log(
+                `OrderSummary: Skipping invalid itemCode: "${itemCode}"`,
+              );
+            }
+          },
+        );
 
         // Remove any undefined keys
-        if (newBatches['undefined'] !== undefined) {
-          delete newBatches['undefined'];
+        if (newBatches["undefined"] !== undefined) {
+          delete newBatches["undefined"];
         }
         const undefinedKey = undefined as unknown as string;
         if (newBatches[undefinedKey] !== undefined) {
@@ -1050,112 +1224,170 @@ export default function OrderSummary({
       });
     };
 
-    window.addEventListener('batchQuantitiesUpdated', handleBatchUpdate as EventListener);
+    window.addEventListener(
+      "batchQuantitiesUpdated",
+      handleBatchUpdate as EventListener,
+    );
 
     // Listen for preselection from search (batch/serial)
     const handleSetBatch = (event: CustomEvent) => {
-      const { itemCode, batchId } = event.detail as { itemCode: string; batchId: string };
-      const item = cartItems.find(ci => (ci.item_code || ci.id) === itemCode)
+      const { itemCode, batchId } = event.detail as {
+        itemCode: string;
+        batchId: string;
+      };
+      const item = cartItems.find((ci) => (ci.item_code || ci.id) === itemCode);
       if (item) {
-        const selectedQty = itemBatches[item.item_code || item.id]?.find(b => b.batch_id === batchId)?.qty || 0
-        setItemDiscounts(prev => ({
+        const selectedQty =
+          itemBatches[item.item_code || item.id]?.find(
+            (b) => b.batch_id === batchId,
+          )?.qty || 0;
+        setItemDiscounts((prev) => ({
           ...prev,
           [item.id]: {
-            ...(prev[item.id] || { discountPercentage: 0, discountAmount: 0, batchNumber: '', serialNumber: '', availableQuantity: 0 }),
-            batchNumber: batchId || '',
+            ...(prev[item.id] || {
+              discountPercentage: 0,
+              discountAmount: 0,
+              batchNumber: "",
+              serialNumber: "",
+              availableQuantity: 0,
+            }),
+            batchNumber: batchId || "",
             availableQuantity: selectedQty,
-          }
-        }))
+          },
+        }));
       } else {
         // Save pending, to be applied when item appears in cart
-        setPendingPreselect(prev => ({
+        setPendingPreselect((prev) => ({
           ...prev,
-          [itemCode]: { ...(prev[itemCode] || {}), batchId }
-        }))
+          [itemCode]: { ...(prev[itemCode] || {}), batchId },
+        }));
       }
-    }
+    };
 
     const handleSetSerial = (event: CustomEvent) => {
-      const { itemCode, serialNo } = event.detail as { itemCode: string; serialNo: string };
-      const item = cartItems.find(ci => (ci.item_code || ci.id) === itemCode)
+      const { itemCode, serialNo } = event.detail as {
+        itemCode: string;
+        serialNo: string;
+      };
+      const item = cartItems.find((ci) => (ci.item_code || ci.id) === itemCode);
       if (item) {
-        setItemDiscounts(prev => ({
+        setItemDiscounts((prev) => ({
           ...prev,
           [item.id]: {
-            ...(prev[item.id] || { discountPercentage: 0, discountAmount: 0, batchNumber: '', serialNumber: '', availableQuantity: 0 }),
-            serialNumber: serialNo || '',
-          }
-        }))
+            ...(prev[item.id] || {
+              discountPercentage: 0,
+              discountAmount: 0,
+              batchNumber: "",
+              serialNumber: "",
+              availableQuantity: 0,
+            }),
+            serialNumber: serialNo || "",
+          },
+        }));
         // Ensure the serial exists in options for visibility; if not, inject it
-        setItemSerials(prev => {
-          const key = item.item_code || item.id
-          const existing = new Set(prev[key] || [])
+        setItemSerials((prev) => {
+          const key = item.item_code || item.id;
+          const existing = new Set(prev[key] || []);
           if (!existing.has(serialNo)) {
-            return { ...prev, [key]: [...existing, serialNo] as string[] }
+            return { ...prev, [key]: [...existing, serialNo] as string[] };
           }
-          return prev
-        })
+          return prev;
+        });
       } else {
         // Save pending, to be applied when item appears in cart
-        setPendingPreselect(prev => ({
+        setPendingPreselect((prev) => ({
           ...prev,
-          [itemCode]: { ...(prev[itemCode] || {}), serialNo }
-        }))
+          [itemCode]: { ...(prev[itemCode] || {}), serialNo },
+        }));
       }
-    }
+    };
 
-    window.addEventListener('cart:setBatchForItem', handleSetBatch as EventListener)
-    window.addEventListener('cart:setSerialForItem', handleSetSerial as EventListener)
+    window.addEventListener(
+      "cart:setBatchForItem",
+      handleSetBatch as EventListener,
+    );
+    window.addEventListener(
+      "cart:setSerialForItem",
+      handleSetSerial as EventListener,
+    );
 
     return () => {
-      window.removeEventListener('batchQuantitiesUpdated', handleBatchUpdate as EventListener);
-      window.removeEventListener('cart:setBatchForItem', handleSetBatch as EventListener)
-      window.removeEventListener('cart:setSerialForItem', handleSetSerial as EventListener)
+      window.removeEventListener(
+        "batchQuantitiesUpdated",
+        handleBatchUpdate as EventListener,
+      );
+      window.removeEventListener(
+        "cart:setBatchForItem",
+        handleSetBatch as EventListener,
+      );
+      window.removeEventListener(
+        "cart:setSerialForItem",
+        handleSetSerial as EventListener,
+      );
     };
   }, [cartItems, itemBatches]);
 
   // Apply any pending pre-selections when cart items change
   useEffect(() => {
-    if (!cartItems.length) return
-    const nextPending = { ...pendingPreselect }
-    cartItems.forEach(item => {
-      const key = item.item_code || item.id
-      const pending = nextPending[key]
+    if (!cartItems.length) return;
+    const nextPending = { ...pendingPreselect };
+    cartItems.forEach((item) => {
+      const key = item.item_code || item.id;
+      const pending = nextPending[key];
       if (pending) {
         if (pending.batchId) {
-          const selectedQty = itemBatches[key]?.find(b => b.batch_id === pending.batchId)?.qty || 0
-          setItemDiscounts(prev => ({
+          const selectedQty =
+            itemBatches[key]?.find((b) => b.batch_id === pending.batchId)
+              ?.qty || 0;
+          setItemDiscounts((prev) => ({
             ...prev,
             [item.id]: {
-              ...(prev[item.id] || { discountPercentage: 0, discountAmount: 0, batchNumber: '', serialNumber: '', availableQuantity: 0 }),
-              batchNumber: pending.batchId || '',
+              ...(prev[item.id] || {
+                discountPercentage: 0,
+                discountAmount: 0,
+                batchNumber: "",
+                serialNumber: "",
+                availableQuantity: 0,
+              }),
+              batchNumber: pending.batchId || "",
               availableQuantity: selectedQty,
-            }
-          }))
+            },
+          }));
         }
         if (pending.serialNo) {
-          setItemDiscounts(prev => ({
+          setItemDiscounts((prev) => ({
             ...prev,
             [item.id]: {
-              ...(prev[item.id] || { discountPercentage: 0, discountAmount: 0, batchNumber: '', serialNumber: '', availableQuantity: 0 }),
-              serialNumber: pending.serialNo || '',
-            }
-          }))
-          setItemSerials(prev => {
-            const existing = new Set(prev[key] || [])
+              ...(prev[item.id] || {
+                discountPercentage: 0,
+                discountAmount: 0,
+                batchNumber: "",
+                serialNumber: "",
+                availableQuantity: 0,
+              }),
+              serialNumber: pending.serialNo || "",
+            },
+          }));
+          setItemSerials((prev) => {
+            const existing = new Set(prev[key] || []);
             if (!existing.has(pending.serialNo!)) {
-              return { ...prev, [key]: [...existing, pending.serialNo!] as string[] }
+              return {
+                ...prev,
+                [key]: [...existing, pending.serialNo!] as string[],
+              };
             }
-            return prev
-          })
+            return prev;
+          });
         }
-        delete nextPending[key]
+        delete nextPending[key];
       }
-    })
-    if (Object.keys(nextPending).length !== Object.keys(pendingPreselect).length) {
-      setPendingPreselect(nextPending)
+    });
+    if (
+      Object.keys(nextPending).length !== Object.keys(pendingPreselect).length
+    ) {
+      setPendingPreselect(nextPending);
     }
-  }, [cartItems, itemBatches, pendingPreselect])
+  }, [cartItems, itemBatches, pendingPreselect]);
 
   return (
     <div
@@ -1202,7 +1434,7 @@ export default function OrderSummary({
                               {customer.name}
                             </div>
                             <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                               {customer.phone} • {customer.email}
+                              {customer.phone} • {customer.email}
                             </div>
                           </div>
                         </div>
@@ -1232,18 +1464,28 @@ export default function OrderSummary({
                         {selectedCustomer?.name}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">
-                        {selectedCustomer.phone && selectedCustomer.phone !== "N/A" && selectedCustomer.phone.trim() !== "" && (
-                          <span>{selectedCustomer.phone}</span>
-                        )}
-                        {selectedCustomer.phone && selectedCustomer.phone !== "N/A" && selectedCustomer.phone.trim() !== "" && (customerStats?.total_orders || 0) > 0 && (
-                          <span className="mx-2">•</span>
-                        )}
+                        {selectedCustomer.phone &&
+                          selectedCustomer.phone !== "N/A" &&
+                          selectedCustomer.phone.trim() !== "" && (
+                            <span>{selectedCustomer.phone}</span>
+                          )}
+                        {selectedCustomer.phone &&
+                          selectedCustomer.phone !== "N/A" &&
+                          selectedCustomer.phone.trim() !== "" &&
+                          (customerStats?.total_orders || 0) > 0 && (
+                            <span className="mx-2">•</span>
+                          )}
                         {(customerStats?.total_orders || 0) > 0 && (
                           <span>{customerStats?.total_orders || 0} orders</span>
                         )}
-                        {(!selectedCustomer.phone || selectedCustomer.phone === "N/A" || selectedCustomer.phone.trim() === "") && (customerStats?.total_orders || 0) === 0 && (
-                          <span className="text-gray-400 italic">No additional info</span>
-                        )}
+                        {(!selectedCustomer.phone ||
+                          selectedCustomer.phone === "N/A" ||
+                          selectedCustomer.phone.trim() === "") &&
+                          (customerStats?.total_orders || 0) === 0 && (
+                            <span className="text-gray-400 italic">
+                              No additional info
+                            </span>
+                          )}
                       </div>
                     </div>
                   </div>
@@ -1325,18 +1567,28 @@ export default function OrderSummary({
                       {selectedCustomer?.name}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">
-                      {selectedCustomer.phone && selectedCustomer.phone !== "N/A" && selectedCustomer.phone.trim() !== "" && (
-                        <span>{selectedCustomer.phone}</span>
-                      )}
-                      {selectedCustomer.phone && selectedCustomer.phone !== "N/A" && selectedCustomer.phone.trim() !== "" && (customerStats?.total_orders || 0) > 0 && (
-                        <span className="mx-2">•</span>
-                      )}
+                      {selectedCustomer.phone &&
+                        selectedCustomer.phone !== "N/A" &&
+                        selectedCustomer.phone.trim() !== "" && (
+                          <span>{selectedCustomer.phone}</span>
+                        )}
+                      {selectedCustomer.phone &&
+                        selectedCustomer.phone !== "N/A" &&
+                        selectedCustomer.phone.trim() !== "" &&
+                        (customerStats?.total_orders || 0) > 0 && (
+                          <span className="mx-2">•</span>
+                        )}
                       {(customerStats?.total_orders || 0) > 0 && (
                         <span>{customerStats?.total_orders || 0} orders</span>
                       )}
-                      {(!selectedCustomer.phone || selectedCustomer.phone === "N/A" || selectedCustomer.phone.trim() === "") && (customerStats?.total_orders || 0) === 0 && (
-                        <span className="text-gray-400 italic">No additional info</span>
-                      )}
+                      {(!selectedCustomer.phone ||
+                        selectedCustomer.phone === "N/A" ||
+                        selectedCustomer.phone.trim() === "") &&
+                        (customerStats?.total_orders || 0) === 0 && (
+                          <span className="text-gray-400 italic">
+                            No additional info
+                          </span>
+                        )}
                     </div>
                   </div>
                 </div>
@@ -1465,19 +1717,25 @@ export default function OrderSummary({
                         {discountedPrice < item.price ? (
                           <div className="flex items-center space-x-2">
                             <span className="text-gray-400 line-through text-xs">
-                              {currency_symbol}
-                              {item.price.toFixed(2)}
+                              {formatCurrencyWithSymbol(
+                                item.price,
+                                currency_symbol,
+                              )}
                             </span>
 
                             <span className="text-beveren-600 dark:text-beveren-400 font-semibold">
-                              {currency_symbol}
-                              {discountedPrice.toFixed(2)}
+                              {formatCurrencyWithSymbol(
+                                discountedPrice,
+                                currency_symbol,
+                              )}
                             </span>
                           </div>
                         ) : (
                           <div className="text-beveren-600 dark:text-beveren-400 font-semibold">
-                            {currency_symbol}
-                            {item.price.toFixed(2)}
+                            {formatCurrencyWithSymbol(
+                              item.price,
+                              currency_symbol,
+                            )}
                           </div>
                         )}
                       </div>
@@ -1513,7 +1771,10 @@ export default function OrderSummary({
                           isMobile ? "w-8 h-8" : "w-7 h-7"
                         } rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors`}
                       >
-                        <Plus size={isMobile ? 16 : 14} className="text-blue-600 dark:text-blue-400" />
+                        <Plus
+                          size={isMobile ? 16 : 14}
+                          className="text-blue-600 dark:text-blue-400"
+                        />
                       </button>
                     </div>
 
@@ -1522,16 +1783,22 @@ export default function OrderSummary({
                       {discountedTotal < originalTotal ? (
                         <div>
                           <p className="text-gray-400 line-through text-xs">
-                            {currency_symbol}
-                            {originalTotal.toFixed(2)}
+                            {/* {currency_symbol}-{originalTotal.toFixed(2)} */}
+                            {formatCurrencyWithSymbol(
+                              originalTotal,
+                              currency_symbol,
+                            )}
                           </p>
                           <p
                             className={`text-beveren-600 dark:text-beveren-400 font-semibold ${
                               isMobile ? "text-base" : "text-sm"
                             }`}
                           >
-                            {currency_symbol}
-                            {discountedTotal.toFixed(2)}
+                            {/* {currency_symbol}-{discountedTotal.toFixed(2)} */}
+                            {formatCurrencyWithSymbol(
+                              discountedTotal,
+                              currency_symbol,
+                            )}
                           </p>
                         </div>
                       ) : (
@@ -1540,8 +1807,7 @@ export default function OrderSummary({
                             isMobile ? "text-base" : "text-sm"
                           }`}
                         >
-                          {currency_symbol}
-                          {discountedTotal.toFixed(2)}
+                          {formatCurrencyWithSymbol(amount, currency_symbol)}
                         </p>
                       )}
                     </div>
@@ -1575,7 +1841,9 @@ export default function OrderSummary({
                         {/* Row 1: Quantity | UOM */}
                         <div className="grid grid-cols-2 gap-4 mb-4">
                           <div>
-                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                            <label
+                              className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
+                            >
                               Quantity
                             </label>
                             <QuantityInput
@@ -1585,32 +1853,52 @@ export default function OrderSummary({
                             />
                           </div>
                           <div>
-                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                            <label
+                              className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
+                            >
                               UOM
                             </label>
-                            <UOMSelectField item={item} onUOMChange={handleUOMChange} isMobile={isMobile} selectedCustomer={selectedCustomer} />
+                            <UOMSelectField
+                              item={item}
+                              onUOMChange={handleUOMChange}
+                              isMobile={isMobile}
+                              selectedCustomer={selectedCustomer}
+                            />
                           </div>
                         </div>
 
                         {/* Row 2: Rate | Amount (readonly) */}
                         <div className="grid grid-cols-2 gap-4 mb-4">
                           <div>
-                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                            <label
+                              className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
+                            >
                               Rate
                             </label>
                             <input
                               type="number"
                               min="0"
                               step="0.01"
-                              value={itemDiscount.customRate !== undefined ? itemDiscount.customRate : item.price}
-                              onChange={(e) => handleCustomRateChange(item, parseFloat(e.target.value) || 0)}
+                              value={
+                                itemDiscount.customRate !== undefined
+                                  ? itemDiscount.customRate
+                                  : item.price
+                              }
+                              onChange={(e) =>
+                                handleCustomRateChange(
+                                  item,
+                                  parseFloat(e.target.value) || 0,
+                                )
+                              }
                               readOnly={!posDetails?.allow_rate_change}
                               placeholder="Rate"
                               className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
                             />
                           </div>
                           <div>
-                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                            <label
+                              className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
+                            >
                               Amount
                             </label>
                             <input
@@ -1626,7 +1914,9 @@ export default function OrderSummary({
                         {/* Row 3: Discount Amount | Discount (%) */}
                         <div className="grid grid-cols-2 gap-4 mb-4">
                           <div>
-                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                            <label
+                              className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
+                            >
                               Discount Amount
                             </label>
                             <input
@@ -1638,7 +1928,7 @@ export default function OrderSummary({
                                 updateItemDiscount(
                                   item.id,
                                   "discountAmount",
-                                  parseFloat(e.target.value) || 0
+                                  parseFloat(e.target.value) || 0,
                                 )
                               }
                               readOnly={!posDetails?.allow_discount_change}
@@ -1647,7 +1937,9 @@ export default function OrderSummary({
                             />
                           </div>
                           <div>
-                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                            <label
+                              className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
+                            >
                               Discount (%)
                             </label>
                             <input
@@ -1660,7 +1952,7 @@ export default function OrderSummary({
                                 updateItemDiscount(
                                   item.id,
                                   "discountPercentage",
-                                  parseFloat(e.target.value) || 0
+                                  parseFloat(e.target.value) || 0,
                                 )
                               }
                               readOnly={!posDetails?.allow_discount_change}
@@ -1673,31 +1965,49 @@ export default function OrderSummary({
                         {/* Row 4: Batch | Serial No */}
                         <div className="grid grid-cols-2 gap-4 mb-4">
                           <div>
-                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                            <label
+                              className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
+                            >
                               Batch
                             </label>
                             <BatchSelectField
                               itemId={item.id}
                               itemCode={item.item_code || item.id}
-                              options={itemBatches[item.item_code || item.id] || []}
+                              options={
+                                itemBatches[item.item_code || item.id] || []
+                              }
                               value={itemDiscount.batchNumber || ""}
                               onChange={(selectedBatch, selectedQty) => {
-                                updateItemDiscount(item.id, "batchNumber", selectedBatch)
-                                updateItemDiscount(item.id, "availableQuantity", selectedQty)
+                                updateItemDiscount(
+                                  item.id,
+                                  "batchNumber",
+                                  selectedBatch,
+                                );
+                                updateItemDiscount(
+                                  item.id,
+                                  "availableQuantity",
+                                  selectedQty,
+                                );
                               }}
                               isMobile={isMobile}
                             />
                           </div>
                           <div>
-                            <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                            <label
+                              className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
+                            >
                               Serial No
                             </label>
                             <SerialSelectField
                               itemId={item.id}
                               itemCode={item.item_code || item.id}
-                              options={itemSerials[item.item_code || item.id] || []}
+                              options={
+                                itemSerials[item.item_code || item.id] || []
+                              }
                               value={itemDiscount.serialNumber || ""}
-                              onChange={(sn) => updateItemDiscount(item.id, "serialNumber", sn)}
+                              onChange={(sn) =>
+                                updateItemDiscount(item.id, "serialNumber", sn)
+                              }
                               isMobile={isMobile}
                             />
                           </div>
@@ -1738,13 +2048,14 @@ export default function OrderSummary({
                                 `${itemDiscount.discountAmount.toFixed(2)} off`}
                             </span>
                             <span className="text-xs font-semibold text-green-800 dark:text-green-300">
-                              Save $
-                              {(originalTotal - discountedTotal).toFixed(2)}
+                              Save {formatCurrencyWithSymbol(
+                                originalTotal - discountedTotal,
+                                currency_symbol,
+                              )}
                             </span>
                           </div>
                         </div>
                       )}
-
                     </div>
                   )}
                 </div>
@@ -1763,7 +2074,6 @@ export default function OrderSummary({
               : "p-4 border-t border-gray-100 dark:border-gray-700"
           } space-y-3`}
         >
-
           {/* Action Buttons */}
           <div className={`grid grid-cols-2 gap-3 ${isMobile ? "mb-3" : ""}`}>
             <button

@@ -4,6 +4,7 @@ import erpnext
 import frappe
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from frappe import _
+from frappe.exceptions import ValidationError
 from frappe.utils import flt
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
@@ -12,6 +13,10 @@ from klik_pos.klik_pos.utils import get_current_pos_profile
 _cached_company_data = {}
 _cached_customer_data = {}
 _cached_item_accounts = {}
+
+
+class PartialPaymentValidationError(ValidationError):
+	pass
 
 
 def get_current_pos_opening_entry():
@@ -1667,6 +1672,25 @@ def get_writeoff_account():
 
 
 class CustomSalesInvoice(SalesInvoice):
+	def before_submit(self):
+		self.validate_full_payment()
+
+	def validate_full_payment(self):
+		if not self.pos_profile or getattr(self, "is_return", 0):
+			return
+
+		allow_partial_payment = frappe.db.get_value(
+			"POS Profile", self.pos_profile, "allow_partial_payment"
+		)
+		invoice_total = flt(self.rounded_total) or flt(self.grand_total)
+		paid_amount = flt(self.paid_amount)
+
+		if not allow_partial_payment and paid_amount < invoice_total:
+			frappe.throw(
+				msg=_("Partial Payment in POS Transactions are not allowed."),
+				exc=PartialPaymentValidationError,
+			)
+
 	def get_gl_entries(self, warehouse_account=None):
 		from erpnext.accounts.general_ledger import merge_similar_entries
 

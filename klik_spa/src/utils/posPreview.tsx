@@ -50,7 +50,7 @@ export default function PrintPreview({ invoice }: PrintPreviewProps) {
   if (loading) return <p>Loading Print Preview...</p>;
 
   return (
-    <div className="print-preview-container p-4 bg-white shadow overflow-auto max-h-[90vh]">
+    <div className="print-preview-container p-4 bg-white text-gray-900 dark:bg-gray-800 dark:text-white shadow overflow-auto max-h-[90vh]">
       <style dangerouslySetInnerHTML={{ __html: style }} />
       <div
         className="print-preview-content"

@@ -9,7 +9,11 @@ from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rul
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
-from .item_price import fetch_item_price, _get_uom_conversion_factor
+from .item_price import (
+    fetch_item_price,
+    _get_uom_conversion_factor,
+    get_price_list_with_customer_priority,
+)
 from ..sql_builder import apply_sql_permissions
 
 
@@ -46,12 +50,13 @@ def _parse_cart_items(cart_items):
 def _build_pricing_context(customer=None):
     pos_profile = get_current_pos_profile()
     company = pos_profile.company if pos_profile else frappe.defaults.get_user_default("Company")
+    resolved_price_list = get_price_list_with_customer_priority(customer)
 
     context = {
         "pos_profile": pos_profile,
         "company": company,
         "warehouse": pos_profile.warehouse if pos_profile else None,
-        "price_list": pos_profile.selling_price_list if pos_profile else None,
+        "price_list": resolved_price_list,
         "currency": frappe.get_cached_value("Company", company, "default_currency") or "SAR",
         "customer": customer,
         "customer_group": None,

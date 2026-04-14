@@ -8,6 +8,7 @@ from frappe.exceptions import ValidationError
 from frappe.utils import flt
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
+from .item.item_price import get_price_list_with_customer_priority
 
 # Performance optimization: Cache frequently accessed data
 _cached_company_data = {}
@@ -409,6 +410,7 @@ def validate_checkout_invoice(data):
 			roundoff_amount,
 			delivery_personnel,
 			is_credit_sale,
+			allow_partial_payment,
 			due_date,
 			salesperson,
 			tax_id,
@@ -576,6 +578,7 @@ def create_and_submit_invoice(data):
 			roundoff_amount,
 			delivery_personnel,
 			is_credit_sale,
+			allow_partial_payment,
 			due_date,
 			salesperson,
 			tax_id,
@@ -599,6 +602,7 @@ def create_and_submit_invoice(data):
 			include_payments=True,
 			delivery_personnel=delivery_personnel,
 			is_credit_sale=is_credit_sale,
+			allow_partial_payment=allow_partial_payment,
 			due_date=due_date,
 			salesperson=salesperson,
    		tax_id=tax_id,
@@ -606,7 +610,7 @@ def create_and_submit_invoice(data):
 
 		doc.base_paid_amount = amount_paid
 		doc.paid_amount = amount_paid
-		doc.outstanding_amount = 0
+		doc.outstanding_amount = max(flt(doc.grand_total) - flt(amount_paid), 0)
 
 		# Save then submit; if submit fails (e.g. negative stock), delete the draft and return error
 		# (do not re-raise: Frappe would rollback the transaction and undo the delete)
@@ -682,6 +686,7 @@ def create_draft_invoice(data):
 			roundoff_amount,
 			delivery_personnel,
 			is_credit_sale,
+			allow_partial_payment,
 			due_date,
 			salesperson,
 			tax_id,
@@ -697,6 +702,7 @@ def create_draft_invoice(data):
 			include_payments=True,
 			delivery_personnel=delivery_personnel,
 			is_credit_sale=is_credit_sale,
+			allow_partial_payment=allow_partial_payment,
 			due_date=due_date,
 			salesperson=salesperson,
 			tax_id=tax_id,
@@ -724,6 +730,9 @@ def parse_invoice_data(data):
 	items = []
 	item_discounts = data.get("itemDiscounts", {})
 	is_credit_sale = _as_bool(data.get("isCreditSale") or data.get("is_credit_sale"))
+	allow_partial_payment = _as_bool(
+		data.get("allowPartialPayment") or data.get("allow_partial_payment")
+	)
 	due_date = data.get("dueDate") or data.get("due_date")
 	mode_of_payment = None
 	default_payment_mode = None
@@ -811,6 +820,7 @@ def parse_invoice_data(data):
 		roundoff_amount,
 		delivery_personnel,
 		is_credit_sale,
+		allow_partial_payment,
 		due_date,
 		salesperson,
 		tax_id,
@@ -828,6 +838,7 @@ def build_sales_invoice_doc(
 	include_payments=False,
 	delivery_personnel=None,
 	is_credit_sale=False,
+	allow_partial_payment=False,
 	due_date=None,
 	salesperson=None,
 	tax_id=None,
@@ -855,7 +866,9 @@ def build_sales_invoice_doc(
 
 	# Configure POS profile and company settings
 	pos_profile = _get_active_pos_profile()
-	_set_pos_profile_fields(doc, pos_profile, customer, business_type)
+	_set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid, allow_partial_payment)
+	if allow_partial_payment:
+		doc.custom_allow_partial_payment = 1
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
 	_validate_and_autofetch_batch_and_serial(items, pos_profile)
@@ -914,18 +927,21 @@ def _get_active_pos_profile():
 		raise
 
 
-def _set_pos_profile_fields(doc, pos_profile, customer, business_type):
+def _set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid=0.0, allow_partial_payment=False):
 	"""Set POS profile, company, currency and POS-specific fields."""
 	doc.pos_profile = pos_profile.name
 	doc.company = pos_profile.company
 	doc.currency = get_customer_billing_currency(customer)
+	price_list = get_price_list_with_customer_priority(customer) or getattr(pos_profile, "selling_price_list", None)
+	if price_list:
+		doc.selling_price_list = price_list
 	doc.conversion_rate = 1.0
 	doc.update_stock = 1
 	doc.warehouse = pos_profile.warehouse
 	doc.cost_center = pos_profile.cost_center
 
 	# Determine if this is a POS invoice
-	doc.is_pos = _determine_is_pos(customer, business_type)
+	doc.is_pos = 1 if allow_partial_payment or flt(amount_paid or 0) > 0 else _determine_is_pos(customer, business_type)
 
 
 def _validate_and_autofetch_batch_and_serial(items, pos_profile):
@@ -1694,6 +1710,7 @@ class CustomSalesInvoice(SalesInvoice):
 		allow_partial_payment = frappe.db.get_value(
 			"POS Profile", self.pos_profile, "allow_partial_payment"
 		)
+		allow_partial_payment = allow_partial_payment or getattr(self, "custom_allow_partial_payment", 0)
 		invoice_total = flt(self.rounded_total) or flt(self.grand_total)
 		paid_amount = flt(self.paid_amount)
 

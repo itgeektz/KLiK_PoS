@@ -1078,6 +1078,8 @@ export default function PaymentDialog({
       dueDate: isCreditSale ? dueDate : null,
       is_credit_sale: isCreditSale,
       due_date: isCreditSale ? dueDate : null,
+      allowPartialPayment: allowPartialPayments,
+      allow_partial_payment: allowPartialPayments,
       salesperson: currentSalesperson?.name || null,
       tax_id: taxPin || null,
     };

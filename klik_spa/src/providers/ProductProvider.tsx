@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import type { ReactNode } from 'react';
 import type { MenuItem } from '../../types';
 import { useAuth } from '../hooks/useAuth';
+import { useCartStore } from '../stores/cartStore';
 
 interface ProductContextType {
   products: MenuItem[];
@@ -37,6 +38,7 @@ const LOAD_MORE_SIZE = 500; // Size for subsequent loads
 
 export function ProductProvider({ children }: ProductProviderProps) {
   const { isAuthenticated, loading: authLoading } = useAuth();
+  const selectedCustomer = useCartStore((state) => state.selectedCustomer);
   const [products, setProducts] = useState<MenuItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
@@ -59,7 +61,8 @@ export function ProductProvider({ children }: ProductProviderProps) {
     limit: number = PAGE_SIZE,
     offset: number = 0,
     search: string = '',
-    category: string = ''
+    category: string = '',
+    customer: string = ''
   ): Promise<{
     items: MenuItem[];
     total_count: number;
@@ -76,6 +79,9 @@ export function ProductProvider({ children }: ProductProviderProps) {
       }
       if (category && category !== 'all') {
         params.append('category', category);
+      }
+      if (customer) {
+        params.append('customer', customer);
       }
       const response = await fetch(
         `/api/method/klik_pos.api.item.item_listing.get_items_with_balance_and_price?${params.toString()}`
@@ -216,14 +222,15 @@ export function ProductProvider({ children }: ProductProviderProps) {
   };
 
   // Initial fetch of products with pagination
-  const fetchProducts = async (forceRefresh = false) => {
+  const fetchProducts = async () => {
     setIsLoading(true);
     setError(null);
     setSearchQuery(''); // Clear search on initial fetch
     backgroundLoadStartedRef.current = false; // Reset background load flag
 
     try {
-      const result = await fetchProductsFromAPI(PAGE_SIZE, 0);
+      const customerId = selectedCustomer?.id || '';
+      const result = await fetchProductsFromAPI(PAGE_SIZE, 0, '', '', customerId);
 
       setProducts(result.items);
       setTotalCount(result.total_count);
@@ -268,7 +275,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
       const loadRemaining = async () => {
         // Use functional state updates to always get latest values
         let offset = currentOffset;
-        let stillHasMore = hasMore;
+        let stillHasMore: boolean = hasMore;
         let targetTotal = totalCount;
 
         while (stillHasMore && !searchQuery) {
@@ -279,7 +286,8 @@ export function ProductProvider({ children }: ProductProviderProps) {
             }
 
             console.log(`[Background] Loading more items from offset ${offset}...`);
-            const result = await fetchProductsFromAPI(LOAD_MORE_SIZE, offset);
+            const customerId = selectedCustomer?.id || '';
+            const result = await fetchProductsFromAPI(LOAD_MORE_SIZE, offset, '', '', customerId);
 
             if (result.items.length === 0) {
               break;
@@ -337,7 +345,8 @@ export function ProductProvider({ children }: ProductProviderProps) {
     setIsLoadingMore(true);
 
     try {
-      const result = await fetchProductsFromAPI(LOAD_MORE_SIZE, currentOffset);
+      const customerId = selectedCustomer?.id || '';
+      const result = await fetchProductsFromAPI(LOAD_MORE_SIZE, currentOffset, '', '', customerId);
 
       setProducts(prev => {
         // Avoid duplicates by filtering out items that already exist
@@ -356,7 +365,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, hasMore, currentOffset, searchQuery]);
+  }, [isLoadingMore, hasMore, currentOffset, searchQuery, selectedCustomer]);
 
   // Server-side search
   const searchProducts = useCallback(async (query: string) => {
@@ -380,7 +389,8 @@ export function ProductProvider({ children }: ProductProviderProps) {
 
     try {
       // Search with larger limit to get more results
-      const result = await fetchProductsFromAPI(500, 0, trimmedQuery);
+      const customerId = selectedCustomer?.id || '';
+      const result = await fetchProductsFromAPI(500, 0, trimmedQuery, '', customerId);
 
       setProducts(result.items);
       setTotalCount(result.total_count);
@@ -396,7 +406,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
     } finally {
       setIsSearching(false);
     }
-  }, []);
+  }, [selectedCustomer]);
 
   // Clear search and reset to initial products
   const clearSearch = useCallback(() => {
@@ -521,7 +531,7 @@ export function ProductProvider({ children }: ProductProviderProps) {
 
   const refetchProducts = async () => {
     // console.log("Force refreshing products...");
-    await fetchProducts(true);
+    await fetchProducts();
   };
 
   // Lightweight stock-only refresh - much faster than full reload
@@ -576,6 +586,15 @@ export function ProductProvider({ children }: ProductProviderProps) {
       clearInterval(stockUpdateInterval);
     };
   }, [isAuthenticated, authLoading]);
+
+  // Refetch products when selected customer changes
+  useEffect(() => {
+    // Only refetch if products have already been loaded and customer changed
+    if (!isLoading && totalCount > 0) {
+      console.log(`Customer changed to ${selectedCustomer?.id || 'None'}, refetching products with new prices...`);
+      fetchProducts();
+    }
+  }, [selectedCustomer?.id]);
 
   const value: ProductContextType = {
     products,

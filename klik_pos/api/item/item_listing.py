@@ -15,6 +15,7 @@ def get_items_with_balance_and_price(
     offset: int = 0,
     search: str | None = None,
     category: str | None = None,
+    customer: str | None = None,
 ):
     try:
         limit = int(limit) if limit else 1000
@@ -26,6 +27,9 @@ def get_items_with_balance_and_price(
     limit = min(limit, 2000)
 
     pos_doc, warehouse, price_list, hide_unavailable = _get_pos_context()
+    
+    # Apply priority-based price list selection considering customer
+    price_list = _get_priority_price_list(customer, pos_doc, price_list)
 
     try:
         select_fields = "i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom"
@@ -285,6 +289,70 @@ def _get_pos_context():
         getattr(pos_doc, "selling_price_list", None),
         getattr(pos_doc, "hide_unavailable_items", False),
     )
+
+
+def _get_priority_price_list(customer=None, pos_profile=None, default_price_list=None):
+	"""
+	Implement priority-based price list selection:
+	1. Customer's default price list
+	2. Customer group's default price list
+	3. POS Profile's default price list
+	4. Selling Settings' default price list
+	5. None (fallback to most recent item price)
+	"""
+	try:
+		# Priority 1: Customer's default price list
+		if customer:
+			try:
+				customer_doc = frappe.get_doc("Customer", customer)
+				if customer_doc.default_price_list:
+					frappe.logger().info(
+						f"Using customer {customer}'s default price list: {customer_doc.default_price_list}"
+					)
+					return customer_doc.default_price_list
+			except Exception:
+				pass
+			
+			# Priority 2: Customer group's default price list
+			try:
+				customer_doc = frappe.get_doc("Customer", customer)
+				if customer_doc.customer_group:
+					customer_group_doc = frappe.get_doc("Customer Group", customer_doc.customer_group)
+					if getattr(customer_group_doc, "default_price_list", None):
+						frappe.logger().info(
+							f"Using customer group {customer_doc.customer_group}'s default price list: {customer_group_doc.default_price_list}"
+						)
+						return customer_group_doc.default_price_list
+			except Exception:
+				pass
+	except Exception as e:
+		frappe.logger().warning(f"Error getting customer-based price list: {e}")
+	
+	# Priority 3: POS Profile's default price list
+	if pos_profile and getattr(pos_profile, "selling_price_list", None):
+		frappe.logger().info(f"Using POS profile's price list: {pos_profile.selling_price_list}")
+		return pos_profile.selling_price_list
+	
+	# Priority 4: Selling Settings' default price list
+	try:
+		selling_settings_price_list = frappe.db.get_single_value("Selling Settings", "selling_price_list")
+		if selling_settings_price_list:
+			frappe.logger().info(f"Using Selling Settings' default price list: {selling_settings_price_list}")
+			return selling_settings_price_list
+	except Exception:
+		pass
+	
+	# Priority 5: Use provided default (fallback)
+	if default_price_list:
+		frappe.logger().info(f"Using default price list: {default_price_list}")
+		return default_price_list
+	
+	# No price list found - will use most recent item price (handled by fetch_item_price fallback)
+	frappe.logger().info("No price list found in priority chain, will use most recent item price")
+	return None
+
+
+
 
 
 def _fetch_batch_stock(item_codes, warehouse):

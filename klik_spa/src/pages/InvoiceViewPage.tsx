@@ -688,18 +688,20 @@ export default function InvoiceViewPage() {
                         <User size={20} />
                         <span>Customer Details</span>
                       </h3>
-                      <button
-                        onClick={handleEditCustomer}
-                        disabled={isLoadingCustomer}
-                        className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Edit Customer"
-                      >
-                        {isLoadingCustomer ? (
-                          <RefreshCw size={16} className="animate-spin" />
-                        ) : (
-                          <Edit size={16} />
-                        )}
-                      </button>
+                      {posDetails?.can_create_and_edit_customers === 1 && (
+                        <button
+                          onClick={handleEditCustomer}
+                          disabled={isLoadingCustomer}
+                          className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Edit Customer"
+                        >
+                          {isLoadingCustomer ? (
+                            <RefreshCw size={16} className="animate-spin" />
+                          ) : (
+                            <Edit size={16} />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
 

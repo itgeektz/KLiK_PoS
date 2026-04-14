@@ -358,17 +358,19 @@ export default function CustomerDetailsPage() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  console.log('Customer data being passed to modal:', customer);
-                  setSelectedCustomer(customer);
-                  setShowAddModal(true);
-                }}
-                className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm"
-              >
-                <Edit className="w-4 h-4" />
-                <span>Edit</span>
-              </button>
+              {posDetails?.can_create_and_edit_customers === 1 && (
+                <button
+                  onClick={() => {
+                    console.log('Customer data being passed to modal:', customer);
+                    setSelectedCustomer(customer);
+                    setShowAddModal(true);
+                  }}
+                  className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm"
+                >
+                  <Edit className="w-4 h-4" />
+                  <span>Edit</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -703,17 +705,19 @@ export default function CustomerDetailsPage() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  console.log('Customer data being passed to modal:', customer);
-                  setSelectedCustomer(customer);
-                  setShowAddModal(true);
-                }}
-                className="flex items-center space-x-2 px-4 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
-              >
-                <Edit className="w-4 h-4" />
-                <span>Update Customer</span>
-              </button>
+              {posDetails?.can_create_and_edit_customers === 1 && (
+                <button
+                  onClick={() => {
+                    console.log('Customer data being passed to modal:', customer);
+                    setSelectedCustomer(customer);
+                    setShowAddModal(true);
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
+                >
+                  <Edit className="w-4 h-4" />
+                  <span>Update Customer</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -74,6 +74,13 @@ export default function AddCustomerModal({
     territory: "All Territories",
   });
 
+  useEffect(() => {
+    if (posDetails?.can_create_and_edit_customers !== 1) {
+      toast.error("You do not have permission to create or edit customers.");
+      onClose();
+    }
+  }, [posDetails])
+
   // Set customer type based on POS Profile business type when component mounts
   useEffect(() => {
     if (posDetails && !isEditing) {

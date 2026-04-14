@@ -201,6 +201,7 @@ def get_pos_details():
 		"custom_ignore_write_off_on_partial_returns": pos.custom_ignore_write_off_on_partial_returns or 1.0,
 		"custom_delivery_required": int(getattr(pos, "custom_delivery_required", 0) or 0),
   		"custom_sales_person_pin_required": int(getattr(pos, "custom_sales_person_pin_required", 0) or 0),
+		"can_create_and_edit_customers": int(getattr(pos, "custom_allow_to_create_and_edit_customers", 0) or 0),
 	}
 	return details
 

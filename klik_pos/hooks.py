@@ -62,7 +62,8 @@ fixtures = [
 					"POS Profile-custom_clear_draft_invoices",
 					"Sales Person-pos_pin",
 					"POS Profile-custom_sales_person_pin_required",
-     				"Customer-custom_is_walkin"
+     				"Customer-custom_is_walkin",
+					"POS Profile-custom_allow_to_create_and_edit_customers"
 				),
 			]
 		],

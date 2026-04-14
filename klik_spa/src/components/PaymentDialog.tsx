@@ -1743,7 +1743,7 @@ export default function PaymentDialog({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Order Complete
+            {invoiceSubmitted ? "Order Complete" : "Order Summary"}
           </h2>
 
           {invoiceSubmitted ? (

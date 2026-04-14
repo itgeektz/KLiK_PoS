@@ -476,7 +476,7 @@ def get_full_pricing_and_batch_details(
 
         note_data = frappe.db.sql(note_sql, (p.name,)) or frappe.db.sql(
             apply_sql_permissions(
-                "SELECT remarks FROM `tabItem Price` WHERE name = %s"
+                "SELECT note FROM `tabItem Price` WHERE name = %s"
             ),
             (p.name,),
         )

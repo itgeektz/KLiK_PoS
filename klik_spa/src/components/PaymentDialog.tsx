@@ -59,6 +59,7 @@ import {
 } from "../services/emailTemplateService";
 import DeliveryPersonnelModal from "./DeliveryPersonnelModal";
 import { useDeliveryPersonnel } from "../hooks/useDeliveryPersonnel";
+import { useCartStore } from "../stores/cartStore";
 
 interface PaymentDialogProps {
   isOpen: boolean;
@@ -207,6 +208,12 @@ export default function PaymentDialog({
   const { salesTaxCharges, defaultTax } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
   const navigate = useNavigate();
+  const { clearCart } = useCartStore();
+
+  const clearOrderState = () => {
+    clearDraftInvoiceCache();
+    clearCart();
+  };
 
   // Determine if this is B2B business type
   const isB2B = posDetails?.business_type === "B2B";
@@ -1044,17 +1051,18 @@ export default function PaymentDialog({
       // })),
       items: cartItems.map(item => {
         const code = item.item_code || item.id;
+        const discountData = itemDiscounts[code] || itemDiscounts[item.id] || {};
 
         return {
           ...item,
           id: item.item_code || item.id,        // ← override the generated id
           item_code: item.item_code || item.id,  // ← keep item_code correct too
           price: (item as any).discountedPrice || item.price,
-          batchNumber: itemDiscounts[code]?.batchNumber || null,
-          serialNumber: itemDiscounts[code]?.serialNumber || null,
+          batchNumber: discountData.batchNumber || null,
+          serialNumber: discountData.serialNumber || null,
           uom: item.uom || 'Nos',
-          discountPercentage: itemDiscounts[code]?.discountPercentage || 0,
-          discountAmount: itemDiscounts[code]?.discountAmount || 0,
+          discountPercentage: discountData.discountPercentage || 0,
+          discountAmount: discountData.discountAmount || 0,
         }}),
       customer: selectedCustomer,
       paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => ({ method, amount: parseFloat((Number(amount) || 0).toFixed(2)) })),
@@ -1074,6 +1082,8 @@ export default function PaymentDialog({
       dueDate: isCreditSale ? dueDate : null,
       is_credit_sale: isCreditSale,
       due_date: isCreditSale ? dueDate : null,
+      allowPartialPayment: allowPartialPayments,
+      allow_partial_payment: allowPartialPayments,
       salesperson: currentSalesperson?.name || null,
       tax_id: taxPin || null,
     };
@@ -1147,6 +1157,7 @@ export default function PaymentDialog({
   };
 //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleViewInvoice = (invoice: any) => {
+    clearOrderState();
     navigate(`/invoice/${invoice.name}`);
   };
 
@@ -1176,14 +1187,7 @@ export default function PaymentDialog({
     };
 
     try {
-      await createDraftSalesInvoice(orderData);
-      // toast.success("Order held successfully!");
-
-      // Clear draft invoice cache since order is held
-      clearDraftInvoiceCache();
-
       onHoldOrder(orderData);
-      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const errorMessage = extractErrorFromException(err, "Failed to hold order");
       toast.error(errorMessage);
@@ -1305,6 +1309,7 @@ export default function PaymentDialog({
                     title="Print"
                     onClick={() => {
                       handlePrintInvoice(invoiceData);
+                      clearOrderState();
                     }}
                   >
                     <Printer size={18} />
@@ -1315,6 +1320,7 @@ export default function PaymentDialog({
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors"
                     title="Email"
                     onClick={() => {
+                      clearOrderState();
                       const subject = encodeURIComponent("Your Invoice");
                       const body = encodeURIComponent(
                         `Dear ${
@@ -1390,7 +1396,7 @@ export default function PaymentDialog({
                 <div className="pt-4">
                   <button
                     onClick={() => {
-                      // Simply close the modal - no navigation needed
+                      clearOrderState();
                       onClose(true);
                     }}
                     className="w-full py-3 bg-beveren-600 text-white rounded-lg font-medium hover:bg-beveren-700 transition-colors"
@@ -1838,6 +1844,7 @@ export default function PaymentDialog({
                 title="Print"
                 onClick={() => {
                   handlePrintInvoice(invoiceData);
+                  clearOrderState();
                   navigate("/");
                 }}
               >
@@ -1851,9 +1858,10 @@ export default function PaymentDialog({
                     : "text-blue-600 hover:bg-blue-100"
                 } dark:text-blue-400 dark:hover:bg-blue-900`}
                 title="Email"
-                onClick={() =>
-                  setSharingMode(sharingMode === "email" ? null : "email")
-                }
+                onClick={() => {
+                  clearOrderState();
+                  setSharingMode(sharingMode === "email" ? null : "email");
+                }}
               >
                 <MailPlus size={20} />
               </button>
@@ -3058,7 +3066,10 @@ export default function PaymentDialog({
               <div className={`flex justify-end space-x-4 ${isDeliveryRequired ? '' : 'w-full'}`}>
                 {invoiceSubmitted && (
                   <button
-                    onClick={() => onClose(true)}
+                    onClick={() => {
+                      clearOrderState();
+                      onClose(true);
+                    }}
                     className="bg-beveren-500 px-6 py-2 border border-gray-300 dark:border-gray-600 text-white dark:text-gray-300 rounded-lg font-medium hover:bg-green-700 dark:hover:bg-gray-800 transition-colors"
                   >
                     New Order

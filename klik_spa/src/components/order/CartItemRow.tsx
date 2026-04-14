@@ -21,6 +21,7 @@ interface CartItemRowProps {
   onDiscountChange: (itemId: string, field: string, value: number | string) => void;
   onCustomRateChange: (item: CartItem, rate: number) => void;
   onDuplicateItem: (item: CartItem) => void;
+  onBundleUpdate?: (itemId: string, bundleId: string, entries: any[]) => void;
   selectedCustomer?: { id: string } | null;
   posDetails: any;
   itemBatches: any[];
@@ -59,6 +60,7 @@ export const CartItemRow = ({
   onDiscountChange,
   onCustomRateChange,
   onDuplicateItem,
+  onBundleUpdate,
   selectedCustomer,
   posDetails,
   itemBatches,
@@ -73,6 +75,13 @@ export const CartItemRow = ({
   const [bundleEntries, setBundleEntries] = useState<SerialBatchEntry[]>(() => {
     if (item.bundle_entries && Array.isArray(item.bundle_entries)) {
       return item.bundle_entries;
+    }
+    if (itemDiscount.bundle_entries && typeof itemDiscount.bundle_entries === "string") {
+      try {
+        return JSON.parse(itemDiscount.bundle_entries);
+      } catch {
+        return [];
+      }
     }
     return [];
   });
@@ -89,7 +98,10 @@ export const CartItemRow = ({
     const validEntries = entries.map(({ selected, ...e }) => e);
     setBundleEntries(validEntries);
     updateItemBundleEntries(item.id, validEntries);
-  }, [item.id, updateItemBundleEntries]);
+    if (onBundleUpdate) {
+      onBundleUpdate(item.id, "", validEntries);
+    }
+  }, [item.id, updateItemBundleEntries, onBundleUpdate]);
 
   const fetchBundleData = useCallback(async (qty: number, shouldSaveToCart: boolean = false) => {
     if (!warehouse) return;
@@ -204,6 +216,18 @@ export const CartItemRow = ({
 
   const handleModalFetchData = async (qty: number) => {
     await fetchBundleData(qty, true);
+  };
+
+  const handleDiscountPercentageChange = (value: number) => {
+    const discountAmount = (item.price * value) / 100;
+    onDiscountChange(item.id, "discountPercentage", value);
+    onDiscountChange(item.id, "discountAmount", discountAmount);
+  };
+
+  const handleDiscountAmountChange = (value: number) => {
+    const discountPercentage = (value / item.price) * 100;
+    onDiscountChange(item.id, "discountAmount", value);
+    onDiscountChange(item.id, "discountPercentage", discountPercentage);
   };
 
   const discountedPrice = (() => {
@@ -436,7 +460,7 @@ export const CartItemRow = ({
                   min="0"
                   step="0.01"
                   value={itemDiscount.discountAmount || ""}
-                  onChange={(e) => onDiscountChange(item.id, "discountAmount", parseFloat(e.target.value) || 0)}
+                  onChange={(e) => handleDiscountAmountChange(parseFloat(e.target.value) || 0)}
                   readOnly={!posDetails?.allow_discount_change}
                   placeholder="0.00"
                   className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
@@ -452,7 +476,7 @@ export const CartItemRow = ({
                   max="100"
                   step="0.1"
                   value={itemDiscount.discountPercentage || ""}
-                  onChange={(e) => onDiscountChange(item.id, "discountPercentage", parseFloat(e.target.value) || 0)}
+                  onChange={(e) => handleDiscountPercentageChange(parseFloat(e.target.value) || 0)}
                   readOnly={!posDetails?.allow_discount_change}
                   placeholder="0.0"
                   className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white`}
@@ -498,7 +522,7 @@ export const CartItemRow = ({
               </div>
               <div className="flex justify-between items-center mt-1">
                 <span className="text-xs text-green-700 dark:text-green-400">
-                  {itemDiscount.discountPercentage > 0 && `${itemDiscount.discountPercentage}% off`}
+                  {itemDiscount.discountPercentage > 0 && `${itemDiscount.discountPercentage.toFixed(1)}% off`}
                   {itemDiscount.discountPercentage > 0 && itemDiscount.discountAmount > 0 && " + "}
                   {itemDiscount.discountAmount > 0 && formatCurrencyWithSymbol(itemDiscount.discountAmount, currency_symbol)}
                 </span>

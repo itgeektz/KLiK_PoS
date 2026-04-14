@@ -102,8 +102,9 @@ doc_events = {
     },
 }
 
-override_doctype_class = {
+extend_doctype_class = {
     "Sales Invoice": "klik_pos.api.sales_invoice.CustomSalesInvoice",
+    "POS Opening Entry": "klik_pos.overrides.pos_opening_entry.CustomPOSOpeningEntry",
 }
 
 # Migration hooks

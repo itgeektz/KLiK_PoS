@@ -24,7 +24,7 @@ import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { deleteDraftInvoice } from "../services/salesInvoice";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { formatCurrency } from "../utils/currency";
+import { formatCurrencyWithSymbol } from "../utils/currency";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import { clearAllCache } from "../utils/clearCache";
 
@@ -448,7 +448,7 @@ export default function ClosingShiftPage() {
                   <div className="space-y-2">
                     <div className="text-2xl font-bold text-gray-900 dark:text-white">
                                             {/* @ts-expect-error just ignore */}
-                      {formatCurrency(stat.amount, posDetails?.currency || 'USD')}
+                      {formatCurrencyWithSymbol(stat.amount, posDetails?.currency || 'USD')}
                     </div>
                     {/* <div className="text-sm text-gray-600 dark:text-gray-400">
                       {stat.transactions} transactions
@@ -573,11 +573,11 @@ export default function ClosingShiftPage() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {formatCurrency(invoice.totalAmount, invoice.currency)}
+                          {formatCurrencyWithSymbol(invoice.totalAmount, invoice.currency)}
                         </div>
                         {invoice.giftCardDiscount > 0 && (
                           <div className="text-xs text-green-600 dark:text-green-400">
-                            -{formatCurrency(invoice.giftCardDiscount, invoice.currency)} gift
+                            -{formatCurrencyWithSymbol(invoice.giftCardDiscount, invoice.currency)} gift
                           </div>
                         )}
                       </td>
@@ -669,7 +669,7 @@ export default function ClosingShiftPage() {
                         <span className="text-gray-600 dark:text-gray-400">Opening: </span>
                         <span className="font-medium text-gray-900 dark:text-white">
                                                 {/* @ts-expect-error just ignore */}
-                          {formatCurrency(stat.openingAmount, posDetails?.currency || 'USD')}
+                          {formatCurrencyWithSymbol(stat.openingAmount, posDetails?.currency || 'USD')}
                         </span>
                       </div>
 
@@ -790,7 +790,7 @@ export default function ClosingShiftPage() {
                     <div className="space-y-2">
                       <div className="text-2xl font-bold text-gray-900 dark:text-white">
                                               {/* @ts-expect-error just ignore */}
-                        {formatCurrency(stat.amount, posDetails?.currency || 'USD')}
+                        {formatCurrencyWithSymbol(stat.amount, posDetails?.currency || 'USD')}
                       </div>
                       {/* <div className="text-sm text-gray-600 dark:text-gray-400">
                         {stat.transactions} transactions
@@ -927,11 +927,11 @@ export default function ClosingShiftPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {formatCurrency(invoice.totalAmount, invoice.currency)}
+                          {formatCurrencyWithSymbol(invoice.totalAmount, invoice.currency)}
                         </div>
                         {invoice.giftCardDiscount > 0 && (
                           <div className="text-xs text-green-600 dark:text-green-400">
-                            -{formatCurrency(invoice.giftCardDiscount, invoice.currency)} gift card
+                            -{formatCurrencyWithSymbol(invoice.giftCardDiscount, invoice.currency)} gift card
                           </div>
                         )}
                       </td>
@@ -1019,7 +1019,7 @@ export default function ClosingShiftPage() {
                         <span className="font-medium text-gray-900 dark:text-white">
                                                 {/* @ts-expect-error just ignore */}
 
-                          {formatCurrency(stat.openingAmount, posDetails?.currency || 'USD')}
+                          {formatCurrencyWithSymbol(stat.openingAmount, posDetails?.currency || 'USD')}
                         </span>
                       </div>
 

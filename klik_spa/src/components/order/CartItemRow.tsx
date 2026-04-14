@@ -219,18 +219,19 @@ export const CartItemRow = ({
   };
 
   const handleDiscountPercentageChange = (value: number) => {
-    const discountAmount = (item.price * value) / 100;
     onDiscountChange(item.id, "discountPercentage", value);
-    onDiscountChange(item.id, "discountAmount", discountAmount);
+    onDiscountChange(item.id, "discountAmount", 0);
   };
 
   const handleDiscountAmountChange = (value: number) => {
-    const discountPercentage = (value / item.price) * 100;
     onDiscountChange(item.id, "discountAmount", value);
-    onDiscountChange(item.id, "discountPercentage", discountPercentage);
+    onDiscountChange(item.id, "discountPercentage", 0);
   };
 
   const discountedPrice = (() => {
+    if (itemDiscount.customRate !== undefined && itemDiscount.customRate !== null) {
+      return Math.max(0, itemDiscount.customRate);
+    }
     let price = item.price;
     if (itemDiscount.discountPercentage > 0) price = price * (1 - itemDiscount.discountPercentage / 100);
     if (itemDiscount.discountAmount > 0) price = Math.max(0, price - itemDiscount.discountAmount);

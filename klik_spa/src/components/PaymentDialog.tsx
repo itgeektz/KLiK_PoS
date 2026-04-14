@@ -1741,7 +1741,6 @@ export default function PaymentDialog({
                               subtractCurrency(totalPaidAmount, calculations.grandTotal),
                               invoiceData?.currency || 'USD'
                             )}
-                            )}
                           </span>
                         </div>
                       )}

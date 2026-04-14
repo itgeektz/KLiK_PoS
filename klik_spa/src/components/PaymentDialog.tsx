@@ -1175,14 +1175,7 @@ export default function PaymentDialog({
     };
 
     try {
-      await createDraftSalesInvoice(orderData);
-      // toast.success("Order held successfully!");
-
-      // Clear draft invoice cache since order is held
-      clearDraftInvoiceCache();
-
       onHoldOrder(orderData);
-      //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       const errorMessage = extractErrorFromException(err, "Failed to hold order");
       toast.error(errorMessage);

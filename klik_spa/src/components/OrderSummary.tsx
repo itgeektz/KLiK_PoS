@@ -1044,13 +1044,11 @@ export default function OrderSummary({
     }
 
     try {
-      // Creates a draft invoice and saves the order
-      setShowPaymentDialog(false);
-
       const result = await createDraftSalesInvoice(orderData);
 
       if (result && result.success) {
         handleClearCart();
+        setShowPaymentDialog(false);
         toast.success("Draft invoice created and order held successfully!");
       } else {
         toast.error("Failed to create draft invoice");

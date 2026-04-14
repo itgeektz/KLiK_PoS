@@ -62,7 +62,9 @@ fixtures = [
                     "POS Profile-custom_clear_draft_invoices",
                     "Sales Person-pos_pin",
                     "POS Profile-custom_sales_person_pin_required",
-                    "Customer-custom_is_walkin" "Item Group-custom_exclude_from_pos",
+                    "Customer-custom_is_walkin",
+                    "Item Group-custom_exclude_from_pos",
+                    "POS Profile-custom_allow_to_create_and_edit_customers",
                     "POS Profile-restrict_cost_visibility_in_tooltip",
                 ),
             ]
@@ -176,7 +178,7 @@ doctype_js.update({"Company": "public/js/company.js"})
 # Installation
 # ------------
 
-# before_install = "klik_pos.install.before_install"
+before_install = "klik_pos.setup.install.before_install"
 # after_install = "klik_pos.install.after_install"
 
 # Uninstallation

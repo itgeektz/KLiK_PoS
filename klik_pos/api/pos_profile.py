@@ -233,6 +233,7 @@ def get_pos_details():
         "custom_sales_person_pin_required": int(
             getattr(pos, "custom_sales_person_pin_required", 0) or 0
         ),
+		"can_create_and_edit_customers": int(getattr(pos, "custom_allow_to_create_and_edit_customers", 0) or 0),
         "warehouse": pos.warehouse,
         "allow_rate_change": pos.allow_rate_change,
         "allow_discount_change": pos.allow_discount_change,

@@ -29,6 +29,8 @@ import { usePOSDetails } from "../hooks/usePOSProfile";
 import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
 import { useCustomerPermission } from "../hooks/useCustomerPermission";
 import { useCartStore } from "../stores/cartStore";
+import countryList from "react-select-country-list";
+import { parsePhoneNumber } from "react-phone-number-input";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 
 interface OrderSummaryProps {
@@ -141,7 +143,7 @@ const UOMSelectField = ({
               method: "GET",
               headers: { "Content-Type": "application/json" },
               credentials: "include",
-            },
+            }
           );
 
           if (response.ok) {
@@ -176,7 +178,7 @@ const UOMSelectField = ({
 
   // Filter UOMs based on search query
   const filteredUOMs = availableUOMs.filter((uom) =>
-    uom.toLowerCase().includes(searchQuery.toLowerCase()),
+    uom.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleUOMSelect = async (newUOM: string) => {
@@ -199,7 +201,7 @@ const UOMSelectField = ({
             method: "GET",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-          },
+          }
         );
 
         if (response.ok) {
@@ -208,7 +210,7 @@ const UOMSelectField = ({
           if (data?.message?.uoms) {
             //eslint-disable-next-line @typescript-eslint/no-explicit-any
             const selectedUOMData = data.message.uoms.find(
-              (uom: any) => uom.uom === newUOM,
+              (uom: any) => uom.uom === newUOM
             );
             if (selectedUOMData && selectedUOMData.price !== undefined) {
               console.log(`✅ Found UOM data for ${newUOM}:`, selectedUOMData);
@@ -216,7 +218,7 @@ const UOMSelectField = ({
             } else {
               console.warn(
                 `⚠️ UOM data not found for ${newUOM}. Available UOMs:`,
-                data.message.uoms.map((u: any) => u.uom),
+                data.message.uoms.map((u: any) => u.uom)
               );
               // Fallback: try to calculate price using fetch_item_price API
               try {
@@ -230,7 +232,7 @@ const UOMSelectField = ({
                     method: "GET",
                     headers: { "Content-Type": "application/json" },
                     credentials: "include",
-                  },
+                  }
                 );
                 if (priceResponse.ok) {
                   const priceData = await priceResponse.json();
@@ -240,19 +242,19 @@ const UOMSelectField = ({
                   ) {
                     console.log(
                       `✅ Got price from fallback API for ${newUOM}:`,
-                      priceData.message.price,
+                      priceData.message.price
                     );
                     onUOMChange(item.id, newUOM, priceData.message.price);
                   } else {
                     console.error(
-                      `❌ Fallback API returned invalid price for ${newUOM}`,
+                      `❌ Fallback API returned invalid price for ${newUOM}`
                     );
                   }
                 }
               } catch (fallbackError) {
                 console.error(
                   `❌ Error in fallback price fetch for ${newUOM}:`,
-                  fallbackError,
+                  fallbackError
                 );
               }
             }
@@ -358,7 +360,7 @@ const BatchSelectField = ({
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const filtered = options.filter((o) =>
-    o.batch_id.toLowerCase().includes(query.toLowerCase()),
+    o.batch_id.toLowerCase().includes(query.toLowerCase())
   );
 
   const handleSelect = (batchId: string) => {
@@ -448,7 +450,7 @@ const SerialSelectField = ({
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const filtered = options.filter((sn) =>
-    sn.toLowerCase().includes(query.toLowerCase()),
+    sn.toLowerCase().includes(query.toLowerCase())
   );
 
   const handleSelect = (sn: string) => {
@@ -583,7 +585,7 @@ export default function OrderSummary({
 
   // Get customer statistics for the selected customer
   const { statistics: customerStats } = useCustomerStatistics(
-    selectedCustomer?.id || null,
+    selectedCustomer?.id || null
   );
   const [prefilledCustomerName, setPrefilledCustomerName] = useState("");
   const [prefilledData, setPrefilledData] = useState<{
@@ -609,7 +611,7 @@ export default function OrderSummary({
 
       updateUOM(itemId, selectedUOM, newPrice);
     },
-    [updateUOM, cartItems],
+    [updateUOM, cartItems]
   );
 
   // State for item-level discounts and details
@@ -658,7 +660,7 @@ export default function OrderSummary({
     if (itemDiscount.discountAmount > 0) {
       discountedPrice = Math.max(
         0,
-        discountedPrice - itemDiscount.discountAmount,
+        discountedPrice - itemDiscount.discountAmount
       );
     }
 
@@ -681,16 +683,21 @@ export default function OrderSummary({
   // Calculate coupon discount
   const couponDiscount = appliedCoupons.reduce(
     (sum, coupon) => sum + coupon.value,
-    0,
+    0
   );
 
   // Calculate final total
   const total = Math.max(0, subtotal - couponDiscount);
 
   const handleCustomerSearchKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement>,
+    e: React.KeyboardEvent<HTMLInputElement>
   ) => {
-    if (e.key === "Enter" && customerSearchQuery.trim() !== "") {
+    if (
+      e.key === "Enter" &&
+      customerSearchQuery.trim() !== "" &&
+      posDetails &&
+      posDetails?.can_create_and_edit_customers === 1
+    ) {
       // Check if there are no matching customers
       if (filteredCustomers.length === 0) {
         // This is a new customer - detect input type and set prefilled data
@@ -706,28 +713,23 @@ export default function OrderSummary({
           /^[\d\s+()-]+$/.test(trimmedValue) &&
           trimmedValue.replace(/[\s+()-]/g, "").length >= 7
         ) {
-          // Format phone number with Saudi Arabia country code if it doesn't already have one
-          let formattedPhone = trimmedValue;
-          const cleanNumber = trimmedValue.replace(/[\s+()-]/g, "");
+          const companyCountryCode =
+            (
+              countryList().getData() as { value: string; label: string }[]
+            ).find((c) => c.label === (posDetails?.company?.country || ""))
+              ?.value || "";
 
-          // If the number doesn't start with +966 (Saudi Arabia code), add it
-          if (
-            !cleanNumber.startsWith("966") &&
-            !cleanNumber.startsWith("+966")
-          ) {
-            // If it starts with 0, replace with +966
-            if (cleanNumber.startsWith("0")) {
-              formattedPhone = "+966" + cleanNumber.substring(1);
-            } else {
-              // Otherwise just add +966
-              formattedPhone = "+966" + cleanNumber;
+          let formattedPhone = trimmedValue;
+          try {
+            const parsed = parsePhoneNumber(
+              trimmedValue,
+              companyCountryCode as any
+            );
+            if (parsed) {
+              formattedPhone = parsed.format("E.164");
             }
-          } else if (
-            cleanNumber.startsWith("966") &&
-            !cleanNumber.startsWith("+966")
-          ) {
-            // If it starts with 966 but no +, add the +
-            formattedPhone = "+" + cleanNumber;
+          } catch {
+            // keep trimmedValue as-is if parsing fails
           }
 
           prefilledData = { phone: formattedPhone };
@@ -757,7 +759,7 @@ export default function OrderSummary({
   const updateItemDiscount = (
     itemId: string,
     field: string,
-    value: number | string,
+    value: number | string
   ) => {
     setItemDiscounts((prev) => ({
       ...prev,
@@ -816,8 +818,8 @@ export default function OrderSummary({
               .includes(customerSearchQuery.toLowerCase()) ||
             customer.phone.includes(customerSearchQuery) ||
             customer.tags.some((tag) =>
-              tag.toLowerCase().includes(customerSearchQuery.toLowerCase()),
-            ),
+              tag.toLowerCase().includes(customerSearchQuery.toLowerCase())
+            )
         );
 
   const validateCustomer = () => {
@@ -832,7 +834,8 @@ export default function OrderSummary({
     const normalizedItemDiscounts: Record<string, any> = {};
     const items = cartItems.map((item) => {
       const itemCode = item.item_code || item.id;
-      const discountData = itemDiscounts[itemCode] || itemDiscounts[item.id] || {};
+      const discountData =
+        itemDiscounts[itemCode] || itemDiscounts[item.id] || {};
 
       normalizedItemDiscounts[itemCode] = {
         ...(normalizedItemDiscounts[itemCode] || {}),
@@ -869,7 +872,7 @@ export default function OrderSummary({
     } catch (error) {
       const errorMessage = extractErrorFromException(
         error,
-        "Checkout validation failed",
+        "Checkout validation failed"
       );
       toast.error(errorMessage);
     } finally {
@@ -885,14 +888,14 @@ export default function OrderSummary({
   };
 
   const handleSaveCustomer = async (
-    newCustomer: Partial<Customer> & { customer_name?: string },
+    newCustomer: Partial<Customer> & { customer_name?: string }
   ) => {
     // Automatically select the newly created customer in the cart
     if (newCustomer && newCustomer.customer_name) {
       try {
         // Fetch the full customer data using the customer_name returned from backend
         const response = await fetch(
-          `/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(newCustomer.customer_name)}`,
+          `/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(newCustomer.customer_name)}`
         );
 
         if (!response.ok) {
@@ -907,6 +910,7 @@ export default function OrderSummary({
           const customerToSelect: Customer = {
             id: erpCustomer.name,
             name: erpCustomer.customer_name || erpCustomer.name,
+            customer_name: erpCustomer.customer_name || erpCustomer.name,
             email: erpCustomer.email_id || "",
             phone: erpCustomer.mobile_no || "",
             type:
@@ -918,7 +922,10 @@ export default function OrderSummary({
               city: "",
               state: "",
               zipCode: "",
-              country: "Saudi Arabia",
+              country:
+                erpCustomer.address_data.country ||
+                posDetails?.company?.country ||
+                "",
             },
             loyaltyPoints: erpCustomer.custom_loyalty_points || 0,
             totalSpent: erpCustomer.custom_total_spent || 0,
@@ -927,6 +934,7 @@ export default function OrderSummary({
             tags: erpCustomer.custom_tags?.split(",").filter(Boolean) || [],
             status: erpCustomer.custom_status || "active",
             is_walkin: erpCustomer.is_walkin,
+            taxId: erpCustomer.tax_id || "",
             createdAt: erpCustomer.creation || new Date().toISOString(),
           };
 
@@ -952,7 +960,10 @@ export default function OrderSummary({
             city: "",
             state: "",
             zipCode: "",
-            country: "Saudi Arabia",
+            country:
+              newCustomer.address?.country ||
+              posDetails?.company?.country ||
+              "",
           },
           loyaltyPoints: 0,
           totalSpent: 0,
@@ -978,7 +989,7 @@ export default function OrderSummary({
   const handleCompletePayment = async (paymentData: any) => {
     console.log(
       "OrderSummary: Payment completed, invoice created - modal stays open for preview",
-      paymentData,
+      paymentData
     );
     // Don't close modal or clear cart - let user see invoice preview
     // Cart will be cleared when modal is closed via "New Order" button
@@ -992,7 +1003,7 @@ export default function OrderSummary({
       handleClearCart();
     } else {
       console.log(
-        "OrderSummary: Payment was not completed - keeping cart items",
+        "OrderSummary: Payment was not completed - keeping cart items"
       );
     }
 
@@ -1013,7 +1024,7 @@ export default function OrderSummary({
         } catch (error) {
           console.error(
             "OrderSummary: Failed to update batch quantities:",
-            error,
+            error
           );
         }
       }
@@ -1049,7 +1060,7 @@ export default function OrderSummary({
       console.error("Error creating draft invoice:", error);
       const errorMessage = extractErrorFromException(
         error,
-        "Failed to create draft invoice",
+        "Failed to create draft invoice"
       );
       toast.error(errorMessage);
     }
@@ -1098,7 +1109,7 @@ export default function OrderSummary({
       // Let the parent add the line via its own cart logic (generates a new unique id)
       onDuplicateItem(item);
       toast.info(
-        `Duplicated "${item.item_code}" — set batch / serial / UOM as needed`,
+        `Duplicated "${item.item_code}" — set batch / serial / UOM as needed`
       );
     } else {
       toast.warning("Duplicate is not supported in this context");
@@ -1167,7 +1178,7 @@ export default function OrderSummary({
                 city: "",
                 state: "",
                 zipCode: "",
-                country: "Saudi Arabia",
+                country: posDetails.company?.country || "",
               },
               loyaltyPoints: 0,
               totalSpent: 0,
@@ -1187,7 +1198,7 @@ export default function OrderSummary({
             console.log(
               "User does not have permission to access default customer:",
               defaultCustomer.id,
-              result,
+              result
             );
           }
         })
@@ -1229,7 +1240,7 @@ export default function OrderSummary({
           }
         } else {
           console.log(
-            `OrderSummary: Skipping initial info loading for key "${key}"`,
+            `OrderSummary: Skipping initial info loading for key "${key}"`
           );
         }
       }
@@ -1258,10 +1269,10 @@ export default function OrderSummary({
               newBatches[itemCode] = batches;
             } else {
               console.log(
-                `OrderSummary: Skipping invalid itemCode: "${itemCode}"`,
+                `OrderSummary: Skipping invalid itemCode: "${itemCode}"`
               );
             }
-          },
+          }
         );
 
         // Remove any undefined keys
@@ -1279,7 +1290,7 @@ export default function OrderSummary({
 
     window.addEventListener(
       "batchQuantitiesUpdated",
-      handleBatchUpdate as EventListener,
+      handleBatchUpdate as EventListener
     );
 
     // Listen for preselection from search (batch/serial)
@@ -1292,7 +1303,7 @@ export default function OrderSummary({
       if (item) {
         const selectedQty =
           itemBatches[item.item_code || item.id]?.find(
-            (b) => b.batch_id === batchId,
+            (b) => b.batch_id === batchId
           )?.qty || 0;
         setItemDiscounts((prev) => ({
           ...prev,
@@ -1357,25 +1368,25 @@ export default function OrderSummary({
 
     window.addEventListener(
       "cart:setBatchForItem",
-      handleSetBatch as EventListener,
+      handleSetBatch as EventListener
     );
     window.addEventListener(
       "cart:setSerialForItem",
-      handleSetSerial as EventListener,
+      handleSetSerial as EventListener
     );
 
     return () => {
       window.removeEventListener(
         "batchQuantitiesUpdated",
-        handleBatchUpdate as EventListener,
+        handleBatchUpdate as EventListener
       );
       window.removeEventListener(
         "cart:setBatchForItem",
-        handleSetBatch as EventListener,
+        handleSetBatch as EventListener
       );
       window.removeEventListener(
         "cart:setSerialForItem",
-        handleSetSerial as EventListener,
+        handleSetSerial as EventListener
       );
     };
   }, [cartItems, itemBatches]);
@@ -1497,13 +1508,16 @@ export default function OrderSummary({
                 )}
               </div>
 
-              <button
-                onClick={() => setShowAddCustomerModal(true)}
-                className="ml-2 p-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
-                title="Add New Customer"
-              >
-                <UserPlus size={16} />
-              </button>
+              {posDetails &&
+                posDetails?.can_create_and_edit_customers === 1 && (
+                  <button
+                    onClick={() => setShowAddCustomerModal(true)}
+                    className="ml-2 p-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
+                    title="Add New Customer"
+                  >
+                    <UserPlus size={16} />
+                  </button>
+                )}
             </div>
 
             {/* Selected Customer Display */}
@@ -1602,12 +1616,14 @@ export default function OrderSummary({
                 </div>
               )}
             </div>
-            <button
-              onClick={() => setShowAddCustomerModal(true)}
-              className="p-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
-            >
-              <UserPlus size={16} />
-            </button>
+            {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
+              <button
+                onClick={() => setShowAddCustomerModal(true)}
+                className="p-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
+              >
+                <UserPlus size={16} />
+              </button>
+            )}
           </div>
 
           {selectedCustomer && (
@@ -1772,14 +1788,14 @@ export default function OrderSummary({
                             <span className="text-gray-400 line-through text-xs">
                               {formatCurrencyWithSymbol(
                                 item.price,
-                                currency_symbol,
+                                currency_symbol
                               )}
                             </span>
 
                             <span className="text-beveren-600 dark:text-beveren-400 font-semibold">
                               {formatCurrencyWithSymbol(
                                 discountedPrice,
-                                currency_symbol,
+                                currency_symbol
                               )}
                             </span>
                           </div>
@@ -1787,7 +1803,7 @@ export default function OrderSummary({
                           <div className="text-beveren-600 dark:text-beveren-400 font-semibold">
                             {formatCurrencyWithSymbol(
                               item.price,
-                              currency_symbol,
+                              currency_symbol
                             )}
                           </div>
                         )}
@@ -1838,7 +1854,7 @@ export default function OrderSummary({
                           <p className="text-gray-400 line-through text-xs">
                             {formatCurrencyWithSymbol(
                               originalTotal,
-                              currency_symbol,
+                              currency_symbol
                             )}
                           </p>
                           <p
@@ -1848,7 +1864,7 @@ export default function OrderSummary({
                           >
                             {formatCurrencyWithSymbol(
                               discountedTotal,
-                              currency_symbol,
+                              currency_symbol
                             )}
                           </p>
                         </div>
@@ -1938,7 +1954,7 @@ export default function OrderSummary({
                               onChange={(e) =>
                                 handleCustomRateChange(
                                   item,
-                                  parseFloat(e.target.value) || 0,
+                                  parseFloat(e.target.value) || 0
                                 )
                               }
                               readOnly={!posDetails?.allow_rate_change}
@@ -1979,7 +1995,7 @@ export default function OrderSummary({
                                 updateItemDiscount(
                                   item.id,
                                   "discountAmount",
-                                  parseFloat(e.target.value) || 0,
+                                  parseFloat(e.target.value) || 0
                                 )
                               }
                               readOnly={!posDetails?.allow_discount_change}
@@ -2003,7 +2019,7 @@ export default function OrderSummary({
                                 updateItemDiscount(
                                   item.id,
                                   "discountPercentage",
-                                  parseFloat(e.target.value) || 0,
+                                  parseFloat(e.target.value) || 0
                                 )
                               }
                               readOnly={!posDetails?.allow_discount_change}
@@ -2032,12 +2048,12 @@ export default function OrderSummary({
                                 updateItemDiscount(
                                   item.id,
                                   "batchNumber",
-                                  selectedBatch,
+                                  selectedBatch
                                 );
                                 updateItemDiscount(
                                   item.id,
                                   "availableQuantity",
-                                  selectedQty,
+                                  selectedQty
                                 );
                               }}
                               isMobile={isMobile}
@@ -2099,13 +2115,13 @@ export default function OrderSummary({
                                 formatCurrencyWithSymbol(
                                   itemDiscount.discountAmount,
                                   currency_symbol
-                                )
-                              }
+                                )}
                             </span>
                             <span className="text-xs font-semibold text-green-800 dark:text-green-300">
-                              Save {formatCurrencyWithSymbol(
+                              Save{" "}
+                              {formatCurrencyWithSymbol(
                                 originalTotal - discountedTotal,
-                                currency_symbol,
+                                currency_symbol
                               )}
                             </span>
                           </div>

@@ -55,6 +55,7 @@ export default function AddCustomerModal({
     contactName: "",
     email: "",
     phone: "",
+    taxId: "",
     address: {
       addressType: "Billing",
       street: "",
@@ -62,7 +63,7 @@ export default function AddCustomerModal({
       city: "",
       state: "",
       zipCode: "",
-      country: posDetails?.company?.country ?? "Saudi Arabia",
+      country: customer?.address.country || posDetails?.company?.country || "",
     },
     status: "active" as Customer["status"],
     vatNumber: "",
@@ -72,6 +73,13 @@ export default function AddCustomerModal({
     customer_group: "All Customer Groups",
     territory: "All Territories",
   });
+
+  useEffect(() => {
+    if (posDetails && posDetails?.can_create_and_edit_customers !== 1) {
+      toast.error("You do not have permission to create or edit customers.");
+      onClose();
+    }
+  }, [posDetails])
 
   // Set customer type based on POS Profile business type when component mounts
   useEffect(() => {
@@ -128,6 +136,7 @@ export default function AddCustomerModal({
       const newFormData = {
         customer_type: customer.type || "individual",
         name: customer.name,
+        taxId: customer.taxId || "",
         contactName: customer.contactPerson || "",
         email: customer.email,
         phone: customer.phone,
@@ -138,7 +147,7 @@ export default function AddCustomerModal({
           city: customer.address?.city || "",
           state: customer.address?.state || "",
           zipCode: customer.address?.zipCode || "",
-          country: customer.address?.country || posDetails?.company?.country || "Saudi Arabia",
+          country: customer.address?.country || posDetails?.company?.country || "",
         },
         status: customer.status,
         vatNumber: customer.taxId || "",
@@ -169,16 +178,16 @@ export default function AddCustomerModal({
   }, [customer?.id, customer?.name, prefilledName, prefilledData, customer]); // Only depend on stable customer properties
 
   useEffect(() => {
-    if (posDetails?.company?.country && !isEditing) {
+    if (posDetails?.company?.country) {
       setFormData((prev) => ({
         ...prev,
         address: {
           ...prev.address,
-          country: posDetails?.company?.country ?? "Saudi Arabia",
+          country: posDetails?.company?.country ?? "",
         },
       }));
     }
-  }, [posDetails?.company?.country, isEditing]);
+  }, [posDetails?.company?.country]);
 
   // Reset form initialization when customer changes
   useEffect(() => {
@@ -350,6 +359,7 @@ export default function AddCustomerModal({
         customer_type: formData.customer_type === "individual" ? "Individual" : "Company",
         email: formData.email,
         phone: formData.phone,
+        taxId: formData.taxId,
         address: formData.address,
         preferredPaymentMethod: formData.preferredPaymentMethod,
         customer_group: formData.customer_group,
@@ -377,6 +387,7 @@ export default function AddCustomerModal({
           type: formData.customer_type,
           email: formData.email,
           phone: formData.phone,
+          taxId: formData.taxId,
           address: formData.address,
           preferredPaymentMethod: formData.preferredPaymentMethod,
           customer_group: formData.customer_group,
@@ -744,6 +755,33 @@ export default function AddCustomerModal({
                     </p>
                   )}
                 </div>
+
+                {/* Tax ID */}
+                {!customer?.is_walkin && (
+                  <div>
+                    <label
+                      htmlFor="taxId"
+                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                    >
+                      Tax ID
+                    </label>
+                    <input
+                      type="text"
+                      id="taxId"
+                      value={formData.taxId}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, taxId: e.target.value }))
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white ${
+                        errors.taxId ? "border-red-500" : "border-gray-300"
+                      }`}
+                      placeholder="Enter tax ID"
+                    />
+                    {errors.taxId && (
+                      <p className="text-red-500 text-xs mt-1">{errors.taxId}</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -801,7 +839,7 @@ export default function AddCustomerModal({
                       <PhoneInput
                         id="phone"
                         international
-                        defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || "SA"}
+                        defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || ""}
                         value={formData.phone}
                         onChange={(value: string | undefined) =>
                           setFormData((prev) => ({ ...prev, phone: value || "" }))
@@ -909,7 +947,7 @@ export default function AddCustomerModal({
                   <PhoneInput
                     id="phone"
                     international
-                    defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || "SA"}
+                    defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || ""}
                     value={formData.phone}
                     onChange={(value: string | undefined) =>
                       setFormData((prev) => ({ ...prev, phone: value || "" }))

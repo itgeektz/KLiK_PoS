@@ -358,17 +358,19 @@ export default function CustomerDetailsPage() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  console.log('Customer data being passed to modal:', customer);
-                  setSelectedCustomer(customer);
-                  setShowAddModal(true);
-                }}
-                className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm"
-              >
-                <Edit className="w-4 h-4" />
-                <span>Edit</span>
-              </button>
+              {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
+                <button
+                  onClick={() => {
+                    console.log('Customer data being passed to modal:', customer);
+                    setSelectedCustomer(customer);
+                    setShowAddModal(true);
+                  }}
+                  className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm"
+                >
+                  <Edit className="w-4 h-4" />
+                  <span>Edit</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -400,6 +402,14 @@ export default function CustomerDetailsPage() {
                       <MapPin className="w-3 h-3" />
                       <span>{customer.territory || "No territory specified"}</span>
                     </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      <span>Tax ID: {customer.taxId || "No tax ID provided"}</span>
+                    </div>
+                    {customer.is_walkin == 1 && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <span>Walk-in Customer</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -695,17 +705,19 @@ export default function CustomerDetailsPage() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  console.log('Customer data being passed to modal:', customer);
-                  setSelectedCustomer(customer);
-                  setShowAddModal(true);
-                }}
-                className="flex items-center space-x-2 px-4 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
-              >
-                <Edit className="w-4 h-4" />
-                <span>Update Customer</span>
-              </button>
+              {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
+                <button
+                  onClick={() => {
+                    console.log('Customer data being passed to modal:', customer);
+                    setSelectedCustomer(customer);
+                    setShowAddModal(true);
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
+                >
+                  <Edit className="w-4 h-4" />
+                  <span>Update Customer</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -742,8 +754,16 @@ export default function CustomerDetailsPage() {
                       <span>Customer Group: {customer.customer_group}</span>
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
+                      <span>Tax ID: {customer.taxId || "No tax ID provided"}</span>
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
                       <span>Type: {customer.type}</span>
                     </div>
+                    {customer.is_walkin == 1 && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <span>Walk-in Customer</span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="text-right space-y-1">

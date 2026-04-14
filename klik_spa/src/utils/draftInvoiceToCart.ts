@@ -65,7 +65,7 @@ export async function addDraftInvoiceToCart(invoiceId: string): Promise<boolean>
         city: invoiceData.customer_city || '',
         state: invoiceData.customer_state || '',
         zipCode: invoiceData.customer_pincode || '',
-        country: invoiceData.customer_country || 'Saudi Arabia',
+        country: invoiceData.customer_country || invoiceData.customer_address_doc?.country || '',
       },
       status: 'active' as const,
       preferredPaymentMethod: 'Cash' as const,

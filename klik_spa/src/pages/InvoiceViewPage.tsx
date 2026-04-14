@@ -170,7 +170,7 @@ export default function InvoiceViewPage() {
             city: customerInfo.address_data?.city || '',
             state: customerInfo.address_data?.state || '',
             zipCode: customerInfo.address_data?.pincode || '',
-            country: customerInfo.address_data?.country || 'Saudi Arabia',
+            country: posDetails?.company?.country || '',
           },
           status: 'active' as const,
           preferredPaymentMethod: customerInfo.payment_method || 'Cash' as const,
@@ -180,7 +180,7 @@ export default function InvoiceViewPage() {
             `${customerInfo.contact_data.first_name || ''} ${customerInfo.contact_data.last_name || ''}`.trim() || customerInfo.customer_name :
             customerInfo.customer_name || "",
           companyName: customerInfo.customer_type === "Company" ? customerInfo.customer_name : undefined,
-          taxId: customerInfo.vat_number || "",
+          taxId: customerInfo.vat_number || customerInfo.tax_id || "",
           industry: customerInfo.industry || "",
           employeeCount: customerInfo.employee_count || "",
           registrationScheme: customerInfo.registration_scheme || "",
@@ -688,18 +688,20 @@ export default function InvoiceViewPage() {
                         <User size={20} />
                         <span>Customer Details</span>
                       </h3>
-                      <button
-                        onClick={handleEditCustomer}
-                        disabled={isLoadingCustomer}
-                        className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Edit Customer"
-                      >
-                        {isLoadingCustomer ? (
-                          <RefreshCw size={16} className="animate-spin" />
-                        ) : (
-                          <Edit size={16} />
-                        )}
-                      </button>
+                      {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
+                        <button
+                          onClick={handleEditCustomer}
+                          disabled={isLoadingCustomer}
+                          className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Edit Customer"
+                        >
+                          {isLoadingCustomer ? (
+                            <RefreshCw size={16} className="animate-spin" />
+                          ) : (
+                            <Edit size={16} />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -799,7 +801,6 @@ export default function InvoiceViewPage() {
                         {invoice.sales_team.map((member: any, idx: number) => {
                           const displayName = member.sales_person ||  "Unknown";
                           const contact_no = member.contact_no || '';
-                          // const allocated_amount = member.allocated_amount ? formatCurrency(member.allocated_amount, invoice.currency) : null;
                           const percent = member.allocated_percentage || null;
                           return (
                             <div key={idx} className="flex items-center justify-between">
@@ -858,7 +859,7 @@ export default function InvoiceViewPage() {
               subdivisionName: '',
               cityName: '',
               postalCode: '',
-              country: 'Saudi Arabia',
+              country: posDetails?.company?.country || '',
               isPrimary: true
             },
             vatNumber: '',

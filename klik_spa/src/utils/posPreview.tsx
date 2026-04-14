@@ -17,8 +17,6 @@ export default function PrintPreview({ invoice }: PrintPreviewProps) {
 
   const { posDetails, loading: posLoading } = usePOSDetails();
 
-  const printFormat = posDetails?.print_format ?? "Sales Invoice";
-
   useEffect(() => {
     const fetchPrintHTML = async () => {
       // Wait until posDetails is loaded
@@ -34,7 +32,7 @@ export default function PrintPreview({ invoice }: PrintPreviewProps) {
           doctype: 'Sales Invoice',
           name: invoiceName
         };
-        const { html, style } = await getPrintFormatHTML(invoiceForAPI, printFormat as string);
+        const { html, style } = await getPrintFormatHTML(invoiceForAPI, posDetails?.print_format as string);
         setHtml(html);
         setStyle(style);
       } catch (err) {
@@ -45,12 +43,12 @@ export default function PrintPreview({ invoice }: PrintPreviewProps) {
     };
 
     fetchPrintHTML();
-  }, [invoice, posDetails, posLoading, printFormat]); // re-run when posDetails or invoice changes
+  }, [invoice, posDetails, posLoading, posDetails?.print_format ]); // re-run when posDetails or invoice changes
 
   if (loading) return <p>Loading Print Preview...</p>;
 
   return (
-    <div className="print-preview-container p-4 bg-white shadow overflow-auto max-h-[90vh]">
+    <div className="print-preview-container p-4 bg-white text-gray-900 dark:bg-gray-800 dark:text-white shadow overflow-auto max-h-[90vh]">
       <style dangerouslySetInnerHTML={{ __html: style }} />
       <div
         className="print-preview-content"

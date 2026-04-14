@@ -15,6 +15,7 @@ interface ERPCustomer {
   custom_total_spent?: number;
   custom_last_visit?: string;
   is_walkin?: number;
+  tax_id?: string;
   contact?: {
     first_name?: string;
     last_name?: string;
@@ -82,6 +83,7 @@ export function useCustomers(searchQuery?: string) {
           tags: [],
           status: "active",
           is_walkin: customer.is_walkin,
+          taxId: customer.tax_id || "",
           createdAt: new Date().toISOString(),
           lastVisit: customer.custom_last_visit || undefined,
           avatar: undefined,
@@ -197,7 +199,7 @@ export function useCustomerDetails(customerId: string | null) {
             `${apiCustomer.contact_data.first_name || ''} ${apiCustomer.contact_data.last_name || ''}`.trim() || apiCustomer.customer_name :
             apiCustomer.customer_name || "",
           companyName: apiCustomer.customer_type === "Company" ? apiCustomer.customer_name : undefined,
-          taxId: apiCustomer.vat_number || "",
+          taxId: apiCustomer.vat_number || apiCustomer.tax_id || "",
           industry: apiCustomer.industry || "",
           employeeCount: apiCustomer.employee_count || "",
           registrationScheme: apiCustomer.registration_scheme || "",

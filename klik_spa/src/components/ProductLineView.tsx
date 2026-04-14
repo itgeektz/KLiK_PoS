@@ -5,6 +5,8 @@ import type { MenuItem } from "../../types"
 import ProductTooltip from "./ProductTooltip"
 import ProductDetailsModal from "./ProductDetailsModal"
 
+import { formatCurrencyWithSymbol } from "../utils/currency"
+
 interface ProductLineViewProps {
   items: MenuItem[]
   onAddToCart: (item: MenuItem) => void
@@ -65,7 +67,7 @@ export default function ProductLineView({
             {items.map((item) => {
               const isOutOfStock = item.available <= 0
               const isDisabled = isOutOfStock || scannerOnly
-              const formattedPrice = `${item.currency_symbol}${item.price.toFixed(2)}`
+              const formattedPrice = formatCurrencyWithSymbol(item.price, item.currency_symbol)
 
               return (
                 <div
@@ -81,12 +83,12 @@ export default function ProductLineView({
                         <h3 className={`font-medium text-gray-900 dark:text-white ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
                           {item.name}
                         </h3>
-                        <div 
+                        <div
                           className="relative inline-block"
                           onMouseEnter={() => !isMobile && setHoveredItemId(item.id)}
                           onMouseLeave={() => !isMobile && setHoveredItemId(null)}
                         >
-                          <button 
+                          <button
                             onClick={(e) => {
                               e.stopPropagation()
                               handleInfoClick(item)
@@ -96,8 +98,8 @@ export default function ProductLineView({
                             ℹ️
                           </button>
                           {hoveredItemId === item.id && !isMobile && (
-                            <ProductTooltip 
-                              item={item} 
+                            <ProductTooltip
+                              item={item}
                               onClose={() => setHoveredItemId(null)}
                               onViewDetails={() => {
                                 handleInfoClick(item)

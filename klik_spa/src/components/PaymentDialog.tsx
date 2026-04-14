@@ -7,6 +7,7 @@ import {
   calculateTotalPayments,
   roundCurrency,
 } from "../utils/currencyMath";
+import { formatCurrencyWithSymbol } from "../utils/currency";
 import { getUserFriendlyError } from "../utils/errorMessages";
 import { extractErrorFromException } from "../utils/errorExtraction";
 import {
@@ -219,6 +220,7 @@ export default function PaymentDialog({
   const isDeliveryRequired = deliveryRequiredValue === 1 ||
                              deliveryRequiredValue === true ||
                              deliveryRequiredValue === "1";
+  const allowPartialPayments = Boolean(posDetails?.allow_partial_payment);
 
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const isWalkinCustomer = selectedCustomer?.is_walkin === 1;
@@ -481,7 +483,7 @@ export default function PaymentDialog({
   const getProcessedMessage = () => {
     const parameters: Record<string, string> = {
       customer_name: sharingData.name || 'there',
-      invoice_total: formatCurrency(calculations.grandTotal),
+      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD'),
       invoice_number: invoiceData?.name || '',
       company_name: 'KLiK PoS',
       date: new Date().toLocaleDateString(),
@@ -501,13 +503,13 @@ export default function PaymentDialog({
       address: typeof selectedCustomer?.address === 'string' ? selectedCustomer.address : JSON.stringify(selectedCustomer?.address || {}),
       customer_address: typeof selectedCustomer?.address === 'string' ? selectedCustomer.address : JSON.stringify(selectedCustomer?.address || {}),
       delivery_note: invoiceData?.name || '',
-      grand_total: formatCurrency(calculations.grandTotal),
+      grand_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD'),
       departure_time: new Date().toLocaleTimeString(),
       estimated_arrival: new Date(Date.now() + 30 * 60000).toLocaleTimeString(), // 30 minutes from now
       driver_name: 'Delivery Driver',
       cell_number: '+1234567890',
       vehicle: 'Delivery Vehicle',
-      invoice_total: formatCurrency(calculations.grandTotal),
+      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD'),
       invoice_number: invoiceData?.name || '',
       company_name: 'KLiK PoS',
       date: new Date().toLocaleDateString(),
@@ -1190,12 +1192,6 @@ export default function PaymentDialog({
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return `${currencySymbol} ${amount.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-    })}`;
-  };
-
   const currentDate = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -1290,7 +1286,7 @@ export default function PaymentDialog({
                         : "Payment Completed Successfully!"}
                     </p>
                     <p className="text-sm opacity-75">
-                      Total: {formatCurrency(calculations.grandTotal)}
+                      Total: {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
                     </p>
                   </div>
                 </div>
@@ -1323,8 +1319,9 @@ export default function PaymentDialog({
                       const body = encodeURIComponent(
                         `Dear ${
                           selectedCustomer?.name
-                        },\n\nHere is your invoice total: ${formatCurrency(
-                          calculations.grandTotal
+                        },\n\nHere is your invoice total: ${formatCurrencyWithSymbol(
+                          calculations.grandTotal,
+                          invoiceData?.currency || 'USD'
                         )}\n\nThank you.`
                       );
                       window.open(
@@ -1341,8 +1338,9 @@ export default function PaymentDialog({
                     title="WhatsApp"
                     onClick={() => {
                       const msg = encodeURIComponent(
-                        `Here is your invoice total: ${formatCurrency(
-                          calculations.grandTotal
+                        `Here is your invoice total: ${formatCurrencyWithSymbol(
+                          calculations.grandTotal,
+                          invoiceData?.currency || 'USD'
                         )}`
                       );
                       window.open(
@@ -1552,6 +1550,47 @@ export default function PaymentDialog({
                   </div>
                 )}
 
+                {allowPartialPayments && (
+                  <div className="space-y-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleCreditSaleToggle}
+                      disabled={invoiceSubmitted || isProcessingPayment}
+                      className={`w-full py-3 rounded-lg font-medium transition-colors ${
+                        isCreditSale
+                          ? "bg-teal-600 text-white dark:bg-teal-500"
+                          : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"
+                      } ${
+                        invoiceSubmitted || isProcessingPayment
+                          ? "cursor-not-allowed opacity-50"
+                          : ""
+                      }`}
+                    >
+                      {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
+                    </button>
+
+                    {isCreditSale && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Due Date
+                        </label>
+                        <input
+                          type="date"
+                          value={dueDate}
+                          onChange={(e) => setDueDate(e.target.value)}
+                          min={new Date().toISOString().split("T")[0]}
+                          disabled={invoiceSubmitted || isProcessingPayment}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
+                            invoiceSubmitted || isProcessingPayment
+                              ? "cursor-not-allowed opacity-50"
+                              : ""
+                          }`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Tax Type Indicator */}
 
                 {/* Round Off */}
@@ -1562,7 +1601,7 @@ export default function PaymentDialog({
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             {invoiceSubmitted ? 'Customer Tax ID' : 'Customer Tax ID (optional)'}
-                            
+
                           </label>
                           <input
                             type="text"
@@ -1625,14 +1664,14 @@ export default function PaymentDialog({
                       Subtotal
                     </span>
                     <span className="font-medium text-gray-900 dark:text-white">
-                      {formatCurrency(calculations.subtotal)}
+                      {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency || 'USD')}
                     </span>
                   </div>
                   {calculations.couponDiscount > 0 && (
                     <div className="flex justify-between text-green-600 dark:text-green-400">
                       <span>Discount</span>
                       <span>
-                        -{formatCurrency(calculations.couponDiscount)}
+                        -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency || 'USD')}
                       </span>
                     </div>
                   )}
@@ -1649,8 +1688,8 @@ export default function PaymentDialog({
                       }`}
                     >
                       {calculations.isInclusive
-                        ? `(${formatCurrency(calculations.taxAmount)})`
-                        : formatCurrency(calculations.taxAmount)}
+                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')})`
+                        : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')}
                     </span>
                   </div>
                   {roundOffAmount !== 0 && (
@@ -1659,7 +1698,7 @@ export default function PaymentDialog({
                         Round Off
                       </span>
                       <span className="font-medium text-gray-900 dark:text-white">
-                        {formatCurrency(roundOffAmount)}
+                        {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency || 'USD')}
                       </span>
                     </div>
                   )}
@@ -1669,7 +1708,7 @@ export default function PaymentDialog({
                         Grand Total
                       </span>
                       <span className="text-lg font-bold text-gray-900 dark:text-white">
-                        {formatCurrency(calculations.grandTotal)}
+                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
                       </span>
                     </div>
                   </div>
@@ -1681,7 +1720,7 @@ export default function PaymentDialog({
                           Total Paid
                         </span>
                         <span className="font-medium text-beveren-600 dark:text-blue-400">
-                          {formatCurrency(totalPaidAmount)}
+                          {formatCurrencyWithSymbol(totalPaidAmount, invoiceData?.currency || 'USD')}
                         </span>
                       </div>
                       <div className="flex justify-between">
@@ -1689,7 +1728,7 @@ export default function PaymentDialog({
                           Outstanding
                         </span>
                         <span className="font-medium text-red-600 dark:text-red-400">
-                          {formatCurrency(outstandingAmount)}
+                          {formatCurrencyWithSymbol(outstandingAmount, invoiceData?.currency || 'USD')}
                         </span>
                       </div>
                       {totalPaidAmount > calculations.grandTotal && (
@@ -1698,8 +1737,9 @@ export default function PaymentDialog({
                             Change
                           </span>
                           <span className="font-medium text-beveren-600 dark:text-beveren-400">
-                            {formatCurrency(
-                              subtractCurrency(totalPaidAmount, calculations.grandTotal)
+                            {formatCurrencyWithSymbol(
+                              subtractCurrency(totalPaidAmount, calculations.grandTotal),
+                              invoiceData?.currency || 'USD'
                             )}
                           </span>
                         </div>
@@ -1713,51 +1753,13 @@ export default function PaymentDialog({
                         Outstanding Amount
                       </span>
                       <span className="font-medium text-orange-600 dark:text-orange-400">
-                        {formatCurrency(calculations.grandTotal)}
+                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
                       </span>
                     </div>
                   )}
                 </div>
 
                 {/* Action Buttons */}
-                <div className="space-y-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={handleCreditSaleToggle}
-                    disabled={invoiceSubmitted || isProcessingPayment}
-                    className={`w-full py-3 rounded-lg border font-medium transition-colors ${
-                      isCreditSale
-                        ? "bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
-                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600"
-                    } ${
-                      invoiceSubmitted || isProcessingPayment
-                        ? "cursor-not-allowed opacity-50"
-                        : ""
-                    }`}
-                  >
-                    {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
-                  </button>
-
-                  {isCreditSale && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Due Date
-                      </label>
-                      <input
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        min={new Date().toISOString().split("T")[0]}
-                        disabled={invoiceSubmitted || isProcessingPayment}
-                        className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
-                          invoiceSubmitted || isProcessingPayment
-                            ? "cursor-not-allowed opacity-50"
-                            : ""
-                        }`}
-                      />
-                    </div>
-                  )}
-                </div>
 
                 <div className="space-y-3 pt-6">
                   <button
@@ -1820,7 +1822,7 @@ export default function PaymentDialog({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Order Complete
+            {invoiceSubmitted ? "Order Complete" : "Order Summary"}
           </h2>
 
           {invoiceSubmitted ? (
@@ -2251,7 +2253,7 @@ export default function PaymentDialog({
                           </p>
                           <p className="mt-1">
                             Invoice Total:{" "}
-                            {formatCurrency(calculations.grandTotal)}
+                            {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
                           </p>
                           <p className="mt-1">Thank you!</p>
                         </div>
@@ -2263,7 +2265,7 @@ export default function PaymentDialog({
                           await sendSMSMessage({
                             mobile_no: sharingData.phone,
                             customer_name: sharingData.name,
-                            message: `Thank you for your purchase at KLiK PoS.\nInvoice Total: ${formatCurrency(calculations.grandTotal)}\nThank you!`
+                            message: `Thank you for your purchase at KLiK PoS.\nInvoice Total: ${formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}\nThank you!`
                           });
                           toast.success("SMS sent successfully!");
                           setSharingMode(null);
@@ -2284,135 +2286,6 @@ export default function PaymentDialog({
             ) : (
               // Original payment content
               <div className="space-y-6">
-                {/* Salesperson PIN Section */}
-                {requiresSalespersonPin && !invoiceSubmitted ? (
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Sales Person
-                      </h3>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={rememberSalesperson}
-                          onChange={(e) =>
-                            handleRememberSalespersonChange(e.target.checked)
-                          }
-                          className="w-4 h-4 cursor-pointer"
-                        />
-                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                          Remember
-                        </span>
-                      </label>
-                    </div>
-                    {isVerifyingPin ? (
-                      <div className="flex items-center justify-center py-4 space-x-2 text-gray-500">
-                        <Loader2 size={16} className="animate-spin" />
-                        <span className="text-sm">Verifying...</span>
-                      </div>
-                    ) : currentSalesperson ? (
-                      <div className="flex items-center justify-between bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 rounded-lg p-2">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-beveren-500 to-beveren-700 text-white flex items-center justify-center font-semibold text-sm">
-                            {currentSalesperson.salesperson_name
-                              .slice(0, 2)
-                              .toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                              {currentSalesperson.salesperson_name}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {currentSalesperson.name}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={handleClearSalesperson}
-                            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                          >
-                            Change
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Enter Your 4-Digit PIN
-                        </label>
-                        <div className="flex space-x-2">
-                          <input
-                            type="password"
-                            value={salespersonPin}
-                            onChange={(e) => {
-                              setSalespersonPin(
-                                e.target.value.replace(/\D/g, "").slice(0, 4)
-                              );
-                              setSalespersonPinError("");
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleVerifyPin();
-                            }}
-                            maxLength={4}
-                            placeholder="••••"
-                            className="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-center text-xl tracking-widest"
-                          />
-                          <button
-                            onClick={handleVerifyPin}
-                            disabled={isVerifyingPin}
-                            className="px-4 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 disabled:opacity-50 transition-colors flex items-center space-x-2"
-                          >
-                            <Check size={16} />
-                            <span>Verify</span>
-                          </button>
-                        </div>
-                        {salespersonPinError && (
-                          <p className="text-sm text-red-600 dark:text-red-400 border-l-2 border-red-500 pl-2 mt-1">
-                            {salespersonPinError}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : currentSalesperson ? (
-                  // Show salesperson (read-only if invoice submitted)
-                  <div>
-                    <p className="font-semibold text-gray-900 dark:text-white">
-                      Sales Person
-                    </p>
-                    <div className="flex items-center justify-between bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 rounded-lg p-2">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-beveren-500 to-beveren-700 text-white flex items-center justify-center font-semibold text-sm">
-                            {currentSalesperson.salesperson_name
-                              .slice(0, 2)
-                              .toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                              {currentSalesperson.salesperson_name}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {currentSalesperson.name}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Only allow change if NOT submitted */}
-                        {!invoiceSubmitted && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={handleClearSalesperson}
-                              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                            >
-                              Change
-                            </button>
-                          </div>
-                        )}
-                    </div>
-                  </div>
-                ) : null}
-
                 {/* Payment Methods */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -2502,6 +2375,47 @@ export default function PaymentDialog({
                   </div>
                 </div>
 
+                {allowPartialPayments && (
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={handleCreditSaleToggle}
+                      disabled={invoiceSubmitted || isProcessingPayment}
+                      className={`w-full py-3 rounded-lg font-medium transition-colors ${
+                        isCreditSale
+                          ? "bg-teal-600 text-white dark:bg-teal-500"
+                          : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"
+                      } ${
+                        invoiceSubmitted || isProcessingPayment
+                          ? "cursor-not-allowed opacity-50"
+                          : ""
+                      }`}
+                    >
+                      {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
+                    </button>
+
+                    {isCreditSale && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Due Date
+                        </label>
+                        <input
+                          type="date"
+                          value={dueDate}
+                          onChange={(e) => setDueDate(e.target.value)}
+                          min={new Date().toISOString().split("T")[0]}
+                          disabled={invoiceSubmitted || isProcessingPayment}
+                          className={`w-full px-3 py-2 border border-red-300 dark:border-red-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-red-800 text-gray-900 dark:text-white ${
+                            invoiceSubmitted || isProcessingPayment
+                              ? "cursor-not-allowed opacity-50"
+                              : ""
+                          }`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Tax Section */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -2542,8 +2456,8 @@ export default function PaymentDialog({
                         }`}
                       >
                         {calculations.isInclusive
-                          ? `(${formatCurrency(calculations.taxAmount)})`
-                          : formatCurrency(calculations.taxAmount)}
+                          ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD' )})`
+                          : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')}
                       </div>
                     </div>
                     <div className="md:col-span-2">
@@ -2551,7 +2465,7 @@ export default function PaymentDialog({
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             {invoiceSubmitted ? 'Customer Tax ID' : 'Customer Tax ID (optional)'}
-                            
+
                           </label>
                           <input
                             type="text"
@@ -2575,6 +2489,135 @@ export default function PaymentDialog({
                     </div>
                   </div>
                 </div>
+
+                {/* Salesperson PIN Section */}
+                {requiresSalespersonPin && !invoiceSubmitted ? (
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Sales Person
+                      </h3>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={rememberSalesperson}
+                          onChange={(e) =>
+                            handleRememberSalespersonChange(e.target.checked)
+                          }
+                          className="w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          Remember
+                        </span>
+                      </label>
+                    </div>
+                    {isVerifyingPin ? (
+                      <div className="flex items-center justify-center py-4 space-x-2 text-gray-500">
+                        <Loader2 size={16} className="animate-spin" />
+                        <span className="text-sm">Verifying...</span>
+                      </div>
+                    ) : currentSalesperson ? (
+                      <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 rounded-lg p-2">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-beveren-500 to-beveren-700 text-white flex items-center justify-center font-semibold text-sm">
+                            {currentSalesperson.salesperson_name
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {currentSalesperson.salesperson_name}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {currentSalesperson.name}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleClearSalesperson}
+                            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Enter Your 4-Digit PIN
+                        </label>
+                        <div className="flex space-x-2">
+                          <input
+                            type="password"
+                            value={salespersonPin}
+                            onChange={(e) => {
+                              setSalespersonPin(
+                                e.target.value.replace(/\D/g, "").slice(0, 4)
+                              );
+                              setSalespersonPinError("");
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleVerifyPin();
+                            }}
+                            maxLength={4}
+                            placeholder="••••"
+                            className="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-center text-xl tracking-widest"
+                          />
+                          <button
+                            onClick={handleVerifyPin}
+                            disabled={isVerifyingPin}
+                            className="px-4 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 disabled:opacity-50 transition-colors flex items-center space-x-2"
+                          >
+                            <Check size={16} />
+                            <span>Verify</span>
+                          </button>
+                        </div>
+                        {salespersonPinError && (
+                          <p className="text-sm text-red-600 dark:text-red-400 border-l-2 border-red-500 pl-2 mt-1">
+                            {salespersonPinError}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : currentSalesperson ? (
+                  // Show salesperson (read-only if invoice submitted)
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">
+                      Sales Person
+                    </p>
+                    <div className="flex items-center justify-between bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 rounded-lg p-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-beveren-500 to-beveren-700 text-white flex items-center justify-center font-semibold text-sm">
+                          {currentSalesperson.salesperson_name
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                            {currentSalesperson.salesperson_name}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {currentSalesperson.name}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Only allow change if NOT submitted */}
+                      {!invoiceSubmitted && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleClearSalesperson}
+                            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
 
                 {/* Totals Section */}
                 <div>
@@ -2624,14 +2667,14 @@ export default function PaymentDialog({
                           Subtotal
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white">
-                          {formatCurrency(calculations.subtotal)}
+                          {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency || 'USD')}
                         </span>
                       </div>
                       {calculations.couponDiscount > 0 && (
                         <div className="flex justify-between text-green-600 dark:text-green-400">
                           <span>Coupon Discount</span>
                           <span>
-                            -{formatCurrency(calculations.couponDiscount)}
+                            -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency || 'USD')}
                           </span>
                         </div>
                       )}
@@ -2648,8 +2691,8 @@ export default function PaymentDialog({
                           }`}
                         >
                           {calculations.isInclusive
-                            ? `(${formatCurrency(calculations.taxAmount)})`
-                            : formatCurrency(calculations.taxAmount)}
+                            ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')})`
+                            : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')}
                         </span>
                       </div>
                       {roundOffAmount !== 0 && (
@@ -2658,7 +2701,7 @@ export default function PaymentDialog({
                             Round Off
                           </span>
                           <span className="font-medium text-gray-900 dark:text-white">
-                            {formatCurrency(roundOffAmount)}
+                            {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency || 'USD')}
                           </span>
                         </div>
                       )}
@@ -2668,7 +2711,7 @@ export default function PaymentDialog({
                             Grand Total
                           </span>
                           <span className="text-xl font-bold text-gray-900 dark:text-white">
-                            {formatCurrency(calculations.grandTotal)}
+                            {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
                           </span>
                         </div>
                       </div>
@@ -2680,7 +2723,7 @@ export default function PaymentDialog({
                               Total Paid
                             </span>
                             <span className="font-medium text-blue-600 dark:text-blue-400">
-                              {formatCurrency(totalPaidAmount)}
+                              {formatCurrencyWithSymbol(totalPaidAmount, invoiceData?.currency || 'USD')}
                             </span>
                           </div>
                           <div className="flex justify-between">
@@ -2694,7 +2737,7 @@ export default function PaymentDialog({
                                   : "text-green-600 dark:text-green-400"
                               }`}
                             >
-                              {formatCurrency(outstandingAmount)}
+                              {formatCurrencyWithSymbol(outstandingAmount, invoiceData?.currency || 'USD')}
                             </span>
                           </div>
                           {totalPaidAmount > calculations.grandTotal && (
@@ -2703,8 +2746,10 @@ export default function PaymentDialog({
                                 Change
                               </span>
                               <span className="font-bold text-green-600 dark:text-green-400">
-                                {formatCurrency(
-                                  subtractCurrency(totalPaidAmount, calculations.grandTotal)
+                                {formatCurrencyWithSymbol(
+                                  subtractCurrency(totalPaidAmount, calculations.grandTotal),
+                                  invoiceData?.currency || 'USD'
+
                                 )}
                               </span>
                             </div>
@@ -2713,45 +2758,6 @@ export default function PaymentDialog({
                       )}
                     </div>
                   </div>
-                </div>
-
-                <div className="space-y-3">
-                  <button
-                    type="button"
-                    onClick={handleCreditSaleToggle}
-                    disabled={invoiceSubmitted || isProcessingPayment}
-                    className={`w-full py-3 rounded-lg border font-medium transition-colors ${
-                      isCreditSale
-                        ? "bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
-                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600"
-                    } ${
-                      invoiceSubmitted || isProcessingPayment
-                        ? "cursor-not-allowed opacity-50"
-                        : ""
-                    }`}
-                  >
-                    {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
-                  </button>
-
-                  {isCreditSale && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Due Date
-                      </label>
-                      <input
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        min={new Date().toISOString().split("T")[0]}
-                        disabled={invoiceSubmitted || isProcessingPayment}
-                        className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
-                          invoiceSubmitted || isProcessingPayment
-                            ? "cursor-not-allowed opacity-50"
-                            : ""
-                        }`}
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -2813,11 +2819,11 @@ export default function PaymentDialog({
                             {item.name}
                           </p>
                           <p className="text-gray-600 dark:text-gray-400">
-                            {item.quantity} x {formatCurrency(item.price)}
+                            {item.quantity} x {formatCurrencyWithSymbol(item.price, invoiceData?.currency || 'USD')}
                           </p>
                         </div>
                         <p className="font-medium text-gray-900 dark:text-white">
-                          {formatCurrency(item.quantity * item.price)}
+                          {formatCurrencyWithSymbol(item.quantity * item.price, invoiceData?.currency || 'USD')}
                         </p>
                       </div>
                     ))
@@ -2854,9 +2860,10 @@ export default function PaymentDialog({
                               Total:
                             </span>
                             <span className="font-medium text-gray-900 dark:text-white">
-                              {formatCurrency(
+                              {formatCurrencyWithSymbol(
                                 externalInvoiceData?.grand_total ||
-                                  calculations.grandTotal
+                                  calculations.grandTotal,
+                                invoiceData?.currency || 'USD'
                               )}
                             </span>
                           </div>
@@ -2881,14 +2888,14 @@ export default function PaymentDialog({
                       Subtotal
                     </span>
                     <span className="text-gray-900 dark:text-white">
-                      {formatCurrency(calculations.subtotal)}
+                      {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency || 'USD')}
                     </span>
                   </div>
                   {calculations.couponDiscount > 0 && (
                     <div className="flex justify-between text-green-600 dark:text-green-400">
                       <span>Discount</span>
                       <span>
-                        -{formatCurrency(calculations.couponDiscount)}
+                        -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency || 'USD')}
                       </span>
                     </div>
                   )}
@@ -2905,8 +2912,8 @@ export default function PaymentDialog({
                       }`}
                     >
                       {calculations.isInclusive
-                        ? `(${formatCurrency(calculations.taxAmount)})`
-                        : formatCurrency(calculations.taxAmount)}
+                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')})`
+                        : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')}
                     </span>
                   </div>
                   {roundOffAmount !== 0 && (
@@ -2915,7 +2922,7 @@ export default function PaymentDialog({
                         Round Off
                       </span>
                       <span className="text-gray-900 dark:text-white">
-                        {formatCurrency(roundOffAmount)}
+                        {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency || 'USD')}
                       </span>
                     </div>
                   )}
@@ -2925,7 +2932,7 @@ export default function PaymentDialog({
                         Total
                       </span>
                       <span className="text-gray-900 dark:text-white">
-                        {formatCurrency(calculations.grandTotal)}
+                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
                       </span>
                     </div>
                   </div>
@@ -2950,7 +2957,7 @@ export default function PaymentDialog({
                                 {method}
                               </span>
                               <span className="text-gray-900 dark:text-white">
-                                {formatCurrency(amount)}
+                                {formatCurrencyWithSymbol(amount, invoiceData?.currency || 'USD')}
                               </span>
                             </div>
                           ))}
@@ -2965,7 +2972,7 @@ export default function PaymentDialog({
                           Outstanding Amount:
                         </span>
                         <span className="text-orange-600 dark:text-orange-400 font-bold">
-                          {formatCurrency(calculations.grandTotal)}
+                          {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
                         </span>
                       </div>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">

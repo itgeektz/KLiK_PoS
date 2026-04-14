@@ -358,7 +358,7 @@ export default function CustomerDetailsPage() {
                   </p>
                 </div>
               </div>
-              {posDetails?.can_create_and_edit_customers === 1 && (
+              {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
                 <button
                   onClick={() => {
                     console.log('Customer data being passed to modal:', customer);
@@ -705,7 +705,7 @@ export default function CustomerDetailsPage() {
                   </p>
                 </div>
               </div>
-              {posDetails?.can_create_and_edit_customers === 1 && (
+              {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
                 <button
                   onClick={() => {
                     console.log('Customer data being passed to modal:', customer);

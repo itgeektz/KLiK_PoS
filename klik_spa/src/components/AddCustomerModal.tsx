@@ -75,7 +75,7 @@ export default function AddCustomerModal({
   });
 
   useEffect(() => {
-    if (posDetails?.can_create_and_edit_customers !== 1) {
+    if (posDetails && posDetails?.can_create_and_edit_customers !== 1) {
       toast.error("You do not have permission to create or edit customers.");
       onClose();
     }

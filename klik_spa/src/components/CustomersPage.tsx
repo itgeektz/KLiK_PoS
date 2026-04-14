@@ -28,15 +28,16 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [prefilledData, setPrefilledData] = useState<{name?: string, email?: string, phone?: string}>({})
   const [globalTotals, setGlobalTotals] = useState<{ total_customers: number; total_invoices: number } | null>(null)
+  const [canManageCustomers, setCanManageCustomers] = useState(false)
   const { posDetails } = usePOSDetails()
-  const canManageCustomers = posDetails?.can_create_and_edit_customers === 1
 
   useEffect(() => {
-    if (posDetails?.can_create_and_edit_customers !== 1) {
+    if (posDetails && posDetails?.can_create_and_edit_customers !== 1) {
       console.warn("User does not have permission to create or edit customers. Hiding add/edit functionality.");
       navigate("/pos"); // Redirect to POS page if user tries to access customers without permission
       return;
     }
+    setCanManageCustomers(posDetails?.can_create_and_edit_customers === 1)
   }, [posDetails])
 
 

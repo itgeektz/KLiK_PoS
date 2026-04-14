@@ -688,7 +688,7 @@ export default function InvoiceViewPage() {
                         <User size={20} />
                         <span>Customer Details</span>
                       </h3>
-                      {posDetails?.can_create_and_edit_customers === 1 && (
+                      {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
                         <button
                           onClick={handleEditCustomer}
                           disabled={isLoadingCustomer}

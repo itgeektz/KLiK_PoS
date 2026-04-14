@@ -2381,7 +2381,7 @@ export default function OrderSummary({
   const handleCustomerSearchKeyDown = (
     e: React.KeyboardEvent<HTMLInputElement>
   ) => {
-    if (e.key === "Enter" && customerSearchQuery.trim() !== "" && posDetails?.can_create_and_edit_customers === 1) {
+    if (e.key === "Enter" && customerSearchQuery.trim() !== "" && posDetails && posDetails?.can_create_and_edit_customers === 1) {
       // Check if there are no matching customers
       if (filteredCustomers.length === 0) {
         // This is a new customer - detect input type and set prefilled data
@@ -2996,7 +2996,7 @@ export default function OrderSummary({
                 )}
               </div>
 
-              {posDetails?.can_create_and_edit_customers === 1 && (
+              {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
                 <button
                   onClick={() => setShowAddCustomerModal(true)}
                   className="ml-2 p-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"
@@ -3093,7 +3093,7 @@ export default function OrderSummary({
                 </div>
               )}
             </div>
-            {posDetails?.can_create_and_edit_customers === 1 && (
+            {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
               <button
                 onClick={() => setShowAddCustomerModal(true)}
                 className="p-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"

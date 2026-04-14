@@ -208,6 +208,12 @@ export default function PaymentDialog({
   const { salesTaxCharges, defaultTax } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
   const navigate = useNavigate();
+  const { clearCart } = useCartStore();
+
+  const clearOrderState = () => {
+    clearDraftInvoiceCache();
+    clearCart();
+  };
 
   // Determine if this is B2B business type
   const isB2B = posDetails?.business_type === "B2B";
@@ -591,8 +597,6 @@ export default function PaymentDialog({
     salesTaxCharges,
     roundOffAmount,
   ]);
-
-  const { clearCart } = useCartStore()
 
   // Calculate total paid amount from all payment methods (for both B2C and B2B)
   const totalPaidAmount = calculateTotalPayments(Object.values(paymentAmounts));
@@ -1112,7 +1116,6 @@ export default function PaymentDialog({
 
       // Clear draft invoice cache since payment is completed
       clearDraftInvoiceCache();
-      clearCart()
 
       // Don't clear cart immediately - let modal stay open for invoice preview
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1154,6 +1157,7 @@ export default function PaymentDialog({
   };
 //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleViewInvoice = (invoice: any) => {
+    clearOrderState();
     navigate(`/invoice/${invoice.name}`);
   };
 
@@ -1305,6 +1309,7 @@ export default function PaymentDialog({
                     title="Print"
                     onClick={() => {
                       handlePrintInvoice(invoiceData);
+                      clearOrderState();
                     }}
                   >
                     <Printer size={18} />
@@ -1315,6 +1320,7 @@ export default function PaymentDialog({
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors"
                     title="Email"
                     onClick={() => {
+                      clearOrderState();
                       const subject = encodeURIComponent("Your Invoice");
                       const body = encodeURIComponent(
                         `Dear ${
@@ -1390,7 +1396,7 @@ export default function PaymentDialog({
                 <div className="pt-4">
                   <button
                     onClick={() => {
-                      // Simply close the modal - no navigation needed
+                      clearOrderState();
                       onClose(true);
                     }}
                     className="w-full py-3 bg-beveren-600 text-white rounded-lg font-medium hover:bg-beveren-700 transition-colors"
@@ -1838,6 +1844,7 @@ export default function PaymentDialog({
                 title="Print"
                 onClick={() => {
                   handlePrintInvoice(invoiceData);
+                  clearOrderState();
                   navigate("/");
                 }}
               >
@@ -1851,9 +1858,10 @@ export default function PaymentDialog({
                     : "text-blue-600 hover:bg-blue-100"
                 } dark:text-blue-400 dark:hover:bg-blue-900`}
                 title="Email"
-                onClick={() =>
-                  setSharingMode(sharingMode === "email" ? null : "email")
-                }
+                onClick={() => {
+                  clearOrderState();
+                  setSharingMode(sharingMode === "email" ? null : "email");
+                }}
               >
                 <MailPlus size={20} />
               </button>
@@ -3058,7 +3066,10 @@ export default function PaymentDialog({
               <div className={`flex justify-end space-x-4 ${isDeliveryRequired ? '' : 'w-full'}`}>
                 {invoiceSubmitted && (
                   <button
-                    onClick={() => onClose(true)}
+                    onClick={() => {
+                      clearOrderState();
+                      onClose(true);
+                    }}
                     className="bg-beveren-500 px-6 py-2 border border-gray-300 dark:border-gray-600 text-white dark:text-gray-300 rounded-lg font-medium hover:bg-green-700 dark:hover:bg-gray-800 transition-colors"
                   >
                     New Order

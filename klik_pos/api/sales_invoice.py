@@ -734,13 +734,16 @@ def parse_invoice_data(data):
 		discount_data = item_discounts.get(item_code, {})
 		batch_number = (
 			item.get("batchNumber")
-			or (discount_data.get("batchNumber"))
+			or discount_data.get("batchNumber")
 		)
 
 		serial_number = (
 			item.get("serialNumber")
-			or (discount_data.get("serialNumber"))
+			or discount_data.get("serialNumber")
 		)
+
+		discount_percentage = flt(item.get("discountPercentage") or discount_data.get("discountPercentage") or 0)
+		discount_amount = flt(item.get("discountAmount") or discount_data.get("discountAmount") or 0)
 
 		items.append({
 			"id": item_code,
@@ -749,13 +752,11 @@ def parse_invoice_data(data):
             "batchNumber": batch_number,
             "serialNumber": serial_number,
             "uom": item.get("uom"),
-            "discountPercentage": discount_data.get("discountPercentage"),
-            "discountAmount": discount_data.get("discountAmount"),
+			"discountPercentage": discount_percentage,
+			"discountAmount": discount_amount,
 		})
 
 		price = flt(item.get("price") or 0)
-		discount_percentage = flt(discount_data.get("discountPercentage") or 0)
-		discount_amount = flt(discount_data.get("discountAmount") or 0)
 
 		if price <= 0 and discount_percentage <= 0 and discount_amount <= 0:
 			frappe.throw(

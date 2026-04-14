@@ -650,11 +650,7 @@ export default function OrderSummary({
       serialNumber: "",
       availableQuantity: 0,
     };
-    if (itemDiscount.customRate !== undefined) {
-      return Math.max(0, itemDiscount.customRate);
-    }
-
-    let discountedPrice = item.price;
+    let discountedPrice = itemDiscount.customRate ?? item.price;
 
     // Apply percentage discount first
     if (itemDiscount.discountPercentage > 0) {
@@ -784,9 +780,6 @@ export default function OrderSummary({
 
   // Function to handle custom rate change
   const handleCustomRateChange = (item: CartItem, newRate: number) => {
-    const originalPrice = item.price;
-    const discountAmount = Math.max(0, originalPrice - newRate);
-
     setItemDiscounts((prev) => ({
       ...prev,
       [item.id]: {
@@ -799,7 +792,7 @@ export default function OrderSummary({
         }),
         customRate: newRate,
         discountPercentage: 0,
-        discountAmount: discountAmount,
+        discountAmount: 0,
       },
     }));
   };

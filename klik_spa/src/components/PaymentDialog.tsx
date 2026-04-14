@@ -1044,17 +1044,18 @@ export default function PaymentDialog({
       // })),
       items: cartItems.map(item => {
         const code = item.item_code || item.id;
+        const discountData = itemDiscounts[code] || itemDiscounts[item.id] || {};
 
         return {
           ...item,
           id: item.item_code || item.id,        // ← override the generated id
           item_code: item.item_code || item.id,  // ← keep item_code correct too
           price: (item as any).discountedPrice || item.price,
-          batchNumber: itemDiscounts[code]?.batchNumber || null,
-          serialNumber: itemDiscounts[code]?.serialNumber || null,
+          batchNumber: discountData.batchNumber || null,
+          serialNumber: discountData.serialNumber || null,
           uom: item.uom || 'Nos',
-          discountPercentage: itemDiscounts[code]?.discountPercentage || 0,
-          discountAmount: itemDiscounts[code]?.discountAmount || 0,
+          discountPercentage: discountData.discountPercentage || 0,
+          discountAmount: discountData.discountAmount || 0,
         }}),
       customer: selectedCustomer,
       paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => ({ method, amount: parseFloat((Number(amount) || 0).toFixed(2)) })),

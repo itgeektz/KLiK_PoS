@@ -2521,6 +2521,7 @@ export default function OrderSummary({
             tags: erpCustomer.custom_tags?.split(',').filter(Boolean) || [],
             status: erpCustomer.custom_status || 'active',
             is_walkin: erpCustomer.is_walkin,
+            taxId: erpCustomer.tax_id || '',
             createdAt: erpCustomer.creation || new Date().toISOString()
           };
 

@@ -180,7 +180,7 @@ export default function InvoiceViewPage() {
             `${customerInfo.contact_data.first_name || ''} ${customerInfo.contact_data.last_name || ''}`.trim() || customerInfo.customer_name :
             customerInfo.customer_name || "",
           companyName: customerInfo.customer_type === "Company" ? customerInfo.customer_name : undefined,
-          taxId: customerInfo.vat_number || "",
+          taxId: customerInfo.vat_number || customerInfo.tax_id || "",
           industry: customerInfo.industry || "",
           employeeCount: customerInfo.employee_count || "",
           registrationScheme: customerInfo.registration_scheme || "",
@@ -858,7 +858,7 @@ export default function InvoiceViewPage() {
               subdivisionName: '',
               cityName: '',
               postalCode: '',
-              country: 'Saudi Arabia',
+              country: posDetails?.company?.country || '',
               isPrimary: true
             },
             vatNumber: '',

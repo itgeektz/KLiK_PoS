@@ -400,6 +400,14 @@ export default function CustomerDetailsPage() {
                       <MapPin className="w-3 h-3" />
                       <span>{customer.territory || "No territory specified"}</span>
                     </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      <span>Tax ID: {customer.taxId || "No tax ID provided"}</span>
+                    </div>
+                    {customer.is_walkin == 1 && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <span>Walk-in Customer</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -742,8 +750,16 @@ export default function CustomerDetailsPage() {
                       <span>Customer Group: {customer.customer_group}</span>
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
+                      <span>Tax ID: {customer.taxId || "No tax ID provided"}</span>
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
                       <span>Type: {customer.type}</span>
                     </div>
+                    {customer.is_walkin == 1 && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        <span>Walk-in Customer</span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="text-right space-y-1">

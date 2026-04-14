@@ -55,6 +55,7 @@ export default function AddCustomerModal({
     contactName: "",
     email: "",
     phone: "",
+    taxId: "",
     address: {
       addressType: "Billing",
       street: "",
@@ -128,6 +129,7 @@ export default function AddCustomerModal({
       const newFormData = {
         customer_type: customer.type || "individual",
         name: customer.name,
+        taxId: customer.taxId || "",
         contactName: customer.contactPerson || "",
         email: customer.email,
         phone: customer.phone,
@@ -350,6 +352,7 @@ export default function AddCustomerModal({
         customer_type: formData.customer_type === "individual" ? "Individual" : "Company",
         email: formData.email,
         phone: formData.phone,
+        taxId: formData.taxId,
         address: formData.address,
         preferredPaymentMethod: formData.preferredPaymentMethod,
         customer_group: formData.customer_group,
@@ -377,6 +380,7 @@ export default function AddCustomerModal({
           type: formData.customer_type,
           email: formData.email,
           phone: formData.phone,
+          taxId: formData.taxId,
           address: formData.address,
           preferredPaymentMethod: formData.preferredPaymentMethod,
           customer_group: formData.customer_group,
@@ -744,6 +748,33 @@ export default function AddCustomerModal({
                     </p>
                   )}
                 </div>
+
+                {/* Tax ID */}
+                {!customer?.is_walkin && (
+                  <div>
+                    <label
+                      htmlFor="taxId"
+                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                    >
+                      Tax ID
+                    </label>
+                    <input
+                      type="text"
+                      id="taxId"
+                      value={formData.taxId}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, taxId: e.target.value }))
+                      }
+                      className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white ${
+                        errors.taxId ? "border-red-500" : "border-gray-300"
+                      }`}
+                      placeholder="Enter tax ID"
+                    />
+                    {errors.taxId && (
+                      <p className="text-red-500 text-xs mt-1">{errors.taxId}</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -225,6 +225,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
 					"custom_total_spent": customer_stats.get("total_spent", 0),
 					"custom_last_visit": customer_stats.get("last_visit"),
 					"is_walkin": getattr(doc, "custom_is_walkin", 0),
+					"tax_id": doc.tax_id,
 					# "exchange_rate": get_currency_exchange_rate(company_currency, doc.default_currency)
 				}
 			)
@@ -383,6 +384,7 @@ def get_customer_info(customer_name: str):
 			"contact_data": contact_data,
 			"address_data": address_data,
 			"is_walkin": getattr(customer, "custom_is_walkin", 0),
+			"tax_id": customer.tax_id,
 		}
 
 		# Add ZATCA details for company customers
@@ -418,6 +420,7 @@ def create_or_update_customer(customer_data):
 		country = customer_data.get("address", {}).get("country", "Kenya")
 		name_arabic = customer_data.get("name_arabic", "")
 		address = customer_data.get("address", {})
+		tax_id = customer_data.get("taxId", "")
 
 		if not customer_name:
 			customer_name = phone or email
@@ -426,7 +429,7 @@ def create_or_update_customer(customer_data):
 
 		# Create or update Customer
 		customer_doc = get_or_create_customer(
-			customer_name, email, phone, country, name_arabic, customer_data
+			customer_name, email, phone, country, tax_id, name_arabic, customer_data
 		)
 
 		contact_doc = None
@@ -473,7 +476,7 @@ def create_or_update_customer(customer_data):
 		return {"success": False, "error": str(e)}
 
 
-def get_or_create_customer(name, email, phone, country, name_arabic="", data=None):
+def get_or_create_customer(name, email, phone, country, tax_id, name_arabic="", data=None):
 	"""Create or update a Customer (Individual or Company)."""
 	try:
 		cust_type = (
@@ -496,6 +499,7 @@ def get_or_create_customer(name, email, phone, country, name_arabic="", data=Non
 			doc.customer_name_in_arabic = name_arabic
 			doc.customer_group = customer_group
 			doc.territory = territory
+			doc.taxid = tax_id
 
 			if cust_type == "Company":
 				doc.custom_vat_number = data.get("vatNumber")
@@ -514,6 +518,7 @@ def get_or_create_customer(name, email, phone, country, name_arabic="", data=Non
 					"customer_name_in_arabic": name_arabic,
 					"email_id": email,
 					"mobile_no": phone,
+					"tax_id": tax_id,
 					"custom_country": country,
 					"customer_group": customer_group,
 					"territory": territory,
@@ -676,10 +681,11 @@ def update_customer(customer_id, customer_data):
 		customer_name = customer_data.get("name", customer.customer_name)
 		address_data = customer_data.get("address", {})
 		country = address_data.get("country")
+		customer.tax_id = customer_data.get("taxId", "")
 
 		# Update customer fields
 		for key, value in customer_data.items():
-			if key not in ["email", "phone", "address"]:
+			if key not in ["email", "phone", "address", "taxId"]:
 				setattr(customer, key, value)
 
 		customer.ignore_version = True

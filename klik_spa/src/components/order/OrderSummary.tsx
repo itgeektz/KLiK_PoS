@@ -75,11 +75,25 @@ export default function OrderSummary({
   const { statistics: customerStats } = useCustomerStatistics(selectedCustomer?.id || null);
   const { refreshStockOnly, updateBatchQuantitiesForItems } = useProducts();
 
-  const [itemDiscounts, setItemDiscounts] = useState<Record<string, any>>({});
+  const [itemDiscounts, setItemDiscounts] = useState<Record<string, any>>(() => {
+    const saved: Record<string, any> = {};
+    cartItems.forEach(item => {
+      if (item.serial_batch_bundle || item.bundle_entries) {
+        saved[item.id] = {
+          discountPercentage: 0,
+          discountAmount: 0,
+          serial_batch_bundle: item.serial_batch_bundle,
+          bundle_entries: item.bundle_entries,
+        };
+      }
+    });
+    return saved;
+  });
   const [itemBatches, setItemBatches] = useState<Record<string, any[]>>({});
   const [itemSerials, setItemSerials] = useState<Record<string, string[]>>({});
 
   const currency_symbol = posDetails?.currency_symbol;
+  const autoFetchBatch = posDetails?.custom_autofetch_batchserial_ === 1;
 
   useEffect(() => {
     const timer = setTimeout(() => setIsInitialLoad(false), 2000);
@@ -139,7 +153,7 @@ export default function OrderSummary({
   const updateItemDiscount = (itemId: string, field: string, value: number | string) => {
     setItemDiscounts(prev => ({
       ...prev,
-      [itemId]: { ...(prev[itemId] || { discountPercentage: 0, discountAmount: 0, batchNumber: "", serialNumber: "" }), [field]: value }
+      [itemId]: { ...(prev[itemId] || { discountPercentage: 0, discountAmount: 0 }), [field]: value }
     }));
   };
 
@@ -149,6 +163,11 @@ export default function OrderSummary({
       ...prev,
       [item.id]: { ...(prev[item.id] || {}), customRate: newRate, discountAmount }
     }));
+  };
+
+  const handleBundleUpdate = (itemId: string, bundleId: string, entries: any[]) => {
+    updateItemDiscount(itemId, "serial_batch_bundle", bundleId);
+    updateItemDiscount(itemId, "bundle_entries", JSON.stringify(entries));
   };
 
   const filteredCustomers =
@@ -500,12 +519,14 @@ export default function OrderSummary({
                   onDiscountChange={updateItemDiscount}
                   onCustomRateChange={handleCustomRateChange}
                   onDuplicateItem={onDuplicateItem || (() => {})}
+                  onBundleUpdate={handleBundleUpdate}
                   selectedCustomer={selectedCustomer}
                   posDetails={posDetails}
                   itemBatches={itemBatches[item.item_code || item.id] || []}
                   itemSerials={itemSerials[item.item_code || item.id] || []}
                   currency_symbol={currency_symbol}
                   isMobile={isMobile}
+                  autoFetchBatch={autoFetchBatch}
                 />
               );
             })
@@ -528,8 +549,7 @@ export default function OrderSummary({
             if (!sc) return;
             handleHoldOrder({
               items: cartItems.map((item) => ({
-                id: item.id,
-                quantity: item.quantity,
+                ...item,
                 price: getDiscountedPrice(item),
               })),
               customer: { id: sc.id },

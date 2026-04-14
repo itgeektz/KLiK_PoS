@@ -6,12 +6,17 @@ import { toast } from 'react-toastify'
 import { clearDraftInvoiceCache } from '../utils/draftInvoiceCache'
 import { updateItemPricesForCustomer, getItemPriceForCustomer, applyPricingRulesToCart } from '../services/dynamicPricing'
 
+interface SerialBatchEntry {
+  serial_no?: string;
+  batch_no?: string;
+  qty?: number;
+}
+
 interface CartState {
   cartItems: CartItem[]
   appliedCoupons: GiftCoupon[]
   selectedCustomer: Customer | null
 
-  // Actions
   addToCart: (item: Omit<CartItem, 'quantity'>) => Promise<void>
   addToCartWithQuantity: (item: Omit<CartItem, 'quantity'>, quantity: number) => Promise<void>
   updateQuantity: (id: string, quantity: number) => Promise<void>
@@ -23,6 +28,7 @@ interface CartState {
   setSelectedCustomer: (customer: Customer | null) => Promise<void>
   updatePricesForCustomer: (customerId?: string) => Promise<void>
   applyPricingRules: () => Promise<void>
+  updateItemBundleEntries: (id: string, entries: SerialBatchEntry[]) => void
 }
 
 export const useCartStore = create<CartState>()(
@@ -57,29 +63,30 @@ export const useCartStore = create<CartState>()(
             )
           }));
         } else {
-          // New item - fetch correct price if customer is selected
           let finalPrice = item.price;
 
           if (state.selectedCustomer) {
             try {
-              // Pass the item's UOM to ensure we get the price for the correct UOM
               const priceInfo = await getItemPriceForCustomer(item.id, state.selectedCustomer.id, item.uom);
               if (priceInfo.success) {
                 finalPrice = priceInfo.price;
               }
             } catch (error) {
-              console.error('❌ Error fetching price for customer:', error);
-              // Continue with original price if API fails
+              console.error('Error fetching price for customer:', error);
             }
           }
 
-          const newCartItems = [...state.cartItems, { ...item, price: finalPrice, quantity: 1 }];
+          const newCartItems = [...state.cartItems, { 
+            ...item, 
+            price: finalPrice, 
+            quantity: 1,
+            bundle_entries: []
+          }];
 
           set((state) => ({
             cartItems: newCartItems
           }));
 
-          // Apply pricing rules after adding item
           const stateAfterAdd = get();
           if (stateAfterAdd.cartItems.length > 0) {
             await stateAfterAdd.applyPricingRules();
@@ -112,29 +119,30 @@ export const useCartStore = create<CartState>()(
             )
           }));
         } else {
-          // New item - fetch correct price if customer is selected
           let finalPrice = item.price;
 
           if (state.selectedCustomer) {
             try {
-              // Pass the item's UOM to ensure we get the price for the correct UOM
               const priceInfo = await getItemPriceForCustomer(item.id, state.selectedCustomer.id, item.uom);
               if (priceInfo.success) {
                 finalPrice = priceInfo.price;
               }
             } catch (error) {
-              console.error('❌ Error fetching price for customer:', error);
-              // Continue with original price if API fails
+              console.error('Error fetching price for customer:', error);
             }
           }
 
-          const newCartItems = [...state.cartItems, { ...item, price: finalPrice, quantity }];
+          const newCartItems = [...state.cartItems, { 
+            ...item, 
+            price: finalPrice, 
+            quantity,
+            bundle_entries: []
+          }];
 
           set((state) => ({
             cartItems: newCartItems
           }));
 
-          // Apply pricing rules after adding item
           const stateAfterAdd = get();
           if (stateAfterAdd.cartItems.length > 0) {
             await stateAfterAdd.applyPricingRules();
@@ -355,9 +363,19 @@ export const useCartStore = create<CartState>()(
             })
           }));
         } catch (error) {
-          console.error('❌ Error applying pricing rules:', error);
+          console.error('Error applying pricing rules:', error);
         }
-      }
+      },
+
+      updateItemBundleEntries: (id: string, entries: SerialBatchEntry[]) => {
+        set((state) => ({
+          cartItems: state.cartItems.map((item) =>
+            item.id === id
+              ? { ...item, bundle_entries: entries }
+              : item
+          )
+        }));
+      },
     }),
     {
       name: 'beveren-cart-storage'

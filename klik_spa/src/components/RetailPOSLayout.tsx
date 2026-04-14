@@ -143,13 +143,7 @@ export default function RetailPOSLayout() {
       updateQuantity(item.id, existingItem.quantity + 1)
     } else {
       addToCart({
-        id: item.id,
-        name: item.name,
-        category: item.category,
-        price: item.price,
-        image: item.image,
-        available: item.available,
-        uom: item.uom,
+        ...item,
         item_code: item.id, // item.id is the item_code from the API
       })
     }

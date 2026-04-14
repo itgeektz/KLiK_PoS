@@ -73,12 +73,22 @@ export const SerialBatchBundleModal = ({
   }, [isOpen, qty]);
 
   const updateEntry = (index: number, field: keyof SerialBatchEntry, value: any) => {
-    const updated = entries.map((entry, i) => {
-      if (i === index) {
-        return { ...entry, [field]: value };
+    const updated = [...entries];
+    updated[index] = { ...updated[index], [field]: value };
+    
+    if (field === "batch_no" && value) {
+      const batch = availableBatches.find(b => b.batch_no === value);
+      if (batch && !updated[index].qty) {
+        updated[index].qty = 1;
       }
-      return entry;
-    });
+    }
+    
+    if (field === "serial_no" && value) {
+      if (!updated[index].qty) {
+        updated[index].qty = 1;
+      }
+    }
+    
     onEntriesChange(updated);
   };
 
@@ -115,6 +125,7 @@ export const SerialBatchBundleModal = ({
       if (hasSerialNo && !e.serial_no) return false;
       if (hasBatchNo && !e.batch_no) return false;
       if (!hasSerialNo && hasBatchNo && (!e.qty || e.qty <= 0)) return false;
+      if (hasSerialNo && hasBatchNo && (!e.serial_no || !e.batch_no)) return false;
       return true;
     });
     
@@ -153,9 +164,8 @@ export const SerialBatchBundleModal = ({
   }));
 
   const batchOptions = availableBatches.map(b => ({
-    label: b.batch_no,
+    label: `${b.batch_no} (Qty: ${b.qty}${b.expiry_date ? `, Exp: ${b.expiry_date}` : ''})`,
     value: b.batch_no,
-    extra: `Qty: ${b.qty}${b.expiry_date ? ` | Exp: ${b.expiry_date}` : ''}`
   }));
 
   return (
@@ -287,7 +297,7 @@ export const SerialBatchBundleModal = ({
                       <td className={`px-4 py-3 ${hasSerialNo || !hasBatchNo ? "hidden" : ""}`}>
                         <div className="flex items-center justify-center gap-1 bg-gray-50 dark:bg-gray-800 rounded-lg p-1 border border-gray-100 dark:border-gray-700">
                           <button 
-                            onClick={() => updateEntry(idx, "qty", Math.max(0, (entry.qty || 0) - 1))} 
+                            onClick={() => updateEntry(idx, "qty", Math.max(1, (entry.qty || 1) - 1))} 
                             className="p-1.5 hover:bg-white dark:hover:bg-gray-700 rounded shadow-sm transition-all"
                             disabled={isLoading}
                           >
@@ -295,13 +305,13 @@ export const SerialBatchBundleModal = ({
                           </button>
                           <input 
                             type="number" 
-                            value={entry.qty || 0} 
-                            onChange={(e) => updateEntry(idx, "qty", parseFloat(e.target.value) || 0)} 
+                            value={entry.qty || 1} 
+                            onChange={(e) => updateEntry(idx, "qty", Math.max(1, parseFloat(e.target.value) || 1))} 
                             className="w-12 text-center bg-transparent border-none font-bold outline-none text-sm" 
                             disabled={isLoading}
                           />
                           <button 
-                            onClick={() => updateEntry(idx, "qty", (entry.qty || 0) + 1)} 
+                            onClick={() => updateEntry(idx, "qty", (entry.qty || 1) + 1)} 
                             className="p-1.5 hover:bg-white dark:hover:bg-gray-700 rounded shadow-sm transition-all"
                             disabled={isLoading}
                           >

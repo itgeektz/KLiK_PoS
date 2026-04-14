@@ -131,6 +131,10 @@ export default function OrderSummary({
 
   const getDiscountedPrice = (item: CartItem) => {
     const discount = itemDiscounts[item.id] || { discountPercentage: 0, discountAmount: 0 };
+    const customRate = discount.customRate;
+    if (customRate !== undefined && customRate !== null) {
+      return Math.max(0, customRate);
+    }
     let price = item.price;
     if (discount.discountPercentage > 0) price = price * (1 - discount.discountPercentage / 100);
     if (discount.discountAmount > 0) price = Math.max(0, price - discount.discountAmount);
@@ -158,10 +162,14 @@ export default function OrderSummary({
   };
 
   const handleCustomRateChange = (item: CartItem, newRate: number) => {
-    const discountAmount = Math.max(0, item.price - newRate);
     setItemDiscounts(prev => ({
       ...prev,
-      [item.id]: { ...(prev[item.id] || {}), customRate: newRate, discountAmount }
+      [item.id]: {
+        ...(prev[item.id] || {}),
+        customRate: newRate,
+        discountPercentage: 0,
+        discountAmount: 0,
+      }
     }));
   };
 

@@ -11,12 +11,14 @@ interface Batch {
   expiry_date?: string
   manufacturing_date?: string
   warehouse: string
+  serials?: SerialEntry[]
 }
 
 interface SerialEntry {
   serial_no: string
   warehouse: string
   val_rate: number
+  batch_no?: string
 }
 
 interface WarehouseStock {
@@ -51,6 +53,11 @@ interface ItemFullData {
   has_batch_no: number
   has_serial_no: number
   total_bal_qty: number
+  global_stock_total?: {
+    total_qty: number
+    total_value: number
+    avg_valuation_rate: number
+  }
 }
 
 interface ProductDetailsModalProps {
@@ -81,19 +88,103 @@ function MarginChip({ pct }: { pct: number }) {
   )
 }
 
-function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: "green" | "red" | "blue" }) {
-  const accentCls = accent === "green"
-    ? "border-l-4 border-l-green-500"
-    : accent === "red"
-    ? "border-l-4 border-l-red-500"
-    : accent === "blue"
-    ? "border-l-4 border-l-beveren-500"
-    : ""
+function BatchCard({ batch, currencySymbol, showSerials, showCost }: { batch: Batch; currencySymbol: string; showSerials: boolean; showCost: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const expired = isExpired(batch.expiry_date)
+  const soonExp = isSoonExpiry(batch.expiry_date)
+  const hasSerials = showSerials && batch.serials && batch.serials.length > 0
+
   return (
-    <div className={`bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600 ${accentCls}`}>
-      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide mb-1">{label}</p>
-      <p className="text-xl font-bold text-gray-900 dark:text-white leading-tight">{value}</p>
-      {sub && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{sub}</p>}
+    <div className={`rounded-xl border ${
+      expired 
+        ? "border-red-300 dark:border-red-700 bg-red-50/30 dark:bg-red-900/20" 
+        : soonExp 
+        ? "border-yellow-300 dark:border-yellow-700 bg-yellow-50/30 dark:bg-yellow-900/20"
+        : "border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40"
+    }`}>
+      <div 
+        className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30 transition-colors"
+        onClick={() => hasSerials && setExpanded(!expanded)}
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="font-mono text-sm font-bold text-gray-900 dark:text-white">{batch.batch_id}</h4>
+              {expired && (
+                <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 font-semibold">
+                  Expired
+                </span>
+              )}
+              {!expired && soonExp && (
+                <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300 font-semibold">
+                  Soon
+                </span>
+              )}
+            </div>
+            
+            <div className="flex flex-wrap gap-3 mt-1.5 text-xs">
+              <span className="text-gray-500 dark:text-gray-400">📍 {batch.warehouse}</span>
+              {batch.expiry_date && (
+                <span className={`${expired ? "text-red-600 dark:text-red-400" : soonExp ? "text-yellow-600 dark:text-yellow-400" : "text-gray-500 dark:text-gray-400"}`}>
+                  Exp: {fmtDate(batch.expiry_date)}
+                </span>
+              )}
+              {batch.manufacturing_date && (
+                <span className="text-gray-500 dark:text-gray-400">Mfg: {fmtDate(batch.manufacturing_date)}</span>
+              )}
+            </div>
+          </div>
+          
+          <div className="text-right">
+            <div className="text-xl font-bold text-gray-900 dark:text-white">
+              {batch.qty.toLocaleString()} <span className="text-xs font-normal text-gray-500">units</span>
+            </div>
+            {showCost && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {fmt(batch.val_rate, currencySymbol)}/unit
+              </div>
+            )}
+            {hasSerials && (
+              <div className="text-xs text-beveren-600 dark:text-beveren-400 mt-1.5 flex items-center gap-1 justify-end">
+                {expanded ? "▼" : "▶"} {batch.serials.length} serials
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      
+      {hasSerials && expanded && (
+        <div className="border-t border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-800/50 p-4">
+          <div className="flex flex-wrap gap-2">
+            {batch.serials?.map((serial, idx) => (
+              <div key={idx} className="bg-white dark:bg-gray-700 rounded-lg px-2.5 py-1 text-xs font-mono text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                {serial.serial_no}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SerialCard({ serial, currencySymbol, showCost }: { serial: SerialEntry; currencySymbol: string; showCost: boolean }) {
+  return (
+    <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <p className="font-mono text-sm font-semibold text-gray-900 dark:text-white">{serial.serial_no}</p>
+          <div className="flex gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+            <span>📍 {serial.warehouse}</span>
+            {serial.batch_no && <span>📦 {serial.batch_no}</span>}
+          </div>
+        </div>
+        {showCost && (
+          <div className="text-right">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">{fmt(serial.val_rate, currencySymbol)}</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -102,7 +193,6 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
   const [data, setData] = useState<ItemFullData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"pricing" | "stock" | "details">("pricing")
-  const [expandedBatch, setExpandedBatch] = useState<string | null>(null)
   const { posDetails, loading } = usePOSDetails()
 
   const warehouse = useMemo(() => {
@@ -124,7 +214,11 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
           `/api/method/klik_pos.api.item.item_details.get_full_pricing_and_batch_details?item_code=${encodeURIComponent(item.id)}&warehouse=${encodeURIComponent(warehouse)}`
         )
         const res = await response.json()
-        if (res?.message) setData(res.message)
+        if (res?.message) {
+          console.log(res.message);
+          
+          setData(res.message)
+        }
       } catch (error) {
         console.error("Failed to fetch product details:", error)
       } finally {
@@ -135,58 +229,69 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
   }, [item.id, warehouse])
 
   const sym = item.currency_symbol || "KES "
-  const valuationRate = data?.valuation_rate ?? 0
-  const totalQty = data?.total_bal_qty ?? 0
+  const totalQty = data?.global_stock_total?.total_qty ?? data?.total_bal_qty ?? 0
+  const totalValue = data?.global_stock_total?.total_value ?? 0
 
-  const batchesGrouped = (data?.batches ?? []).reduce<Record<string, Batch[]>>((acc, b) => {
-    acc[b.batch_id] = acc[b.batch_id] ?? []
-    acc[b.batch_id].push(b)
-    return acc
-  }, {})
+  const hasBatchOnly = data?.has_batch_no && !data?.has_serial_no
+  const hasSerialOnly = data?.has_serial_no && !data?.has_batch_no
+  const hasBoth = data?.has_batch_no && data?.has_serial_no
 
   const tabs = [
-    { key: "pricing" as const, label: restrictCostVisibility ? "Price Lists" : "Pricing & Margins" },
+    { key: "pricing" as const, label: "Pricing & Warehouse" },
+    { key: "stock" as const, label: hasBoth ? "Batches & Serials" : hasBatchOnly ? "Batches" : hasSerialOnly ? "Serials" : "Stock" },
     { key: "details" as const, label: "Details" },
   ]
 
-  const scrollbarStyles = "scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent"
-
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 duration-300">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 duration-300">
 
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-beveren-50 to-white dark:from-gray-800 dark:to-gray-800 shrink-0">
-          <div className="flex items-center gap-4">
-            {item.image ? (
-              <img src={item.image} alt={item.name} className="w-12 h-12 rounded-xl object-cover border border-gray-200 dark:border-gray-600" crossOrigin="anonymous" />
-            ) : (
-              <div className="w-12 h-12 rounded-xl bg-beveren-100 dark:bg-beveren-900/30 flex items-center justify-center text-beveren-600 dark:text-beveren-400 font-bold text-lg">
-                {item.name?.charAt(0)}
+        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-4 flex-1">
+              {item.image ? (
+                <img src={item.image} alt={item.name} className="w-12 h-12 rounded-lg object-cover border border-gray-200 dark:border-gray-600" crossOrigin="anonymous" />
+              ) : (
+                <div className="w-12 h-12 rounded-lg bg-beveren-100 dark:bg-beveren-900/30 flex items-center justify-center text-beveren-600 dark:text-beveren-400 font-bold text-lg">
+                  {item.name?.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">{item.name}</h2>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">{item.id}</p>
+                  {item.category && (
+                    <>
+                      <span className="text-gray-300 dark:text-gray-600">•</span>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{item.category}</p>
+                    </>
+                  )}
+                  {data?.brand && (
+                    <>
+                      <span className="text-gray-300 dark:text-gray-600">•</span>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{data.brand}</p>
+                    </>
+                  )}
+                </div>
               </div>
-            )}
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">{item.name}</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-0.5">{item.id}</p>
-              {data?.brand && <p className="text-xs text-beveren-600 dark:text-beveren-400 mt-0.5">{data.brand}</p>}
             </div>
-          </div>
-          <div className="flex items-center gap-6 mr-4">
+            
             <div className="text-right">
-              <p className="text-xs text-gray-400 uppercase font-semibold">Total Stock</p>
-              <p className="text-lg font-bold text-gray-900 dark:text-white">{totalQty.toLocaleString()} <span className="text-sm font-normal text-gray-500">{data?.uom}</span></p>
+              <p className="text-xs text-gray-400 uppercase font-semibold">Total Stock (All Warehouses)</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                {totalQty.toLocaleString()} <span className="text-sm font-normal text-gray-500">{data?.uom}</span>
+              </p>
+              {totalValue > 0 && !restrictCostVisibility && (
+                <p className="text-xs text-gray-500 mt-0.5">Value: {fmt(totalValue, sym)}</p>
+              )}
             </div>
-            {!restrictCostVisibility && (
-              <div className="text-right">
-                <p className="text-xs text-gray-400 uppercase font-semibold">Valuation Rate</p>
-                <p className="text-lg font-bold text-beveren-600 dark:text-beveren-400">{fmt(valuationRate, sym)}</p>
-              </div>
-            )}
+            
+            <button onClick={onClose} className="ml-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg shrink-0">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full shrink-0">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
 
         {isLoading ? (
@@ -196,7 +301,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
           </div>
         ) : (
           <>
-            <div className="flex border-b border-gray-200 dark:border-gray-700 px-6 shrink-0">
+            <div className="flex border-b border-gray-200 dark:border-gray-700 px-6 shrink-0 overflow-x-auto">
               {tabs.map(tab => (
                 <button
                   key={tab.key}
@@ -213,60 +318,49 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
               ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
               {activeTab === "pricing" && (
-                <>
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                      {restrictCostVisibility ? "Available Price Lists" : "Price List Analysis"}
-                    </h3>
-                    <div className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto ${scrollbarStyles}`}>
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Price Lists</h3>
+                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto">
                       <table className="w-full text-sm min-w-[600px]">
                         <thead>
                           <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
-                            <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase sticky left-0 bg-gray-50 dark:bg-gray-700/50 z-10 border-r border-gray-200 dark:border-gray-600">Price List</th>
-                            <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Selling Rate</th>
+                            <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Price List</th>
+                            <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Rate</th>
                             {!restrictCostVisibility && (
                               <>
-                                <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Cost (Val.)</th>
-                                <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Margin</th>
-                                <th className="text-center p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Margin %</th>
+                                <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Cost</th>
+                                <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Margin</th>
+                                <th className="text-center p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Margin %</th>
                               </>
                             )}
-                            <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">UOM</th>
-                            <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase min-w-[150px]">Customer</th>
-                            <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase min-w-[200px]">Note</th>
+                            <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Customer</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(data?.price_lists ?? []).map((pl, idx) => (
                             <tr key={idx} className="border-b border-gray-100 dark:border-gray-700/60 hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
-                              <td className="p-4 font-medium text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800 z-10 border-r border-gray-200 dark:border-gray-600 whitespace-nowrap">{pl.price_list}</td>
-                              <td className="p-4 text-right font-bold text-beveren-600 dark:text-beveren-400 whitespace-nowrap">{fmt(pl.rate, `${pl.currency} `)}</td>
+                              <td className="p-3 font-medium text-gray-900 dark:text-white">{pl.price_list}</td>
+                              <td className="p-3 text-right font-bold text-beveren-600 dark:text-beveren-400">{fmt(pl.rate, `${pl.currency} `)}</td>
                               {!restrictCostVisibility && (
                                 <>
-                                  <td className="p-4 text-right text-gray-500 dark:text-gray-400 whitespace-nowrap">{fmt(pl.cost, `${pl.currency} `)}</td>
-                                  <td className={`p-4 text-right font-semibold whitespace-nowrap ${pl.margin >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                                  <td className="p-3 text-right text-gray-600 dark:text-gray-400">{fmt(pl.cost, `${pl.currency} `)}</td>
+                                  <td className={`p-3 text-right font-semibold ${pl.margin >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                                     {pl.margin >= 0 ? "+" : ""}{fmt(pl.margin, `${pl.currency} `)}
-                                  </td>
-                                  <td className="p-4 text-center whitespace-nowrap"><MarginChip pct={pl.margin_pct} /></td>
+                                   </td>
+                                  <td className="p-3 text-center"><MarginChip pct={pl.margin_pct} /></td>
                                 </>
                               )}
-                              <td className="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap">{pl.uom ?? data?.uom ?? "—"}</td>
-                              <td className="p-4 text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                              <td className="p-3">
                                 {pl.customer ? (
-                                  <div className="flex flex-col">
-                                    <span className="text-gray-900 dark:text-white font-medium">{pl.customer}</span>
-                                    <span className="text-[10px] text-gray-400">Exclusive Pricing</span>
-                                  </div>
+                                  <span className="text-xs text-beveren-600 dark:text-beveren-400">{pl.customer}</span>
                                 ) : (
-                                  <span className="text-gray-400 italic">All Customers</span>
+                                  <span className="text-xs text-gray-400">All Customers</span>
                                 )}
-                              </td>
-                              <td className="p-4 text-gray-500 dark:text-gray-400 text-xs italic max-w-[250px] truncate">
-                                {pl.note || "—"}
-                              </td>
+                               </td>
                              </tr>
                           ))}
                         </tbody>
@@ -274,270 +368,189 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
                     </div>
                   </div>
 
-                  {!restrictCostVisibility && (data?.warehouse_stock ?? []).length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Warehouse Valuations</h3>
-                      <div className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto ${scrollbarStyles}`}>
-                        <table className="w-full text-sm min-w-[800px]">
-                          <thead>
-                            <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
-                              <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase sticky left-0 bg-gray-50 dark:bg-gray-700/50 z-10 border-r border-gray-200 dark:border-gray-600">Warehouse</th>
-                              <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Qty</th>
-                              <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Val. Rate</th>
-                              {(data?.price_lists ?? []).map(pl => (
-                                <th key={pl.price_list} className="text-center p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase whitespace-nowrap border-l border-gray-200/50 dark:border-gray-600/50">
-                                  {pl.price_list} {pl.customer ? `(${pl.customer})` : ""} Margin
-                                </th>
-                              ))}
-                             </tr>
-                          </thead>
-                          <tbody>
-                            {(data?.warehouse_stock ?? []).map((ws, idx) => (
-                              <tr key={idx} className="border-b border-gray-100 dark:border-gray-700/60 hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
-                                <td className="p-4 font-medium text-gray-900 dark:text-white text-xs sticky left-0 bg-white dark:bg-gray-800 z-10 border-r border-gray-200 dark:border-gray-600">{ws.warehouse}</td>
-                                <td className="p-4 text-right text-gray-700 dark:text-gray-300 font-semibold">{ws.bal_qty.toLocaleString()}</td>
-                                <td className="p-4 text-right text-gray-700 dark:text-gray-300">{fmt(ws.val_rate, sym)}</td>
-                                {(data?.price_lists ?? []).map(pl => {
-                                  const m = pl.rate - ws.val_rate
-                                  const mp = ws.val_rate > 0 ? (m / ws.val_rate) * 100 : 0
-                                  return (
-                                    <td key={pl.price_list} className="p-4 text-center border-l border-gray-100 dark:border-gray-700/40">
-                                      <MarginChip pct={mp} />
-                                    </td>
-                                  )
-                                })}
-                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {!restrictCostVisibility && !data?.has_serial_no && Object.keys(batchesGrouped).length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Batch Breakdown</h3>
-                      <div className="space-y-3">
-                        {Object.entries(batchesGrouped).map(([batchId, rows]) => {
-                          const totalBatchQty = rows.reduce((s, r) => s + r.qty, 0)
-                          const avgRate = totalBatchQty > 0
-                            ? rows.reduce((s, r) => s + r.val_rate * r.qty, 0) / totalBatchQty
-                            : 0
-                          const exp = rows[0]?.expiry_date
-                          const mfg = rows[0]?.manufacturing_date
-                          const expired = isExpired(exp)
-                          const soonExp = isSoonExpiry(exp)
-                          const isOpen = expandedBatch === batchId
-
-                          return (
-                            <div key={batchId} className="rounded-xl border border-gray-200 dark:border-gray-600 overflow-hidden bg-white dark:bg-gray-800/20">
-                              <button
-                                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors text-left"
-                                onClick={() => setExpandedBatch(isOpen ? null : batchId)}
-                              >
-                                <div className="flex items-center gap-4 min-w-0">
-                                  <span className="font-mono text-sm font-bold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">{batchId}</span>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    {expired && (
-                                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 font-bold shrink-0">Expired</span>
-                                    )}
-                                    {!expired && soonExp && (
-                                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300 font-bold shrink-0">Expiring Soon</span>
-                                    )}
-                                    {exp && (
-                                      <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">Exp: <span className="font-medium">{fmtDate(exp)}</span></span>
-                                    )}
-                                    {mfg && (
-                                      <span className="text-xs text-gray-400 shrink-0 hidden md:inline">Mfg: {fmtDate(mfg)}</span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-8 shrink-0 ml-4">
-                                  <div className="text-right hidden md:block">
-                                    <p className="text-[10px] text-gray-400 uppercase font-bold">Avg Cost</p>
-                                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">{fmt(avgRate, sym)}</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-[10px] text-gray-400 uppercase font-bold">In Stock</p>
-                                    <p className="text-xl font-bold text-gray-900 dark:text-white">{totalBatchQty.toLocaleString()}</p>
-                                  </div>
-                                  <div className="flex flex-col gap-1 items-end min-w-[80px]">
-                                    {(data?.price_lists ?? []).slice(0, 2).map(pl => {
-                                      const m = pl.rate - avgRate
-                                      const mp = avgRate > 0 ? (m / avgRate) * 100 : 0
-                                      return <MarginChip key={pl.price_list} pct={mp} />
-                                    })}
-                                  </div>
-                                  <svg className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                  </svg>
-                                </div>
-                              </button>
-
-                              {isOpen && (
-                                <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-black/10 overflow-x-auto scrollbar-thin">
-                                  <table className="w-full text-xs min-w-[600px]">
-                                    <thead>
-                                      <tr className="bg-gray-100/50 dark:bg-gray-700/50">
-                                        <th className="text-left p-4 font-bold text-gray-500 uppercase tracking-tight">Warehouse Location</th>
-                                        <th className="text-right p-4 font-bold text-gray-500 uppercase tracking-tight">Current Qty</th>
-                                        <th className="text-right p-4 font-bold text-gray-500 uppercase tracking-tight">Unit Valuation</th>
-                                        {(data?.price_lists ?? []).map(pl => (
-                                          <th key={pl.price_list} className="text-center p-4 font-bold text-gray-500 uppercase tracking-tight border-l border-gray-200/50">
-                                            {pl.price_list} {pl.customer ? `(${pl.customer})` : ""}
-                                          </th>
-                                        ))}
-                                       </tr>
-                                    </thead>
-                                    <tbody>
-                                      {rows.map((r, ri) => (
-                                        <tr key={ri} className="border-t border-gray-100 dark:border-gray-700/60">
-                                          <td className="p-4 text-gray-700 dark:text-gray-300 font-medium">{r.warehouse}</td>
-                                          <td className="p-4 text-right font-bold text-gray-900 dark:text-white">{r.qty.toLocaleString()}</td>
-                                          <td className="p-4 text-right text-gray-600 dark:text-gray-400 font-mono">{fmt(r.val_rate, sym)}</td>
-                                          {(data?.price_lists ?? []).map(pl => {
-                                            const m = pl.rate - r.val_rate
-                                            const mp = r.val_rate > 0 ? (m / r.val_rate) * 100 : 0
-                                            return (
-                                              <td key={pl.price_list} className="p-4 text-center border-l border-gray-100 dark:border-gray-700/40">
-                                                <MarginChip pct={mp} />
-                                              </td>
-                                            )
-                                          })}
-                                         </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Warehouse Stock</h3>
+                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
+                          <tr>
+                            <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Warehouse</th>
+                            <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Quantity</th>
+                            {!restrictCostVisibility && (
+                              <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Rate</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
+                          {(data?.warehouse_stock ?? []).map((wh, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
+                              <td className="p-3 font-medium text-gray-900 dark:text-white">{wh.warehouse}</td>
+                              <td className="p-3 text-right font-semibold text-gray-900 dark:text-white">{wh.bal_qty.toLocaleString()}</td>
+                              {!restrictCostVisibility && (
+                                <td className="p-3 text-right text-gray-600 dark:text-gray-400">{fmt(wh.val_rate, sym)}</td>
                               )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {!restrictCostVisibility && !!data?.has_serial_no && (data?.serials ?? []).length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Serial Number Details</h3>
-                      <div className={`rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto ${scrollbarStyles}`}>
-                        <table className="w-full text-sm min-w-[800px]">
-                          <thead>
-                            <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
-                              <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase sticky left-0 bg-gray-50 dark:bg-gray-700/50 z-10 border-r border-gray-200 dark:border-gray-600">Serial No</th>
-                              <th className="text-left p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Warehouse</th>
-                              <th className="text-right p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Val. Rate</th>
-                              {(data?.price_lists ?? []).map(pl => (
-                                <th key={pl.price_list} className="text-center p-4 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase border-l border-gray-200/50">
-                                  {pl.price_list} {pl.customer ? `(${pl.customer})` : ""}
-                                </th>
-                              ))}
-                             </tr>
-                          </thead>
-                          <tbody>
-                            {data.serials.map((s, idx) => (
-                              <tr key={idx} className="border-b border-gray-100 dark:border-gray-700/60 hover:bg-gray-50 dark:hover:bg-gray-700/20">
-                                <td className="p-4 font-mono text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800 z-10 border-r border-gray-200 dark:border-gray-600">{s.serial_no}</td>
-                                <td className="p-4 text-gray-500 dark:text-gray-400 text-xs">{s.warehouse}</td>
-                                <td className="p-4 text-right text-gray-700 dark:text-gray-300 font-mono">{fmt(s.val_rate, sym)}</td>
-                                {(data?.price_lists ?? []).map(pl => {
-                                  const m = pl.rate - s.val_rate
-                                  const mp = s.val_rate > 0 ? (m / s.val_rate) * 100 : 0
-                                  return <td key={pl.price_list} className="p-4 text-center border-l border-gray-100 dark:border-gray-700/40"><MarginChip pct={mp} /></td>
-                                })}
-                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {restrictCostVisibility && data?.batches && data.batches.length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Batch Stock Information</h3>
-                      <div className="space-y-2">
-                        {Object.entries(batchesGrouped).map(([batchId, rows]) => {
-                          const totalBatchQty = rows.reduce((s, r) => s + r.qty, 0)
-                          const exp = rows[0]?.expiry_date
-                          const mfg = rows[0]?.manufacturing_date
-                          const expired = isExpired(exp)
-                          const soonExp = isSoonExpiry(exp)
-                          return (
-                            <div key={batchId} className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-mono text-sm font-bold text-gray-900 dark:text-white">{batchId}</span>
-                                    {expired && (
-                                      <span className="text-[10px] uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">Expired</span>
-                                    )}
-                                    {!expired && soonExp && (
-                                      <span className="text-[10px] uppercase px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300">Expiring Soon</span>
-                                    )}
-                                  </div>
-                                  {exp && (
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Expiry: {fmtDate(exp)}</p>
-                                  )}
-                                  {mfg && (
-                                    <p className="text-xs text-gray-400 mt-1">Manufactured: {fmtDate(mfg)}</p>
-                                  )}
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                    Locations: {rows.map(r => r.warehouse).join(", ")}
-                                  </p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-[10px] text-gray-400 uppercase font-bold">Available Stock</p>
-                                  <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalBatchQty.toLocaleString()} <span className="text-sm font-normal">{data.uom}</span></p>
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {restrictCostVisibility && !!data?.has_serial_no && data?.serials && data.serials.length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Serial Numbers</h3>
-                      <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
-                        <div className="flex flex-wrap gap-2">
-                          {data.serials.map((s, idx) => (
-                            <span key={idx} className="font-mono text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600">
-                              {s.serial_no}
-                            </span>
+                            </tr>
                           ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {activeTab === "stock" && (
+                <div className="space-y-4">
+                  {hasBoth ? (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Batches with Serial Numbers</h3>
+                        <div className="text-xs text-gray-500">
+                          {data?.batches?.reduce((sum, b) => sum + (b.serials?.length || 0), 0)} total serials
                         </div>
                       </div>
+                      <div className="grid grid-cols-1 gap-3">
+                        {(data?.batches ?? []).map((batch, idx) => (
+                          <BatchCard key={idx} batch={batch} currencySymbol={sym} showSerials={true} showCost={!restrictCostVisibility} />
+                        ))}
+                      </div>
+                    </>
+                  ) : hasBatchOnly ? (
+                    <>
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Batches</h3>
+                      <div className="grid grid-cols-1 gap-3">
+                        {(data?.batches ?? []).map((batch, idx) => (
+                          <BatchCard key={idx} batch={batch} currencySymbol={sym} showSerials={false} showCost={!restrictCostVisibility} />
+                        ))}
+                      </div>
+                    </>
+                  ) : hasSerialOnly ? (
+                    <>
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Serial Numbers ({data?.serials?.length ?? 0})</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {(data?.serials ?? []).map((serial, idx) => (
+                          <SerialCard key={idx} serial={serial} currencySymbol={sym} showCost={!restrictCostVisibility} />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Warehouse Stock</h3>
+                      <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
+                            <tr>
+                              <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Warehouse</th>
+                              <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Quantity</th>
+                              {!restrictCostVisibility && (
+                                <th className="text-right p-3 font-semibold text-gray-600 dark:text-gray-400 text-xs uppercase">Rate</th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
+                            {(data?.warehouse_stock ?? []).map((wh, idx) => (
+                              <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors">
+                                <td className="p-3 font-medium text-gray-900 dark:text-white">{wh.warehouse}</td>
+                                <td className="p-3 text-right font-semibold text-gray-900 dark:text-white">{wh.bal_qty.toLocaleString()}</td>
+                                {!restrictCostVisibility && (
+                                  <td className="p-3 text-right text-gray-600 dark:text-gray-400">{fmt(wh.val_rate, sym)}</td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
-                </>
+                </div>
               )}
 
               {activeTab === "details" && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[
-                    { label: "Item Code", value: item.id, mono: true },
-                    { label: "Item Name", value: item.name },
-                    { label: "Category", value: item.category },
-                    { label: "UOM", value: data?.uom ?? "—" },
-                    { label: "Brand", value: data?.brand ?? "—" },
-                    { label: "Tracking", value: data?.has_serial_no ? "Serial Number Tracking" : data?.has_batch_no ? "Batch Tracking" : "Basic (No Tracking)" },
-                    ...(!restrictCostVisibility ? [
-                      { label: "Standard Rate", value: fmt(data?.standard_rate ?? 0, sym) },
-                      { label: "Valuation Method", value: "Moving Average" },
-                    ] : []),
-                    { label: "Warehouse", value: warehouse ?? "—" },
-                  ].map(({ label, value, mono }) => (
-                    <div key={label} className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
-                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1">{label}</p>
-                      <p className={`text-sm text-gray-900 dark:text-white ${mono ? "font-mono" : "font-semibold"}`}>{value}</p>
+                  <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                    <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-2">Basic Information</p>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">Item Code</span>
+                        <span className="text-xs font-mono font-semibold text-gray-900 dark:text-white">{item.id}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">Item Name</span>
+                        <span className="text-xs font-semibold text-gray-900 dark:text-white">{item.name}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">Category</span>
+                        <span className="text-xs text-gray-700 dark:text-gray-300">{item.category || "—"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">UOM</span>
+                        <span className="text-xs font-semibold text-gray-900 dark:text-white">{data?.uom ?? "—"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">Brand</span>
+                        <span className="text-xs text-gray-700 dark:text-gray-300">{data?.brand || "—"}</span>
+                      </div>
                     </div>
-                  ))}
+                  </div>
+
+                  <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                    <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-2">Tracking</p>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">Type</span>
+                        <span className="text-xs font-semibold text-beveren-600 dark:text-beveren-400">
+                          {hasBoth ? "Batch + Serial" : hasBatchOnly ? "Batch Tracked" : hasSerialOnly ? "Serial Tracked" : "Basic Stock"}
+                        </span>
+                      </div>
+                      {hasBoth && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-500">Total Batches</span>
+                            <span className="text-xs font-semibold text-gray-900 dark:text-white">{data?.batches?.length ?? 0}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-500">Total Serials</span>
+                            <span className="text-xs font-semibold text-gray-900 dark:text-white">{data?.serials?.length ?? 0}</span>
+                          </div>
+                        </>
+                      )}
+                      {hasBatchOnly && (
+                        <div className="flex justify-between">
+                          <span className="text-xs text-gray-500">Total Batches</span>
+                          <span className="text-xs font-semibold text-gray-900 dark:text-white">{data?.batches?.length ?? 0}</span>
+                        </div>
+                      )}
+                      {hasSerialOnly && (
+                        <div className="flex justify-between">
+                          <span className="text-xs text-gray-500">Total Serials</span>
+                          <span className="text-xs font-semibold text-gray-900 dark:text-white">{data?.serials?.length ?? 0}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {!restrictCostVisibility && (
+                    <div className="md:col-span-2 bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-2">Valuation</p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <p className="text-xs text-gray-500">Standard Rate</p>
+                          <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(data?.standard_rate ?? 0, sym)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Avg Valuation Rate</p>
+                          <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(data?.valuation_rate ?? 0, sym)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Method</p>
+                          <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Moving Average</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {item.description && (
                     <div className="md:col-span-2 bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
-                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-2">Item Description</p>
+                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-2">Description</p>
                       <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{item.description}</p>
                     </div>
                   )}
@@ -547,8 +560,8 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
             </div>
 
             <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-4 bg-gray-50 dark:bg-gray-800/50 shrink-0">
-              <button onClick={onClose} className="w-full px-6 py-3 bg-beveren-600 hover:bg-beveren-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-beveren-500/20 active:scale-[0.98]">
-                Close Product Details
+              <button onClick={onClose} className="w-full px-6 py-2.5 bg-beveren-600 hover:bg-beveren-700 text-white font-semibold rounded-lg transition-all active:scale-[0.98]">
+                Close
               </button>
             </div>
           </>

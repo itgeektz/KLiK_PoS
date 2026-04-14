@@ -239,6 +239,7 @@ def get_pos_details():
         "allow_discount_change": pos.allow_discount_change,
         "allow_partial_payment": pos.allow_partial_payment,
         "restrict_cost_visibility_in_tooltip": pos.restrict_cost_visibility_in_tooltip,
+        "custom_autofetch_batchserial_": pos.custom_autofetch_batchserial_ or 0,
     }
     return details
 

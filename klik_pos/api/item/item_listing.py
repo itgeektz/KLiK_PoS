@@ -32,7 +32,7 @@ def get_items_with_balance_and_price(
     price_list = _get_priority_price_list(customer, pos_doc, price_list)
 
     try:
-        select_fields = "i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom"
+        select_fields = "i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom, i.has_batch_no, i.has_serial_no"
         params_list = []
         count_params = []
 
@@ -235,6 +235,8 @@ def get_items_with_balance_and_price(
                     "preparationTime": 10,
                     "uom": item.stock_uom or "Nos",
                     "barcode": barcode_map.get(item_code),
+                    "has_batch_no": item.has_batch_no,
+                    "has_serial_no": item.has_serial_no,
                 }
             )
 

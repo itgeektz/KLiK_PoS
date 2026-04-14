@@ -50,6 +50,7 @@ export default function ProductLineView({
       </div>
     )
   }
+  
 
   return (
     <>
@@ -73,14 +74,14 @@ export default function ProductLineView({
                 <div
                   key={item.id}
                   className={`grid ${isMobile ? "grid-cols-8" : "grid-cols-12"} gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                    isDisabled ? "opacity-60" : "cursor-pointer"
+                    !isDisabled && "cursor-pointer"
                   }`}
                   onClick={() => !isDisabled && onAddToCart(item)}
                 >
                   <div className={`${isMobile ? "col-span-3" : "col-span-4"} flex items-start`}>
                     <div className="flex-1 min-w-0 relative">
                       <div className="flex items-center gap-1">
-                        <h3 className={`font-medium text-gray-900 dark:text-white ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"}`}>
+                        <h3 className={`font-medium text-gray-900 dark:text-white ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
                           {item.name}
                         </h3>
                         <div
@@ -93,7 +94,7 @@ export default function ProductLineView({
                               e.stopPropagation()
                               handleInfoClick(item)
                             }}
-                            className="text-gray-400 hover:text-blue-500 text-sm focus:outline-none transition-colors"
+                            className={`text-gray-400 hover:text-blue-500 text-sm focus:outline-none transition-colors ${isDisabled ? "opacity-60" : ""}`}
                           >
                             ℹ️
                           </button>
@@ -108,19 +109,19 @@ export default function ProductLineView({
                           )}
                         </div>
                       </div>
-                      <p className={`text-gray-500 dark:text-gray-400 ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"}`}>
+                      <p className={`text-gray-500 dark:text-gray-400 ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
                         {item.category}
                       </p>
                     </div>
                   </div>
 
-                  <div className={`${isMobile ? "col-span-2" : "col-span-2"} flex items-center justify-center`}>
+                  <div className={`${isMobile ? "col-span-2" : "col-span-2"} flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
                     <span className={`font-semibold text-beveren-600 dark:text-beveren-400 ${isMobile ? "text-xs" : "text-sm"}`}>
                       {formattedPrice}
                     </span>
                   </div>
 
-                  <div className={`${isMobile ? "col-span-2" : "col-span-2"} flex items-center justify-center`}>
+                  <div className={`${isMobile ? "col-span-2" : "col-span-2"} flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
                     <span className={`font-medium ${isMobile ? "text-xs" : "text-sm"} ${
                       isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
                     }`}>
@@ -129,7 +130,7 @@ export default function ProductLineView({
                   </div>
 
                   {!isMobile && (
-                    <div className="col-span-2 flex items-center justify-center">
+                    <div className={`col-span-2 flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
                       <span className="text-sm text-gray-500 dark:text-gray-400">
                         {item.uom || "Nos"}
                       </span>
@@ -138,7 +139,7 @@ export default function ProductLineView({
 
                   <div className={`${isMobile ? "col-span-1" : "col-span-2"} flex items-center justify-center`}>
                     {isDisabled ? (
-                      <span className={`text-gray-400 dark:text-gray-500 ${isMobile ? "text-xs" : "text-xs"}`}>
+                      <span className={`text-gray-400 dark:text-gray-500 ${isMobile ? "text-xs" : "text-xs"} opacity-60`}>
                         {isOutOfStock ? "Out" : "Scan"}
                       </span>
                     ) : (

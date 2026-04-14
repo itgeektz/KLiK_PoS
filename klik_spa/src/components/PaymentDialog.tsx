@@ -1058,11 +1058,10 @@ export default function PaymentDialog({
           id: item.item_code || item.id,        // ← override the generated id
           item_code: item.item_code || item.id,  // ← keep item_code correct too
           price: (item as any).discountedPrice || item.price,
-          batchNumber: discountData.batchNumber || null,
-          serialNumber: discountData.serialNumber || null,
           uom: item.uom || 'Nos',
           discountPercentage: discountData.discountPercentage || 0,
           discountAmount: discountData.discountAmount || 0,
+          serial_batch_bundle: discountData.serial_batch_bundle || null,
         }}),
       customer: selectedCustomer,
       paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => ({ method, amount: parseFloat((Number(amount) || 0).toFixed(2)) })),

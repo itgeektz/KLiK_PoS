@@ -44,7 +44,7 @@ export default function ProductCard({
           showTooltip ? "z-[2]" : "z-1"
         } ${
           isDisabled
-            ? "opacity-70 cursor-not-allowed"
+            ? "cursor-not-allowed"
             : "hover:shadow-lg hover:scale-105 cursor-pointer active:scale-95"
         } ${isMobile ? "touch-manipulation" : ""}`}
         onClick={(e) => {
@@ -64,7 +64,7 @@ export default function ProductCard({
               e.stopPropagation();
               handleModalOpen();
             }}
-            className="text-gray-600 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm hover:text-blue-500 rounded-full w-6 h-6 flex items-center justify-center text-xs border border-gray-200 dark:border-gray-600 shadow-sm transition-colors"
+            className={`text-gray-600 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm hover:text-blue-500 rounded-full w-6 h-6 flex items-center justify-center text-xs border border-gray-200 dark:border-gray-600 shadow-sm transition-colors ${isDisabled ? "opacity-70" : ""}`}
           >
             ℹ️
           </button>
@@ -80,7 +80,7 @@ export default function ProductCard({
           )}
         </div>
 
-        <div className="relative overflow-hidden rounded-t-xl">
+        <div className={`relative overflow-hidden rounded-t-xl ${isDisabled ? "opacity-70" : ""}`}>
           {item.image ? (
             <img
               src={item.image}
@@ -126,7 +126,7 @@ export default function ProductCard({
         </div>
 
         <div
-          className={`${isMobile ? "p-2 h-12" : "p-3 h-16"} flex flex-col justify-between`}
+          className={`${isMobile ? "p-2 h-12" : "p-3 h-16"} flex flex-col justify-between ${isDisabled ? "opacity-70" : ""}`}
         >
           <div>
             <h3

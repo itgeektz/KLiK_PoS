@@ -211,6 +211,27 @@ def get_full_pricing_and_batch_details(
     today_date = getdate(today())
     to_datetime = get_datetime(str(today_date) + " 23:59:59")
 
+    global_stock_query = """
+        SELECT 
+            SUM(actual_qty) as total_qty,
+            SUM(stock_value) as total_value,
+            AVG(valuation_rate) as avg_valuation_rate
+        FROM `tabBin`
+        WHERE item_code = %s
+    """
+
+    global_stock = frappe.db.sql(
+        global_stock_query,
+        (item_code,),
+        as_dict=True,
+    )
+
+    global_stock_total = {
+        "total_qty": flt(global_stock[0].total_qty) if global_stock else 0,
+        "total_value": flt(global_stock[0].total_value) if global_stock else 0,
+        "avg_valuation_rate": flt(global_stock[0].avg_valuation_rate) if global_stock else 0,
+    }
+
     price_query = """
         SELECT price_list, price_list_rate AS rate, currency, uom, customer, valid_from, valid_upto, name
         FROM `tabItem Price`
@@ -227,7 +248,7 @@ def get_full_pricing_and_batch_details(
     sle_query = """
         SELECT warehouse, actual_qty, stock_value_difference, valuation_rate,
                qty_after_transaction, voucher_type, batch_no, serial_no,
-               serial_and_batch_bundle
+               serial_and_batch_bundle, has_batch_no, has_serial_no
         FROM `tabStock Ledger Entry`
         WHERE item_code = %s AND docstatus < 2 AND is_cancelled = 0
         AND posting_datetime <= %s
@@ -251,6 +272,7 @@ def get_full_pricing_and_batch_details(
     warehouse_map = {}
     latest_valuation_rate = flt(item_info.valuation_rate)
     serial_map = {}
+    bundle_map = {}
 
     for entry in sle_entries:
         wh = entry.warehouse
@@ -266,13 +288,11 @@ def get_full_pricing_and_batch_details(
 
         if (
             entry.voucher_type == "Stock Reconciliation"
-            and not any(
-                [
-                    entry.batch_no,
-                    entry.serial_no,
-                    entry.serial_and_batch_bundle,
-                ]
-            )
+            and not any([
+                entry.batch_no,
+                entry.serial_no,
+                entry.serial_and_batch_bundle,
+            ])
         ):
             qty_diff = (
                 flt(entry.qty_after_transaction)
@@ -280,34 +300,69 @@ def get_full_pricing_and_batch_details(
             )
 
         warehouse_map[wh]["bal_qty"] += qty_diff
-        warehouse_map[wh]["bal_val"] += flt(
-            entry.stock_value_difference
-        )
+        warehouse_map[wh]["bal_val"] += flt(entry.stock_value_difference)
 
         if entry.valuation_rate:
-            warehouse_map[wh]["val_rate"] = flt(
-                entry.valuation_rate
-            )
+            warehouse_map[wh]["val_rate"] = flt(entry.valuation_rate)
             latest_valuation_rate = flt(entry.valuation_rate)
 
         if entry.serial_no:
             for sn in entry.serial_no.split("\n"):
                 sn = sn.strip()
-
                 if sn:
                     if sn not in serial_map:
                         serial_map[sn] = {
                             "qty": 0.0,
                             "warehouse": wh,
                             "val_rate": 0.0,
+                            "batch_no": entry.batch_no,
+                            "bundle_id": entry.serial_and_batch_bundle,
                         }
 
                     serial_map[sn]["qty"] += qty_diff
 
                     if entry.valuation_rate:
-                        serial_map[sn]["val_rate"] = flt(
-                            entry.valuation_rate
-                        )
+                        serial_map[sn]["val_rate"] = flt(entry.valuation_rate)
+
+                    if serial_map[sn]["warehouse"] != wh:
+                        serial_map[sn]["warehouse"] = wh
+
+        if entry.serial_and_batch_bundle:
+            bundle_id = entry.serial_and_batch_bundle
+            if bundle_id not in bundle_map:
+                bundle_map[bundle_id] = {
+                    "warehouse": wh,
+                    "batch_no": entry.batch_no,
+                    "serial_nos": [],
+                    "qty": 0,
+                }
+
+            if not bundle_map[bundle_id]["serial_nos"]:
+                bundle_details = frappe.db.sql("""
+                    SELECT serial_no, batch_no, qty
+                    FROM `tabSerial and Batch Entry`
+                    WHERE parent = %s
+                """, (bundle_id,), as_dict=True)
+
+                for detail in bundle_details:
+                    if detail.serial_no:
+                        for sn in detail.serial_no.split("\n"):
+                            sn = sn.strip()
+                            if sn:
+                                bundle_map[bundle_id]["serial_nos"].append(sn)
+                                if sn not in serial_map:
+                                    serial_map[sn] = {
+                                        "qty": 0.0,
+                                        "warehouse": wh,
+                                        "val_rate": 0.0,
+                                        "batch_no": detail.batch_no or entry.batch_no,
+                                        "bundle_id": bundle_id,
+                                    }
+                                serial_map[sn]["qty"] += flt(detail.qty) * qty_diff
+                    elif detail.batch_no:
+                        bundle_map[bundle_id]["batch_no"] = detail.batch_no
+
+            bundle_map[bundle_id]["qty"] += abs(qty_diff)
 
     total_bal_qty = sum(v["bal_qty"] for v in warehouse_map.values())
     total_bal_val = sum(v["bal_val"] for v in warehouse_map.values())
@@ -319,12 +374,14 @@ def get_full_pricing_and_batch_details(
     )
 
     batch_map = {}
+    result_batches = []
 
     if item_info.has_batch_no:
         batch_sql = """
             SELECT warehouse, batch_no, SUM(actual_qty) AS qty, SUM(stock_value_difference) AS val
             FROM `tabStock Ledger Entry`
-            WHERE item_code = %s AND docstatus < 2 AND is_cancelled = 0 AND batch_no != '' AND posting_datetime <= %s
+            WHERE item_code = %s AND docstatus < 2 AND is_cancelled = 0 
+            AND batch_no != '' AND posting_datetime <= %s
         """
 
         b_params = [item_code, to_datetime]
@@ -333,19 +390,20 @@ def get_full_pricing_and_batch_details(
             batch_sql += " AND warehouse = %s"
             b_params.append(warehouse)
 
-        batch_sql += " GROUP BY voucher_no, batch_no, warehouse"
+        batch_sql += " GROUP BY batch_no, warehouse"
 
         bundle_sql = """
             SELECT sle.warehouse, sbe.batch_no, SUM(sbe.qty) AS qty, SUM(sbe.stock_value_difference) AS val
             FROM `tabStock Ledger Entry` sle
             JOIN `tabSerial and Batch Entry` sbe ON sbe.parent = sle.serial_and_batch_bundle
-            WHERE sle.item_code = %s AND sle.docstatus < 2 AND sle.is_cancelled = 0 AND sle.has_batch_no = 1 AND sle.posting_datetime <= %s
+            WHERE sle.item_code = %s AND sle.docstatus < 2 AND sle.is_cancelled = 0 
+            AND sle.has_batch_no = 1 AND sle.posting_datetime <= %s
         """
 
         if warehouse:
             bundle_sql += " AND sle.warehouse = %s"
 
-        bundle_sql += " GROUP BY sle.voucher_no, sbe.batch_no, sle.warehouse"
+        bundle_sql += " GROUP BY sbe.batch_no, sle.warehouse"
 
         batch_sql = apply_sql_permissions(batch_sql)
         bundle_sql = apply_sql_permissions(bundle_sql)
@@ -362,10 +420,8 @@ def get_full_pricing_and_batch_details(
 
         for row in entries:
             key = (row.batch_no, row.warehouse)
-
             if key not in batch_map:
                 batch_map[key] = {"qty": 0.0, "val": 0.0}
-
             batch_map[key]["qty"] += flt(row.qty)
             batch_map[key]["val"] += flt(row.val)
 
@@ -375,12 +431,16 @@ def get_full_pricing_and_batch_details(
         fields=["name", "expiry_date", "manufacturing_date"],
     )
 
-    result_batches = []
-
     for b in batches_raw:
         for (bid, wh), bdata in batch_map.items():
             if bid == b.name and flt(bdata["qty"]) > 0:
                 qty = flt(bdata["qty"])
+
+                batch_serials = [
+                    {"serial_no": sn, "warehouse": s["warehouse"], "val_rate": s["val_rate"]}
+                    for sn, s in serial_map.items()
+                    if s.get("batch_no") == bid and s["qty"] > 0
+                ]
 
                 result_batches.append(
                     {
@@ -395,6 +455,7 @@ def get_full_pricing_and_batch_details(
                         "expiry_date": b.expiry_date,
                         "manufacturing_date": b.manufacturing_date,
                         "warehouse": wh,
+                        "serials": batch_serials,
                     }
                 )
 
@@ -415,7 +476,7 @@ def get_full_pricing_and_batch_details(
 
         note_data = frappe.db.sql(note_sql, (p.name,)) or frappe.db.sql(
             apply_sql_permissions(
-                "SELECT remarks FROM `tabItem Price` WHERE name = %s"
+                "SELECT note FROM `tabItem Price` WHERE name = %s"
             ),
             (p.name,),
         )
@@ -441,6 +502,17 @@ def get_full_pricing_and_batch_details(
             }
         )
 
+    serials_list = []
+    if not item_info.has_batch_no:
+        for sn, s_data in serial_map.items():
+            if s_data["qty"] > 0:
+                serial_entry = {
+                    "serial_no": sn,
+                    "warehouse": s_data["warehouse"],
+                    "val_rate": s_data["val_rate"] or effective_val_rate,
+                }
+                serials_list.append(serial_entry)
+
     return {
         "item_name": item_info.item_name,
         "item_code": item_info.item_code,
@@ -452,20 +524,12 @@ def get_full_pricing_and_batch_details(
         "image": item_info.image,
         "has_batch_no": item_info.has_batch_no,
         "has_serial_no": item_info.has_serial_no,
+        "global_stock_total": global_stock_total,
         "total_bal_qty": total_bal_qty,
         "total_bal_val": total_bal_val,
         "price_lists": active_prices,
-        "batches": result_batches,
-        "serials": [
-            {
-                "serial_no": sn,
-                "warehouse": s["warehouse"],
-                "val_rate": s["val_rate"]
-                or effective_val_rate,
-            }
-            for sn, s in serial_map.items()
-            if s["qty"] > 0
-        ],
+        "batches": result_batches if item_info.has_batch_no else [],
+        "serials": serials_list,
         "warehouse_stock": [
             {
                 "warehouse": wh,

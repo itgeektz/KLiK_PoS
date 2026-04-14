@@ -866,10 +866,12 @@ export default function OrderSummary({
         quantity: item.quantity,
         price: getDiscountedPrice(item),
         uom: item.uom || "Nos",
-        batchNumber: discountData.batchNumber || null,
-        serialNumber: discountData.serialNumber || null,
+        bundle_entries: item.bundle_entries,
       };
     });
+
+    console.log(items);
+    
 
     return {
       customer: { id: selectedCustomer?.id },

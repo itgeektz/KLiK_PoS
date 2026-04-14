@@ -249,7 +249,6 @@ export const CartItemRow = ({
           </button>
         </div>
 
-        {/* Product Image */}
         {item.image && (
           <div className="flex-shrink-0">
             <img
@@ -263,7 +262,6 @@ export const CartItemRow = ({
           </div>
         )}
 
-        {/* Product Info */}
         <div className="flex-1 min-w-0 px-3">
           <h4
             className={`font-semibold text-gray-900 dark:text-white ${
@@ -297,7 +295,6 @@ export const CartItemRow = ({
           </div>
         </div>
 
-        {/* Quantity Controls */}
         <div className="flex-shrink-0 flex items-center ml-10 space-x-1 min-w-[70px] justify-center">
           <button
             onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
@@ -330,7 +327,6 @@ export const CartItemRow = ({
           </button>
         </div>
 
-        {/* Total Price */}
         <div className="flex-shrink-0 text-right min-w-[80px] px-2">
           {discountedTotal < originalTotal ? (
             <div>
@@ -356,8 +352,7 @@ export const CartItemRow = ({
           )}
         </div>
 
-        {/* Remove Button */}
-        <div className="flex-shrink-0 ml-2">
+        <div className="flex-shrink-0 ml-2 flex gap-1">
           <button
             onClick={() => onRemoveItem?.(item.id)}
             className={`${
@@ -370,7 +365,6 @@ export const CartItemRow = ({
         </div>
       </div>
 
-      {/* Expanded Details Section */}
       {isExpanded && (
         <div
           className={`border-t border-gray-200 dark:border-gray-600 ${
@@ -378,12 +372,9 @@ export const CartItemRow = ({
           } bg-gray-25 dark:bg-gray-750`}
         >
           <div className="w-full">
-            {/* Row 1: Quantity | UOM */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <label
-                  className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
-                >
+                <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
                   Quantity
                 </label>
                 <QuantityInput
@@ -393,9 +384,7 @@ export const CartItemRow = ({
                 />
               </div>
               <div>
-                <label
-                  className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
-                >
+                <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
                   UOM
                 </label>
                 <UOMSelectField
@@ -407,12 +396,9 @@ export const CartItemRow = ({
               </div>
             </div>
 
-            {/* Row 2: Rate | Amount */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <label
-                  className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
-                >
+                <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
                   Rate
                 </label>
                 <input
@@ -427,9 +413,7 @@ export const CartItemRow = ({
                 />
               </div>
               <div>
-                <label
-                  className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
-                >
+                <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
                   Amount
                 </label>
                 <input
@@ -442,12 +426,9 @@ export const CartItemRow = ({
               </div>
             </div>
 
-            {/* Row 3: Discount Amount | Discount (%) */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <label
-                  className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
-                >
+                <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
                   Discount Amount
                 </label>
                 <input
@@ -462,9 +443,7 @@ export const CartItemRow = ({
                 />
               </div>
               <div>
-                <label
-                  className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}
-                >
+                <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
                   Discount (%)
                 </label>
                 <input
@@ -512,7 +491,6 @@ export const CartItemRow = ({
             </div>
           </div>
 
-          {/* Discount Summary */}
           {(itemDiscount.discountPercentage > 0 || itemDiscount.discountAmount > 0) && (
             <div className="mt-3 p-2 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200 dark:border-green-800">
               <div className="text-xs text-green-800 dark:text-green-300 font-medium">

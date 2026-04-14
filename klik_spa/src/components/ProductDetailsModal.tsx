@@ -215,6 +215,8 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
         )
         const res = await response.json()
         if (res?.message) {
+          console.log(res.message);
+          
           setData(res.message)
         }
       } catch (error) {

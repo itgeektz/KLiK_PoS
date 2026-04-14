@@ -216,7 +216,6 @@ export default function OrderSummary({
               formattedPhone = parsed.format("E.164");
             }
           } catch {
-            // keep trimmedValue as-is
           }
           prefilledData = { phone: formattedPhone };
         } else {
@@ -455,7 +454,6 @@ export default function OrderSummary({
         !isMobile ? "border-l" : ""
       } border-gray-200 dark:border-gray-700`}
     >
-      {/* Header */}
       <div className={!isMobile ? "px-6 py-4 border-b border-gray-100 dark:border-gray-700" : ""}>
         <CustomerSearchSection
           customerSearchQuery={customerSearchQuery}
@@ -477,7 +475,6 @@ export default function OrderSummary({
         />
       </div>
 
-      {/* Cart Items */}
       <div
         className={`${
           isMobile
@@ -534,7 +531,6 @@ export default function OrderSummary({
         </div>
       </div>
 
-      {/* Footer */}
       {cartItems.length > 0 && (
         <OrderSummaryFooter
           subtotal={subtotal}
@@ -568,7 +564,6 @@ export default function OrderSummary({
         />
       )}
 
-      {/* Modals */}
       {showAddCustomerModal && (
         <AddCustomerModal
           customer={null}

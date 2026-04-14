@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { formatCurrency } from "../utils/currency";
+import { formatCurrencyWithSymbol } from "../utils/currency";
 import { usePOSDetails } from "../hooks/usePOSProfile";
 import {
   FileText,
@@ -440,7 +440,7 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrency(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
+                    {formatCurrencyWithSymbol(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
                   </p>
                 </div>
                 <DollarSign className="w-6 h-6 text-green-600" />
@@ -452,7 +452,7 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrency(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
+                    {formatCurrencyWithSymbol(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
                   </p>
                 </div>
                 <AlertCircle className={`w-6 h-6 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
@@ -464,7 +464,7 @@ export default function CustomerDetailsPage() {
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Avg Order</p>
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrency(customerMetrics.avgOrderValue, posDetails?.currency || 'USD')}
+                    {formatCurrencyWithSymbol(customerMetrics.avgOrderValue, posDetails?.currency || 'USD')}
                   </p>
                 </div>
                 <TrendingUp className="w-6 h-6 text-blue-600" />
@@ -560,7 +560,7 @@ export default function CustomerDetailsPage() {
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {formatCurrency(invoice.totalAmount, invoice.currency)}
+                            {formatCurrencyWithSymbol(invoice.totalAmount, invoice.currency)}
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
@@ -815,7 +815,7 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrency(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
+                      {formatCurrencyWithSymbol(customerMetrics.totalRevenue, posDetails?.currency || 'USD')}
                     </p>
                   </div>
                   <DollarSign className="w-8 h-8 text-green-600" />
@@ -827,7 +827,7 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Outstanding Balance</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrency(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
+                      {formatCurrencyWithSymbol(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
                     </p>
                   </div>
                   <AlertCircle className={`w-8 h-8 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
@@ -839,7 +839,7 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Avg Order Value</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrency(customerMetrics.avgOrderValue, posDetails?.currency || 'USD')}
+                      {formatCurrencyWithSymbol(customerMetrics.avgOrderValue, posDetails?.currency || 'USD')}
                     </p>
                   </div>
                   <TrendingUp className="w-8 h-8 text-blue-600" />
@@ -956,11 +956,11 @@ export default function CustomerDetailsPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-gray-900 dark:text-white">
-                              {formatCurrency(invoice.totalAmount, invoice.currency)}
+                              {formatCurrencyWithSymbol(invoice.totalAmount, invoice.currency)}
                             </div>
                             {invoice.giftCardDiscount > 0 && (
                               <div className="text-xs text-orange-600 dark:text-green-400">
-                                -{formatCurrency(invoice.giftCardDiscount, invoice.currency)} gift card
+                                -{formatCurrencyWithSymbol(invoice.giftCardDiscount, invoice.currency)} gift card
                               </div>
                             )}
                           </td>

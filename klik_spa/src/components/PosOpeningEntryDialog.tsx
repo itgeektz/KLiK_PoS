@@ -4,7 +4,7 @@ import { usePaymentModes } from "../hooks/usePaymentModes";
 import { usePOSDetails, usePOSProfiles } from '../hooks/usePOSProfile';
 import { useCreatePOSOpeningEntry } from '../services/opeiningEntry';
 import { clearAllCache } from '../utils/clearCache';
-import { formatCurrency } from '../utils/currency';
+import { formatCurrencyWithSymbol } from '../utils/currency';
 
 interface PaymentMethod {
   mode_of_payment: string;
@@ -322,7 +322,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
                     <div className="flex justify-between items-center font-semibold text-gray-700">
                       <span>Total Opening Balance:</span>
                       <span className="text-green-600">
-                        {formatCurrency(totalAmount, posDetails?.currency || 'USD')}
+                        {formatCurrencyWithSymbol(totalAmount, posDetails?.currency || 'USD')}
                       </span>
                     </div>
                   </div>

@@ -886,6 +886,10 @@ def build_sales_invoice_doc(
 	# Populate tax details
 	_populate_tax_details(doc)
 
+	doc.set_taxes()
+	doc.set_missing_values()
+	doc.calculate_taxes_and_totals()
+
 	# Add payment information
 	if include_payments:
 		_add_payment_entries(doc, mode_of_payment)

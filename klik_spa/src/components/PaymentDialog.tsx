@@ -59,6 +59,7 @@ import {
 } from "../services/emailTemplateService";
 import DeliveryPersonnelModal from "./DeliveryPersonnelModal";
 import { useDeliveryPersonnel } from "../hooks/useDeliveryPersonnel";
+import { useCartStore } from "../stores/cartStore";
 
 interface PaymentDialogProps {
   isOpen: boolean;
@@ -591,6 +592,8 @@ export default function PaymentDialog({
     roundOffAmount,
   ]);
 
+  const { clearCart } = useCartStore()
+
   // Calculate total paid amount from all payment methods (for both B2C and B2B)
   const totalPaidAmount = calculateTotalPayments(Object.values(paymentAmounts));
   const outstandingAmount = calculateRemainingAmount(calculations.grandTotal, Object.values(paymentAmounts));
@@ -1107,6 +1110,7 @@ export default function PaymentDialog({
 
       // Clear draft invoice cache since payment is completed
       clearDraftInvoiceCache();
+      clearCart()
 
       // Don't clear cart immediately - let modal stay open for invoice preview
       //eslint-disable-next-line @typescript-eslint/no-explicit-any

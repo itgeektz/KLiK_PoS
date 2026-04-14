@@ -801,7 +801,6 @@ export default function InvoiceViewPage() {
                         {invoice.sales_team.map((member: any, idx: number) => {
                           const displayName = member.sales_person ||  "Unknown";
                           const contact_no = member.contact_no || '';
-                          // const allocated_amount = member.allocated_amount ? formatCurrency(member.allocated_amount, invoice.currency) : null;
                           const percent = member.allocated_percentage || null;
                           return (
                             <div key={idx} className="flex items-center justify-between">

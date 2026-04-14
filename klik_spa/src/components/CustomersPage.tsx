@@ -19,6 +19,7 @@ import type { Customer } from "../types/customer"
 import BottomNavigation from "./BottomNavigation"
 import { useMediaQuery } from "../hooks/useMediaQuery"
 import { usePOSDetails } from "../hooks/usePOSProfile"
+import { formatCurrencyWithSymbol } from "../utils/currency"
 
 export default function CustomersPage() {
   const navigate = useNavigate()
@@ -116,29 +117,6 @@ export default function CustomersPage() {
     )
   }
 
-  const formatCurrency = (amount: number, currency?: string) => {
-    // Validate currency code and provide fallbacks
-    let validCurrency = 'USD'; // Default fallback
-
-    if (currency && currency.trim() && currency.length === 3) {
-      try {
-        // Test if the currency is valid by trying to create a NumberFormat
-        new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: currency
-        });
-        validCurrency = currency;
-      } catch {
-        console.warn(`Invalid currency code: ${currency}, falling back to AED`);
-        validCurrency = 'USD';
-      }
-    }
-
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: validCurrency
-    }).format(amount)
-  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -347,7 +325,7 @@ export default function CustomersPage() {
                               {customer.totalOrders} orders
                             </div>
                             <div className="text-sm text-gray-500 dark:text-gray-400">
-                              {formatCurrency(customer.totalSpent, customer.defaultCurrency || customer.companyCurrency)}
+                              {formatCurrencyWithSymbol(customer.totalSpent, customer.defaultCurrency || customer.companyCurrency)}
                             </div>
                           </div>
                         </td>
@@ -610,7 +588,7 @@ export default function CustomersPage() {
                             {customer.totalOrders > 0 ? `${customer.totalOrders} orders` : 'No orders'}
                           </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {customer.totalSpent > 0 ? formatCurrency(customer.totalSpent, customer.defaultCurrency || customer.companyCurrency) : 'No purchases'}
+                            {customer.totalSpent > 0 ? formatCurrencyWithSymbol(customer.totalSpent, customer.defaultCurrency || customer.companyCurrency) : 'No purchases'}
                           </div>
                         </div>
                       </td>

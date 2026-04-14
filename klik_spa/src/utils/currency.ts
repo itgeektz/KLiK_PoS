@@ -113,31 +113,6 @@ export const getCurrencySymbol = (currency: string): string => {
   return symbol || currency; // Return currency code if symbol not found
 };
 
-/**
- * Format amount with currency symbol
- * @param amount - Amount to format
- * @param currency - Currency code
- * @returns Formatted string (e.g., "SAR 100.00", "$50.00")
- */
-export const formatCurrency = (amount: number, currency?: string): string => {
-  if (!amount && amount !== 0) return '0.00';
-
-  const symbol = getCurrencySymbol(currency || 'USD');
-  return `${symbol} ${amount.toFixed(2)}`;
-};
-
-/**
- * Format amount with currency symbol (compact version)
- * @param amount
- * @param currency
- * @returns Formatted string (e.g., "SAR100.00", "$50.00")
- */
-export const formatCurrencyCompact = (amount: number, currency?: string): string => {
-  if (!amount && amount !== 0) return '0.00';
-
-  const symbol = getCurrencySymbol(currency || 'USD');
-  return `${symbol}${amount.toFixed(2)}`;
-};
 
 /**
  * Format amount with a pre-rendered currency symbol and thousands separators.

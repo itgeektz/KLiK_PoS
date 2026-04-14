@@ -1003,11 +1003,34 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 		item_db_data = item_data_map.get(item_code, {}) or {}
 		has_batch_no = int(item_db_data.get("has_batch_no") or 0)
 		has_serial_no = int(item_db_data.get("has_serial_no") or 0)
-		serial_batch_bundle = item.get("serial_batch_bundle")
+		bundle_entries = item.get("bundle_entries") or item.get("serial_batch_bundle") or []
+		has_bundle_values = any(
+			(entry.get("batch_no") or entry.get("serial_no"))
+			for entry in bundle_entries
+		)
+		has_explicit_batch = bool(item.get("batchNumber") or item.get("batch_no"))
+		has_explicit_serial = bool(item.get("serialNumber") or item.get("serial_no"))
 
-		# Serial-number items: always require explicit selection from UI
-		if (has_serial_no or has_batch_no) and not serial_batch_bundle:
+		# Serial-tracked items must have either serial bundle entries or explicit serial data.
+		if has_serial_no and not (has_bundle_values or has_explicit_serial):
+			frappe.throw(
+				_(
+					"Serial No / Batch No are mandatory for Item {0}. Please select serial numbers before submitting the invoice."
+				).format(item_code)
+			)
+
+		# Batch-tracked items must have either bundle entries, explicit batch, or be auto-fetched.
+		if has_batch_no and not (has_bundle_values or has_explicit_batch):
 			if auto_fetch_enabled:
+				auto_batch = _autofetch_batch_fifo(item_code, pos_profile.warehouse, item.get("quantity"))
+				if not auto_batch:
+					frappe.throw(
+						_(
+							"Serial No / Batch No are mandatory for Item {0} and no suitable batch is available in warehouse {1}."
+						).format(item_code, pos_profile.warehouse)
+					)
+				item["batchNumber"] = auto_batch
+			else:
 				frappe.throw(
 					_(
 						"Serial No / Batch No are mandatory for Item {0}. Please select a batch before submitting the invoice."

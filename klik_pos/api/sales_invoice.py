@@ -431,6 +431,7 @@ def validate_checkout_invoice(data):
 			due_date=due_date,
 			salesperson=salesperson,
 			tax_id=tax_id,
+			create_batch_and_serial_bundle=False,  # Skip bundle creation for faster validation; batch/serial will still be validated
 		)
 
 		return {"success": True, "message": "Checkout validation passed"}
@@ -741,15 +742,6 @@ def parse_invoice_data(data):
 		item_code = item.get("id")
 
 		discount_data = item_discounts.get(item_code, {})
-		batch_number = (
-			item.get("batchNumber")
-			or discount_data.get("batchNumber")
-		)
-
-		serial_number = (
-			item.get("serialNumber")
-			or discount_data.get("serialNumber")
-		)
 
 		discount_percentage = flt(item.get("discountPercentage") or discount_data.get("discountPercentage") or 0)
 		discount_amount = flt(item.get("discountAmount") or discount_data.get("discountAmount") or 0)
@@ -758,8 +750,7 @@ def parse_invoice_data(data):
 			"id": item_code,
             "quantity": item.get("quantity"),
             "price": item.get("price"),
-            "batchNumber": batch_number,
-            "serialNumber": serial_number,
+            "bundle_entries": item.get("bundle_entries", []),
             "uom": item.get("uom"),
 			"discountPercentage": discount_percentage,
 			"discountAmount": discount_amount,
@@ -842,6 +833,7 @@ def build_sales_invoice_doc(
 	due_date=None,
 	salesperson=None,
 	tax_id=None,
+	create_batch_and_serial_bundle=True,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -887,6 +879,9 @@ def build_sales_invoice_doc(
 
 	# Add items to invoice
 	_populate_invoice_items(doc, items, pos_profile)
+	
+	if create_batch_and_serial_bundle:
+		_create_batch_and_serial_bundle(items, doc)
 
 	# Populate tax details
 	_populate_tax_details(doc)
@@ -899,6 +894,40 @@ def build_sales_invoice_doc(
 		doc.due_date = due_date
 
 	return doc
+
+def _create_batch_and_serial_bundle(items, doc):
+	for item_data in items:
+		item_code = item_data.get("item_code") or item_data.get("id")
+		serial_batch_bundle = item_data.get("bundle_entries")
+
+		if not item_code or not serial_batch_bundle:
+			continue
+
+		item_meta = frappe.db.get_value("Item", item_code, ["has_batch_no", "has_serial_no"], as_dict=1)
+		
+		if not item_meta or not (item_meta.has_batch_no or item_meta.has_serial_no):
+			continue
+
+		for row in doc.items:
+			if row.item_code == item_code:
+				bundle = frappe.new_doc("Serial and Batch Bundle")
+				bundle.item_code = item_code
+				bundle.company = doc.company
+				bundle.warehouse =  row.warehouse
+				bundle.has_batch_no = item_meta.has_batch_no
+				bundle.has_serial_no = item_meta.has_serial_no
+				bundle.type_of_transaction = "Outward"
+				bundle.voucher_type = doc.doctype
+
+				for entry in serial_batch_bundle:
+					bundle.append("entries", {
+						"batch_no": entry.get("batch_no"),
+						"serial_no": entry.get("serial_no"),
+						"qty": -abs(float(entry.get("qty") or 0)),
+					})
+				bundle.insert()
+				row.serial_and_batch_bundle = bundle.name
+				break
 
 
 def _get_active_pos_profile():
@@ -974,32 +1003,11 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 		item_db_data = item_data_map.get(item_code, {}) or {}
 		has_batch_no = int(item_db_data.get("has_batch_no") or 0)
 		has_serial_no = int(item_db_data.get("has_serial_no") or 0)
-
-		batch_number = item.get("batchNumber")
-		serial_number = item.get("serialNumber")
+		serial_batch_bundle = item.get("serial_batch_bundle")
 
 		# Serial-number items: always require explicit selection from UI
-		if has_serial_no and not serial_number:
-			frappe.throw(
-				_("Serial number is mandatory for Item {0}. Please select serial numbers before submitting.").format(
-					item_code
-				)
-			)
-
-		# Batch-number items: optionally auto-fetch, otherwise require explicit batch
-		if has_batch_no and not batch_number:
+		if (has_serial_no or has_batch_no) and not serial_batch_bundle:
 			if auto_fetch_enabled:
-				# Try to auto-pick a batch using simple FIFO strategy
-				auto_batch = _autofetch_batch_fifo(item_code, pos_profile.warehouse, item.get("quantity"))
-				if not auto_batch:
-					frappe.throw(
-						_(
-							"Serial No / Batch No are mandatory for Item {0} and no suitable batch is available in warehouse {1}."
-						).format(item_code, pos_profile.warehouse)
-					)
-				# Mutate the incoming item structure so downstream code uses this batch
-				item["batchNumber"] = auto_batch
-			else:
 				frappe.throw(
 					_(
 						"Serial No / Batch No are mandatory for Item {0}. Please select a batch before submitting the invoice."

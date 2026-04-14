@@ -2,7 +2,7 @@ export interface Customer {
   id: string
   type: 'individual' | 'company' | 'walk-in'
   name: string
-  customer_name: string
+  customer_name?: string
   email: string
   phone: string
   address: {
@@ -14,10 +14,8 @@ export interface Customer {
     zipCode: string
     country: string
   }
-  // Individual customer fields
   dateOfBirth?: string
   gender?: 'male' | 'female' | 'other'
-  // Company customer fields
   companyName?: string
   contactPerson?: string
   taxId?: string
@@ -26,7 +24,6 @@ export interface Customer {
   employeeCount?: string
   registrationScheme?: string
   registrationNumber?: string
-  // Common fields
   loyaltyPoints: number
   totalSpent: number
   totalOrders: number
@@ -37,7 +34,6 @@ export interface Customer {
   createdAt: string
   lastVisit?: string
   avatar?: string
-  // Additional fields for ERPNext integration
   defaultCurrency?: string
   companyCurrency?: string
   customer_group?: string

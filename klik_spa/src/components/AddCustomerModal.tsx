@@ -62,7 +62,7 @@ export default function AddCustomerModal({
       city: "",
       state: "",
       zipCode: "",
-      country: posDetails?.company?.country ?? "Saudi Arabia",
+      country: customer?.address.country || posDetails?.company?.country || "",
     },
     status: "active" as Customer["status"],
     vatNumber: "",
@@ -138,7 +138,7 @@ export default function AddCustomerModal({
           city: customer.address?.city || "",
           state: customer.address?.state || "",
           zipCode: customer.address?.zipCode || "",
-          country: customer.address?.country || posDetails?.company?.country || "Saudi Arabia",
+          country: customer.address?.country || posDetails?.company?.country || "",
         },
         status: customer.status,
         vatNumber: customer.taxId || "",
@@ -169,16 +169,16 @@ export default function AddCustomerModal({
   }, [customer?.id, customer?.name, prefilledName, prefilledData, customer]); // Only depend on stable customer properties
 
   useEffect(() => {
-    if (posDetails?.company?.country && !isEditing) {
+    if (posDetails?.company?.country) {
       setFormData((prev) => ({
         ...prev,
         address: {
           ...prev.address,
-          country: posDetails?.company?.country ?? "Saudi Arabia",
+          country: posDetails?.company?.country ?? "",
         },
       }));
     }
-  }, [posDetails?.company?.country, isEditing]);
+  }, [posDetails?.company?.country]);
 
   // Reset form initialization when customer changes
   useEffect(() => {
@@ -801,7 +801,7 @@ export default function AddCustomerModal({
                       <PhoneInput
                         id="phone"
                         international
-                        defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || "SA"}
+                        defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || ""}
                         value={formData.phone}
                         onChange={(value: string | undefined) =>
                           setFormData((prev) => ({ ...prev, phone: value || "" }))
@@ -909,7 +909,7 @@ export default function AddCustomerModal({
                   <PhoneInput
                     id="phone"
                     international
-                    defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || "SA"}
+                    defaultCountry={(countryOptions.find(c => c.label === (formData.address.country || ""))?.value as any) || ""}
                     value={formData.phone}
                     onChange={(value: string | undefined) =>
                       setFormData((prev) => ({ ...prev, phone: value || "" }))

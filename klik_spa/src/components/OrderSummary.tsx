@@ -1845,6 +1845,8 @@ import { usePOSDetails } from "../hooks/usePOSProfile";
 import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
 import { useCustomerPermission } from "../hooks/useCustomerPermission";
 import { useCartStore } from "../stores/cartStore";
+import countryList from "react-select-country-list";
+import { parsePhoneNumber } from "react-phone-number-input";
 
 
 interface OrderSummaryProps {
@@ -2395,28 +2397,18 @@ export default function OrderSummary({
           /^[\d\s+()-]+$/.test(trimmedValue) &&
           trimmedValue.replace(/[\s+()-]/g, "").length >= 7
         ) {
-          // Format phone number with Saudi Arabia country code if it doesn't already have one
-          let formattedPhone = trimmedValue;
-          const cleanNumber = trimmedValue.replace(/[\s+()-]/g, "");
+          const companyCountryCode = (countryList().getData() as { value: string; label: string }[])
+            .find((c) => c.label === (posDetails?.company?.country || ""))
+            ?.value || "";
 
-          // If the number doesn't start with +966 (Saudi Arabia code), add it
-          if (
-            !cleanNumber.startsWith("966") &&
-            !cleanNumber.startsWith("+966")
-          ) {
-            // If it starts with 0, replace with +966
-            if (cleanNumber.startsWith("0")) {
-              formattedPhone = "+966" + cleanNumber.substring(1);
-            } else {
-              // Otherwise just add +966
-              formattedPhone = "+966" + cleanNumber;
+          let formattedPhone = trimmedValue;
+          try {
+            const parsed = parsePhoneNumber(trimmedValue, companyCountryCode as any);
+            if (parsed) {
+              formattedPhone = parsed.format("E.164");
             }
-          } else if (
-            cleanNumber.startsWith("966") &&
-            !cleanNumber.startsWith("+966")
-          ) {
-            // If it starts with 966 but no +, add the +
-            formattedPhone = "+" + cleanNumber;
+          } catch {
+            // keep trimmedValue as-is if parsing fails
           }
 
           prefilledData = { phone: formattedPhone };
@@ -2511,6 +2503,7 @@ export default function OrderSummary({
           const customerToSelect: Customer = {
             id: erpCustomer.name,
             name: erpCustomer.customer_name || erpCustomer.name,
+            customer_name: erpCustomer.customer_name || erpCustomer.name,
             email: erpCustomer.email_id || '',
             phone: erpCustomer.mobile_no || '',
             type: erpCustomer.customer_type === "Company" ? "company" : "individual",
@@ -2519,7 +2512,7 @@ export default function OrderSummary({
               city: '',
               state: '',
               zipCode: '',
-              country: 'Saudi Arabia'
+              country: erpCustomer.address_data.country || posDetails?.company?.country || ''
             },
             loyaltyPoints: erpCustomer.custom_loyalty_points || 0,
             totalSpent: erpCustomer.custom_total_spent || 0,
@@ -2553,7 +2546,7 @@ export default function OrderSummary({
             city: '',
             state: '',
             zipCode: '',
-            country: 'Saudi Arabia'
+            country: newCustomer.address?.country || posDetails?.company?.country || ''
           },
           loyaltyPoints: 0,
           totalSpent: 0,
@@ -2747,7 +2740,7 @@ export default function OrderSummary({
               city: "",
               state: "",
               zipCode: "",
-              country: "Saudi Arabia",
+              country: posDetails.company?.country || "",
             },
             loyaltyPoints: 0,
             totalSpent: 0,

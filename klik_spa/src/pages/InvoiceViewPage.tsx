@@ -170,7 +170,7 @@ export default function InvoiceViewPage() {
             city: customerInfo.address_data?.city || '',
             state: customerInfo.address_data?.state || '',
             zipCode: customerInfo.address_data?.pincode || '',
-            country: customerInfo.address_data?.country || 'Saudi Arabia',
+            country: posDetails?.company?.country || '',
           },
           status: 'active' as const,
           preferredPaymentMethod: customerInfo.payment_method || 'Cash' as const,

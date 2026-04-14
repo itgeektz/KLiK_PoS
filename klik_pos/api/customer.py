@@ -675,7 +675,7 @@ def update_customer(customer_id, customer_data):
 		phone = customer_data.get("phone")
 		customer_name = customer_data.get("name", customer.customer_name)
 		address_data = customer_data.get("address", {})
-		country = address_data.get("country", "Saudi Arabia")
+		country = address_data.get("country")
 
 		# Update customer fields
 		for key, value in customer_data.items():

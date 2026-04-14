@@ -648,6 +648,10 @@ export default function OrderSummary({
       discountPercentage: 0,
       discountAmount: 0,
     };
+    if (itemDiscount.customRate !== undefined) {
+      return Math.max(0, itemDiscount.customRate);
+    }
+
     let discountedPrice = item.price;
 
     // Apply percentage discount first
@@ -792,6 +796,7 @@ export default function OrderSummary({
           availableQuantity: 150,
         }),
         customRate: newRate,
+        discountPercentage: 0,
         discountAmount: discountAmount,
       },
     }));
@@ -800,7 +805,7 @@ export default function OrderSummary({
   // Get the amount (rate * quantity) - just for display
   const getAmount = (item: CartItem) => {
     const itemDiscount = itemDiscounts[item.id] || {};
-    const effectiveRate = itemDiscount.customRate || item.price;
+    const effectiveRate = itemDiscount.customRate ?? item.price;
     return effectiveRate * item.quantity;
   };
 

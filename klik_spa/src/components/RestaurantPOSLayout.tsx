@@ -6,7 +6,7 @@ import { useProducts } from "../hooks/useProducts"
 import { usePOSDetails } from "../hooks/usePOSProfile"
 
 import MenuGrid from "./MenuGrid"
-import OrderSummary from "./OrderSummary"
+import OrderSummary from "./order/OrderSummary"
 import MobilePOSLayout from "./MobilePOSLayout"
 import LoadingSpinner from "./LoadingSpinner"
 import type { MenuItem, CartItem, GiftCoupon } from "../../types"

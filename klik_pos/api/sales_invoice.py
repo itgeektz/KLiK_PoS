@@ -753,6 +753,17 @@ def parse_invoice_data(data):
             "discountAmount": discount_data.get("discountAmount"),
 		})
 
+		price = flt(item.get("price") or 0)
+		discount_percentage = flt(discount_data.get("discountPercentage") or 0)
+		discount_amount = flt(discount_data.get("discountAmount") or 0)
+
+		if price <= 0 and discount_percentage <= 0 and discount_amount <= 0:
+			frappe.throw(
+				_("Rate must be greater than 0 for item {0} when no discount is set").format(
+					item_code or _("Unknown Item")
+				)
+			)
+
 	amount_paid = 0.0
 	sales_and_tax_charges = get_current_pos_profile().taxes_and_charges
 	business_type = data.get("businessType")

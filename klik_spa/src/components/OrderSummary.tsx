@@ -45,6 +45,15 @@ interface OrderSummaryProps {
   isMobile?: boolean;
 }
 
+type ItemDiscountData = {
+  discountPercentage: number;
+  discountAmount: number;
+  batchNumber: string;
+  serialNumber: string;
+  availableQuantity: number;
+  customRate?: number;
+};
+
 // Component to handle quantity input with local state
 interface QuantityInputProps {
   item: CartItem;
@@ -616,17 +625,7 @@ export default function OrderSummary({
 
   // State for item-level discounts and details
   const [itemDiscounts, setItemDiscounts] = useState<
-    Record<
-      string,
-      {
-        discountPercentage: number;
-        discountAmount: number;
-        batchNumber: string;
-        serialNumber: string;
-        availableQuantity: number;
-        customRate?: number;
-      }
-    >
+    Record<string, ItemDiscountData>
   >({});
 
   const [itemBatches, setItemBatches] = useState<
@@ -644,9 +643,12 @@ export default function OrderSummary({
 
   // Helper function to calculate item price after discount
   const getDiscountedPrice = (item: CartItem) => {
-    const itemDiscount = itemDiscounts[item.id] || {
+    const itemDiscount: ItemDiscountData = itemDiscounts[item.id] || {
       discountPercentage: 0,
       discountAmount: 0,
+      batchNumber: "",
+      serialNumber: "",
+      availableQuantity: 0,
     };
     if (itemDiscount.customRate !== undefined) {
       return Math.max(0, itemDiscount.customRate);
@@ -804,7 +806,7 @@ export default function OrderSummary({
 
   // Get the amount (rate * quantity) - just for display
   const getAmount = (item: CartItem) => {
-    const itemDiscount = itemDiscounts[item.id] || {};
+    const itemDiscount: Partial<ItemDiscountData> = itemDiscounts[item.id] || {};
     const effectiveRate = itemDiscount.customRate ?? item.price;
     return effectiveRate * item.quantity;
   };
@@ -835,11 +837,30 @@ export default function OrderSummary({
     return true;
   };
 
+  const validateItemRates = () => {
+    for (const item of cartItems) {
+      const itemCode = item.item_code || item.id;
+      const discountData: Partial<ItemDiscountData> =
+        itemDiscounts[itemCode] || itemDiscounts[item.id] || {};
+      const hasDiscount =
+        (Number(discountData.discountAmount) || 0) > 0 ||
+        (Number(discountData.discountPercentage) || 0) > 0;
+      const finalRate = Number(getDiscountedPrice(item)) || 0;
+
+      if (!hasDiscount && finalRate <= 0) {
+        toast.error(`Rate must be greater than 0 for ${item.name}`);
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   const buildCheckoutValidationPayload = () => {
-    const normalizedItemDiscounts: Record<string, any> = {};
+    const normalizedItemDiscounts: Record<string, Partial<ItemDiscountData>> = {};
     const items = cartItems.map((item) => {
       const itemCode = item.item_code || item.id;
-      const discountData =
+      const discountData: Partial<ItemDiscountData> =
         itemDiscounts[itemCode] || itemDiscounts[item.id] || {};
 
       normalizedItemDiscounts[itemCode] = {
@@ -866,7 +887,7 @@ export default function OrderSummary({
   };
 
   const handleCheckoutClick = async () => {
-    if (!validateCustomer() || isValidatingCheckout) {
+    if (!validateCustomer() || !validateItemRates() || isValidatingCheckout) {
       return;
     }
 
@@ -1043,6 +1064,10 @@ export default function OrderSummary({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleHoldOrder = async (orderData: any) => {
+    if (!validateItemRates()) {
+      return;
+    }
+
     if (!selectedCustomer) {
       toast.error("Kindly select a customer");
       return;

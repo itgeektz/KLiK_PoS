@@ -118,7 +118,7 @@ export default function ProductTooltip({
       <div
         ref={tooltipRef}
         onClick={handleClick}
-        className={`absolute z-[100] w-80 bg-white dark:bg-gray-800 shadow-2xl rounded-lg p-4 border border-gray-200 dark:border-gray-700 ${verticalClass} ${horizontalClass} text-left cursor-pointer`}
+        className={`absolute z-[100] w-80 !opacity-100 bg-white dark:bg-gray-800 shadow-2xl rounded-lg p-4 border border-gray-200 dark:border-gray-700 ${verticalClass} ${horizontalClass} text-left cursor-pointer`}
       >
         <div className="border-b border-gray-100 dark:border-gray-700 pb-2 mb-3">
           <div className="flex items-start justify-between gap-3">

@@ -607,7 +607,6 @@ export default function PaymentDialog({
   }, [sharingMode, emailTemplates.length]);
 
   // Helper function to get processed WhatsApp message
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getProcessedMessage = () => {
     const parameters: Record<string, string> = {
       customer_name: sharingData.name || "there",
@@ -624,7 +623,6 @@ export default function PaymentDialog({
   };
 
   // Helper function to get processed email message
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getProcessedEmailMessage = () => {
     const parameters: Record<string, string | null> = {
       customer_name: sharingData.name || "Customer",
@@ -753,7 +751,7 @@ export default function PaymentDialog({
         setPaymentAmounts({ [defaultMode.mode_of_payment]: defaultAmount });
       }
     }
-  }, [isOpen, modes, calculations.grandTotal, isB2B, isB2C]);
+  }, [isOpen, modes, calculations.grandTotal, isB2B, isB2C, paymentAmounts]);
 
   useEffect(() => {
     if (modes.length > 0 && Object.keys(paymentAmounts).length > 0) {
@@ -859,6 +857,10 @@ export default function PaymentDialog({
     // If there's an active method and it exists in payment amounts, use it
     if (activeMethodId && activeMethodId in paymentAmounts) {
       return activeMethodId;
+    }
+
+    if (lastModifiedMethodId && lastModifiedMethodId in paymentAmounts) {
+      return lastModifiedMethodId;
     }
 
     // Collect non-zero methods
@@ -1185,8 +1187,7 @@ export default function PaymentDialog({
             const lastPaymentIndex = validPayments.length - 1;
             const lastPayment = validPayments[lastPaymentIndex];
             if (!lastPayment) return;
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const [lastMethod, lastAmount] = lastPayment;
+            const [, lastAmount] = lastPayment;
 
             // Reduce the last payment method by the excess amount
             const adjustedLastAmount = parseFloat(
@@ -1267,10 +1268,7 @@ export default function PaymentDialog({
       setSubmittedInvoice(response);
       setInvoiceData(response.invoice);
 
-      const successMessage = isB2B
-        ? "Invoice submitted successfully!"
-        : "Payment completed successfully!";
-      toast.success(successMessage);
+      toast.success("Invoice queued for background submission!");
 
       // Delete original draft invoice if it exists (from Edit → Go to Cart workflow)
       const originalDraftInvoiceId = getOriginalDraftInvoiceId();
@@ -1450,7 +1448,7 @@ export default function PaymentDialog({
             <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between">
               <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {invoiceSubmitted
-                  ? "Invoice Complete"
+                  ? "Invoice Queued"
                   : isB2B
                     ? "Submit Invoice"
                     : "Payment"}
@@ -1466,9 +1464,7 @@ export default function PaymentDialog({
                 <div className="flex items-center justify-center space-x-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
                   <div className="text-green-600 dark:text-green-400 text-center">
                     <p className="font-semibold">
-                      {isB2B
-                        ? "Invoice Submitted Successfully!"
-                        : "Payment Completed Successfully!"}
+                      Invoice queued for background submission!
                     </p>
                     <p className="text-sm opacity-75">
                       Total:{" "}

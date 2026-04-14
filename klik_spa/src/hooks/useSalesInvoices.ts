@@ -98,6 +98,7 @@ export function useSalesInvoices(
           canReturn = true;
         }
 
+        // @ts-expect-error - intentional type assertion for transformed invoice shape
         return {
           id: invoice.name,
           date: invoice.posting_date || new Date().toISOString().split("T")[0],
@@ -145,7 +146,18 @@ export function useSalesInvoices(
           notes: invoice.remarks || "",
           posProfile: invoice.pos_profile || "",
           custom_pos_opening_entry: invoice.custom_pos_opening_entry || "",
+          queueStatus: (invoice.custom_queue_status as string) || "",
+          queueJobId: (invoice.custom_queue_job_id as string) || "",
+          queueError: (invoice.custom_queue_error as string) || "",
+          queueAttempts: Number(invoice.custom_queue_attempts) || 0,
+          queueLastAttemptAt: (invoice.custom_queue_last_attempt_at as string) || "",
           canReturn: canReturn,
+        } as SalesInvoice & {
+          queueStatus?: string;
+          queueJobId?: string;
+          queueError?: string;
+          queueAttempts?: number;
+          queueLastAttemptAt?: string;
         };
       });
 

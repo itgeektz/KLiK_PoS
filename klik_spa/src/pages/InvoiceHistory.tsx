@@ -35,7 +35,7 @@ import { useUserInfo } from "../hooks/useUserInfo";
 import { usePOSDetails } from "../hooks/usePOSProfile";
 import { toast } from "react-toastify";
 import { extractErrorFromException } from "../utils/errorExtraction";
-import { createSalesReturn, deleteDraftInvoice, submitDraftInvoice } from "../services/salesInvoice";
+import { createSalesReturn, deleteDraftInvoice, submitDraftInvoice, retryQueuedInvoice } from "../services/salesInvoice";
 import { useAllPaymentModes } from "../hooks/usePaymentModes";
 
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
@@ -123,6 +123,7 @@ export default function InvoiceHistoryPage() {
     { id: "Overdue", name: "Overdue", icon: XCircle, color: "text-red-600" },
     { id: "Return", name: "Returns", icon: RefreshCw, color: "text-purple-600" },
     { id: "Cancelled", name: "Cancelled", icon: XCircle, color: "text-red-500" },
+    { id: "queue_failed", name: "Failed Queue", icon: AlertTriangle, color: "text-rose-600" },
   ];
 
   const filterInvoiceByDate = (invoiceDateStr: string) => {
@@ -207,8 +208,14 @@ const getStatusBadge = (status: string) => {
       // Server-side search is handled by the API, so we only apply client-side filters
       // Normalize status comparison to handle case and whitespace differences
       const invoiceStatus = (invoice.status || "").trim();
+      const queueStatus = ((invoice as SalesInvoice & { queueStatus?: string }).queueStatus || "").trim();
       const tabStatus = (activeTab || "").trim();
-      const matchesStatus = activeTab === "all" || invoiceStatus === tabStatus;
+      const matchesStatus =
+        activeTab === "all"
+          ? true
+          : activeTab === "queue_failed"
+            ? queueStatus.toLowerCase() === "failed"
+            : invoiceStatus === tabStatus;
       const matchesPayment = paymentFilter === "all" || invoice.paymentMethod === paymentFilter;
       const matchesCashier = cashierFilter === "all" || invoice.cashier === cashierFilter;
       const matchesDate = filterInvoiceByDate(invoice.date);
@@ -268,6 +275,12 @@ const getStatusBadge = (status: string) => {
     // Then count by status - normalize comparison
     if (status === "all") {
       return invoicesFilteredByOtherFilters.length;
+    }
+    if (status === "queue_failed") {
+      return invoicesFilteredByOtherFilters.filter(invoice => {
+        const queueStatus = ((invoice as SalesInvoice & { queueStatus?: string }).queueStatus || "").trim();
+        return queueStatus.toLowerCase() === "failed";
+      }).length;
     }
     const normalizedStatus = (status || "").trim();
     return invoicesFilteredByOtherFilters.filter(invoice => {
@@ -574,6 +587,17 @@ const getStatusBadge = (status: string) => {
                         </button>
                       )}
 
+                      {/* @ts-expect-error just ignore */}
+                      {((invoice as SalesInvoice & { queueStatus?: string }).queueStatus || "").toLowerCase() === "failed" && (
+                        <button
+                          onClick={() => handleRetryQueue(invoice)}
+                          className="text-blue-600 hover:text-blue-900 flex items-center space-x-1"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                          <span>Retry</span>
+                        </button>
+                      )}
+
                       {invoice.status === "Draft" && (
                         <button
                           onClick={() => handleDeleteClick(invoice)}
@@ -633,6 +657,32 @@ const getStatusBadge = (status: string) => {
                   >
                     <Edit className="w-3 h-3" />
                     <span>Edit</span>
+                  </button>
+                )}
+                  {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && hasReturnableItems(invoice) && (
+                  <button
+                    onClick={() => handleSingleReturnClick(invoice)}
+                    className="flex-1 text-xs px-3 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors"
+                  >
+                    Return
+                  </button>
+                )}
+                {/* @ts-expect-error just ignore */}
+                {((invoice as SalesInvoice & { queueStatus?: string }).queueStatus || "").toLowerCase() === "failed" && (
+                  <button
+                    onClick={() => handleRetryQueue(invoice)}
+                    className="flex-1 text-xs px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center space-x-1"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Retry</span>
+                  </button>
+                )}
+                {invoice.status === "Draft" && (
+                  <button
+                    onClick={() => handleDeleteClick(invoice)}
+                    className="flex-1 text-xs px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                  >
+                    Delete
                   </button>
                 )}
                   {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && hasReturnableItems(invoice) && (
@@ -812,6 +862,17 @@ const getStatusBadge = (status: string) => {
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       toast.error(error.message || "Failed to return invoice");
+    }
+  };
+
+  const handleRetryQueue = async (invoice: SalesInvoice) => {
+    try {
+      await retryQueuedInvoice(invoice.id);
+      toast.success(`Queued invoice ${invoice.id} sent back to the background worker`);
+      window.location.reload();
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      toast.error(error.message || "Failed to retry queued invoice");
     }
   };
 

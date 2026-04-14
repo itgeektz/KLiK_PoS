@@ -15,6 +15,145 @@ _cached_company_data = {}
 _cached_customer_data = {}
 _cached_item_accounts = {}
 
+QUEUE_STATUSES = {
+	"queued": "Queued",
+	"processing": "Processing",
+	"failed": "Failed",
+	"submitted": "Submitted",
+}
+
+
+def _coerce_queue_status(status):
+	if not status:
+		return QUEUE_STATUSES["queued"]
+	if isinstance(status, str):
+		normalized = status.strip().lower()
+		return QUEUE_STATUSES.get(normalized, status)
+	return QUEUE_STATUSES["queued"]
+
+
+def _truncate_queue_error(error_message, max_length=900):
+	message = str(error_message or "").strip()
+	if len(message) <= max_length:
+		return message
+	return f"{message[:max_length].rstrip()}..."
+
+
+def _update_queue_fields(doc, status, error_message=None, job_id=None, attempts=None):
+	doc.custom_queue_status = _coerce_queue_status(status)
+	if hasattr(doc, "custom_queue_error"):
+		doc.custom_queue_error = _truncate_queue_error(error_message) if error_message else ""
+	if hasattr(doc, "custom_queue_job_id") and job_id is not None:
+		doc.custom_queue_job_id = job_id
+	if hasattr(doc, "custom_queue_attempts") and attempts is not None:
+		doc.custom_queue_attempts = attempts
+	if hasattr(doc, "custom_queue_last_attempt_at") and status == QUEUE_STATUSES["processing"]:
+		doc.custom_queue_last_attempt_at = frappe.utils.now_datetime()
+
+
+def _get_queue_failure_recipients(requested_by=None):
+	recipients = set()
+	user_ids = []
+
+	if requested_by:
+		user_ids.append(requested_by)
+
+	manager_users = frappe.get_all(
+		"Has Role",
+		filters={"role": ["in", ["Sales Manager", "System Manager"]]},
+		pluck="parent",
+	)
+	user_ids.extend(manager_users or [])
+
+	for user_id in user_ids:
+		try:
+			user_doc = frappe.get_doc("User", user_id)
+			if user_doc.enabled and user_doc.email:
+				recipients.add(user_doc.email)
+		except Exception:
+			continue
+
+	return list(recipients)
+
+
+def _notify_queue_failure(invoice_doc, requested_by, error_message):
+	subject = f"POS invoice queue failed: {invoice_doc.name}"
+	body = (
+		f"Invoice <b>{invoice_doc.name}</b> failed in the background queue."
+		f"<br><br><b>Customer:</b> {invoice_doc.customer_name or invoice_doc.customer}"
+		f"<br><b>Error:</b> {_truncate_queue_error(error_message)}"
+	)
+
+	try:
+		notification = frappe.get_doc(
+			{
+				"doctype": "Notification Log",
+				"subject": subject,
+				"email_content": body,
+				"for_user": requested_by or frappe.session.user,
+				"type": "Alert",
+			}
+		)
+		notification.insert(ignore_permissions=True)
+	except Exception:
+		pass
+
+	recipients = _get_queue_failure_recipients(requested_by or frappe.session.user)
+	if recipients:
+		try:
+			frappe.sendmail(recipients=recipients, subject=subject, message=body)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Failed to send queue failure alert for {invoice_doc.name}")
+
+
+def _mark_invoice_queued(doc, requested_by=None):
+	_update_queue_fields(doc, QUEUE_STATUSES["queued"], attempts=0)
+	if hasattr(doc, "custom_queue_error"):
+		doc.custom_queue_error = ""
+	if hasattr(doc, "custom_queue_job_id"):
+		doc.custom_queue_job_id = ""
+	if hasattr(doc, "custom_queue_last_attempt_at"):
+		doc.custom_queue_last_attempt_at = None
+	if requested_by and hasattr(doc, "owner"):
+		doc.owner = requested_by
+
+
+def _finalize_submitted_invoice(doc, amount_paid, mode_of_payment, business_type, customer):
+	payment_entry = None
+	should_create_payment_entry = False
+
+	if business_type == "B2B":
+		should_create_payment_entry = True
+	elif business_type == "B2B & B2C":
+		global _cached_customer_data
+		if customer not in _cached_customer_data:
+			_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
+
+		customer_doc = _cached_customer_data[customer]
+		if customer_doc.customer_type == "Company":
+			should_create_payment_entry = True
+
+	if should_create_payment_entry and mode_of_payment and amount_paid > 0:
+		try:
+			payment_entry = create_payment_entry(doc, mode_of_payment, amount_paid)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Payment Entry Error for {doc.name}")
+			payment_entry = None
+
+	return payment_entry
+
+
+def _get_payment_methods_from_invoice(doc):
+	payment_methods = []
+	for payment in getattr(doc, "payments", []) or []:
+		payment_methods.append(
+			{
+				"method": payment.mode_of_payment,
+				"amount": flt(payment.amount or 0),
+			}
+		)
+	return payment_methods
+
 
 class PartialPaymentValidationError(ValidationError):
 	pass
@@ -177,6 +316,11 @@ def _build_filters_and_fields(skip_opening_entry_filter=False, cashier_user_ids=
 		"discount_amount",
 		"total_taxes_and_charges",
 		"custom_pos_opening_entry",
+		"custom_queue_status",
+		"custom_queue_job_id",
+		"custom_queue_error",
+		"custom_queue_attempts",
+		"custom_queue_last_attempt_at",
 		"pos_profile",
 		"currency",
 	]
@@ -560,6 +704,11 @@ def _get_address_and_customer_info(invoice):
 
 @frappe.whitelist()
 def create_and_submit_invoice(data):
+	return queue_sales_invoice(data)
+
+
+@frappe.whitelist()
+def queue_sales_invoice(data):
 	try:
 		import time
 
@@ -613,48 +762,33 @@ def create_and_submit_invoice(data):
 		doc.paid_amount = amount_paid
 		doc.outstanding_amount = max(flt(doc.grand_total) - flt(amount_paid), 0)
 
-		# Save then submit; if submit fails (e.g. negative stock), delete the draft and return error
-		# (do not re-raise: Frappe would rollback the transaction and undo the delete)
+		_mark_invoice_queued(doc, frappe.session.user)
 		doc.save(ignore_permissions=True)
 
 		# Persist `tax_id` directly to the database it's overwritten by save()
 		if tax_id:
 			doc.db_set("tax_id", tax_id)
-		try:
-			doc.submit()
-		except Exception as submit_err:
-			frappe.db.rollback()  # ← undo the save + partial submit atomically
-			frappe.log_error(frappe.get_traceback(), "Submit Invoice Error (e.g. negative stock)")
-			return {"success": False, "message": str(submit_err)}
 
-		payment_entry = None
-		should_create_payment_entry = False
+		job_id = frappe.enqueue(
+			"klik_pos.api.sales_invoice.process_queued_sales_invoice",
+			queue="long",
+			enqueue_after_commit=True,
+			invoice_name=doc.name,
+			requested_by=frappe.session.user,
+		)
 
-		if business_type == "B2B":
-			should_create_payment_entry = True
-		elif business_type == "B2B & B2C":
-			# For B2B & B2C, only create payment entry for company customers
-			global _cached_customer_data
-			if customer not in _cached_customer_data:
-				_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
-
-			customer_doc = _cached_customer_data[customer]
-			if customer_doc.customer_type == "Company":
-				should_create_payment_entry = True
-
-		if should_create_payment_entry and mode_of_payment and amount_paid > 0:
-			try:
-				payment_entry = create_payment_entry(doc, mode_of_payment, amount_paid)
-			except Exception:
-				frappe.log_error(frappe.get_traceback(), f"Payment Entry Error for {doc.name}")
-				payment_entry = None
+		if job_id:
+			doc.custom_queue_job_id = job_id
+			doc.save(ignore_permissions=True)
 
 		processing_time = time.time() - start_time
-		frappe.logger().info(f"Invoice {doc.name} processed in {processing_time:.2f} seconds")
+		frappe.logger().info(f"Invoice {doc.name} queued in {processing_time:.2f} seconds")
 
 		# Return minimal invoice data for frontend performance
 		return {
 			"success": True,
+			"queue_status": doc.custom_queue_status,
+			"queue_job_id": job_id,
 			"invoice_name": doc.name,
 			"invoice_id": doc.name,
 			"invoice": {
@@ -671,12 +805,89 @@ def create_and_submit_invoice(data):
 				"is_pos": doc.is_pos,
 				"company": doc.company,
 			},
-			"payment_entry": payment_entry.name if payment_entry else None,
+			"payment_entry": None,
 			"processing_time": round(processing_time, 2),
 		}
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Submit Invoice Error")
+		return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def process_queued_sales_invoice(invoice_name, requested_by=None):
+	"""Background worker that submits a queued draft sales invoice."""
+	try:
+		doc = frappe.get_doc("Sales Invoice", invoice_name)
+		if doc.docstatus != 0:
+			_update_queue_fields(doc, QUEUE_STATUSES["submitted"], job_id=getattr(doc, "custom_queue_job_id", None))
+			doc.save(ignore_permissions=True)
+			return {"success": True, "message": "Invoice already submitted"}
+
+		attempts = int(getattr(doc, "custom_queue_attempts", 0) or 0) + 1
+		_update_queue_fields(doc, QUEUE_STATUSES["processing"], attempts=attempts)
+		doc.save(ignore_permissions=True)
+
+		doc.submit()
+
+		doc.reload()
+		_update_queue_fields(doc, QUEUE_STATUSES["submitted"], attempts=attempts)
+		if hasattr(doc, "custom_queue_error"):
+			doc.custom_queue_error = ""
+		doc.save(ignore_permissions=True)
+
+		_finalize_submitted_invoice(
+			doc,
+			flt(doc.paid_amount or 0),
+			_get_payment_methods_from_invoice(doc),
+			getattr(doc, "business_type", None),
+			doc.customer,
+		)
+
+		return {"success": True, "message": f"Invoice {invoice_name} submitted successfully"}
+
+	except Exception as e:
+		frappe.db.rollback()
+		try:
+			doc = frappe.get_doc("Sales Invoice", invoice_name)
+			attempts = int(getattr(doc, "custom_queue_attempts", 0) or 0) + 1
+			_update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(e), attempts=attempts)
+			doc.save(ignore_permissions=True)
+			_notify_queue_failure(doc, requested_by, str(e))
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Queue failure update error for {invoice_name}")
+		frappe.log_error(frappe.get_traceback(), f"Queued Invoice Submit Error for {invoice_name}")
+		return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def retry_failed_sales_invoice(invoice_name):
+	"""Retry a failed queued invoice by enqueueing it again."""
+	try:
+		doc = frappe.get_doc("Sales Invoice", invoice_name)
+		if doc.docstatus != 0:
+			frappe.throw("Only draft invoices can be retried from the queue.")
+
+		if (getattr(doc, "custom_queue_status", "") or "").lower() not in ("failed", "processing", "queued"):
+			frappe.throw("This invoice is not in a retryable queue state.")
+
+		_update_queue_fields(doc, QUEUE_STATUSES["queued"], error_message="", job_id="")
+		doc.save(ignore_permissions=True)
+
+		job_id = frappe.enqueue(
+			"klik_pos.api.sales_invoice.process_queued_sales_invoice",
+			queue="long",
+			enqueue_after_commit=True,
+			invoice_name=doc.name,
+			requested_by=frappe.session.user,
+		)
+		if job_id:
+			doc.custom_queue_job_id = job_id
+			doc.save(ignore_permissions=True)
+
+		return {"success": True, "queue_status": doc.custom_queue_status, "queue_job_id": job_id}
+
+	except Exception as e:
 		return {"success": False, "message": str(e)}
 
 

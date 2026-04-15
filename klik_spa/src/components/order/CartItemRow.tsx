@@ -328,12 +328,14 @@ export const CartItemRow = ({
 
   const currentWarehouseStock = fullItemData?.warehouse_stock?.find(wh => wh.warehouse === warehouse);
   const availableStock = currentWarehouseStock?.bal_qty || 0;
-  const isNegativeMargin = discountedPrice < (currentWarehouseStock?.val_rate || 0);
-  const marginAmount = discountedPrice - (currentWarehouseStock?.val_rate || 0);
-  const marginPercentage = currentWarehouseStock?.val_rate ? (marginAmount / currentWarehouseStock.val_rate) * 100 : 0;
+  const valuationRate = typeof currentWarehouseStock?.val_rate === "number" ? currentWarehouseStock.val_rate : null;
+  const hasValidValuationRate = valuationRate !== null && valuationRate > 0;
+  const isNegativeMargin = hasValidValuationRate ? discountedPrice < valuationRate : false;
+  const marginAmount = hasValidValuationRate ? discountedPrice - valuationRate : 0;
+  const marginPercentage = hasValidValuationRate ? (marginAmount / valuationRate) * 100 : 0;
 
-  const showPositiveMarginWarning = !restrictCostVisibility && !isNegativeMargin && discountedPrice > (currentWarehouseStock?.val_rate || 0);
-  const showNegativeMarginWarning = !restrictCostVisibility && isNegativeMargin && discountedPrice > 0 && (currentWarehouseStock?.val_rate || 0) > 0;
+  const showPositiveMarginWarning = !restrictCostVisibility && hasValidValuationRate && !isNegativeMargin && discountedPrice > valuationRate;
+  const showNegativeMarginWarning = !restrictCostVisibility && hasValidValuationRate && isNegativeMargin && discountedPrice > 0;
   const showStockWarning = item.quantity > availableStock && availableStock > 0;
   const showNoStockWarning = availableStock === 0;
 

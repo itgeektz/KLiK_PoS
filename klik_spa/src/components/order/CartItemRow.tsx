@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Minus, Plus, X, Copy, Package, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "react-toastify";
-import type { CartItem } from "../../../types";
+import type { BundleEntry, CartItem } from "../../../types";
 import { QuantityInput } from "./QuantityInput";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { UOMSelectField } from "./UOMSelectField";
@@ -42,12 +42,6 @@ interface SerialData {
   serial_no: string;
 }
 
-interface SerialBatchEntry {
-  serial_no?: string;
-  batch_no?: string;
-  qty?: number;
-  selected?: boolean;
-}
 
 export const CartItemRow = ({
   item,
@@ -63,8 +57,6 @@ export const CartItemRow = ({
   onBundleUpdate,
   selectedCustomer,
   posDetails,
-  itemBatches,
-  itemSerials,
   currency_symbol,
   isMobile,
   autoFetchBatch = false,
@@ -72,7 +64,7 @@ export const CartItemRow = ({
   const { updateItemBundleEntries } = useCartStore();
   const [showBundleModal, setShowBundleModal] = useState(false);
   const [isBundleDetailsOpen, setIsBundleDetailsOpen] = useState(false);
-  const [bundleEntries, setBundleEntries] = useState<SerialBatchEntry[]>(() => {
+  const [bundleEntries, setBundleEntries] = useState<BundleEntry[]>(() => {
     if (item.bundle_entries && Array.isArray(item.bundle_entries)) {
       return item.bundle_entries;
     }
@@ -88,13 +80,13 @@ export const CartItemRow = ({
   const [availableBatches, setAvailableBatches] = useState<BatchData[]>([]);
   const [availableSerials, setAvailableSerials] = useState<SerialData[]>([]);
   const [isFetchingBundleData, setIsFetchingBundleData] = useState(false);
-  const [modalEntries, setModalEntries] = useState<SerialBatchEntry[]>([]);
+  const [modalEntries, setModalEntries] = useState<BundleEntry[]>([]);
   const [modalQty, setModalQty] = useState(item.quantity);
 
   const hasSerialOrBatch = item.has_serial_no || item.has_batch_no;
   const warehouse = posDetails?.warehouse || "";
 
-  const saveToCart = useCallback((entries: SerialBatchEntry[]) => {
+  const saveToCart = useCallback((entries: BundleEntry[]) => {
     const validEntries = entries.map(({ selected, ...e }) => e);
     setBundleEntries(validEntries);
     updateItemBundleEntries(item.id, validEntries);
@@ -141,11 +133,14 @@ export const CartItemRow = ({
       if (qty > 0) {
         const autoDataResponse = await fetch(`/api/method/erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle.get_auto_data?${params.toString()}`);
         const autoDataResult = await autoDataResponse.json();
+        console.log(autoDataResult);
+        
 
         if (autoDataResult.message && Array.isArray(autoDataResult.message) && autoDataResult.message.length > 0) {
           const autoEntries = autoDataResult.message.map((row: any) => ({
             serial_no: row.serial_no || undefined,
             batch_no: row.batch_no || undefined,
+            warehouse: row.warehouse || posDetails.warehouse || "",
             qty: row.qty || 1,
             selected: false,
           }));
@@ -159,6 +154,7 @@ export const CartItemRow = ({
             selected: false,
             serial_no: item.has_serial_no ? "" : undefined,
             batch_no: item.has_batch_no ? "" : undefined,
+            warehouse: posDetails.warehouse || "",
           }]);
           if (shouldSaveToCart) {
             saveToCart([]);
@@ -197,7 +193,7 @@ export const CartItemRow = ({
     }
   };
 
-  const handleBundleSave = (entries: SerialBatchEntry[]) => {
+  const handleBundleSave = (entries: BundleEntry[]) => {
     if (!Array.isArray(entries)) {
       toast.error("Invalid bundle entries");
       return;
@@ -501,6 +497,36 @@ export const CartItemRow = ({
               </div>
             )}
 
+          {hasBundleEntries && (
+            <div className="mt-3 rounded-md border border-blue-200 dark:border-blue-800 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setIsBundleDetailsOpen(!isBundleDetailsOpen)}
+                className="w-full flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+              >
+                <span className="text-xs text-blue-800 dark:text-blue-300 font-medium">
+                  Batch/Serial Details:
+                </span>
+                {isBundleDetailsOpen ? (
+                  <ChevronUp size={14} className="text-blue-800 dark:text-blue-300" />
+                ) : (
+                  <ChevronDown size={14} className="text-blue-800 dark:text-blue-300" />
+                )}
+              </button>
+              {isBundleDetailsOpen && (
+                <div className="p-2 pt-0 bg-blue-50 dark:bg-blue-900/20 space-y-1">
+                  {bundleEntries.map((entry, idx) => (
+                    <div key={idx} className="text-xs text-blue-700 dark:text-blue-400">
+                      {entry.serial_no && <span>Serial: {entry.serial_no} </span>}
+                      {entry.batch_no && <span>Batch: {entry.batch_no} </span>}
+                      {entry.qty && <span>Qty: {entry.qty}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
             <div className="mt-1 mb-3">
               <button
                 type="button"
@@ -531,36 +557,6 @@ export const CartItemRow = ({
                   Save {formatCurrencyWithSymbol(originalTotal - discountedTotal, currency_symbol)}
                 </span>
               </div>
-            </div>
-          )}
-
-          {hasBundleEntries && (
-            <div className="mt-3 rounded-md border border-blue-200 dark:border-blue-800 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setIsBundleDetailsOpen(!isBundleDetailsOpen)}
-                className="w-full flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
-              >
-                <span className="text-xs text-blue-800 dark:text-blue-300 font-medium">
-                  Bundle Details:
-                </span>
-                {isBundleDetailsOpen ? (
-                  <ChevronUp size={14} className="text-blue-800 dark:text-blue-300" />
-                ) : (
-                  <ChevronDown size={14} className="text-blue-800 dark:text-blue-300" />
-                )}
-              </button>
-              {isBundleDetailsOpen && (
-                <div className="p-2 pt-0 bg-blue-50 dark:bg-blue-900/20 space-y-1">
-                  {bundleEntries.map((entry, idx) => (
-                    <div key={idx} className="text-xs text-blue-700 dark:text-blue-400">
-                      {entry.serial_no && <span>Serial: {entry.serial_no} </span>}
-                      {entry.batch_no && <span>Batch: {entry.batch_no} </span>}
-                      {entry.qty && <span>Qty: {entry.qty}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>

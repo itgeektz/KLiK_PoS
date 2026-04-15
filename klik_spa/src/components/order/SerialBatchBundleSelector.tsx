@@ -4,18 +4,13 @@ import { X, Plus, Minus, Trash2, Package, RefreshCw } from "lucide-react";
 import { toast } from "react-toastify";
 import { AutoComplete } from "../ui/AutoComplete";
 import { useState, useEffect } from "react";
+import type { BundleEntry } from "../../../types";
 
-interface SerialBatchEntry {
-  serial_no?: string;
-  batch_no?: string;
-  qty?: number;
-  selected?: boolean;
-}
 
 interface SerialBatchBundleModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (entries: SerialBatchEntry[]) => void;
+  onSave: (entries: BundleEntry[]) => void;
   item: {
     id: string;
     item_code?: string;
@@ -28,8 +23,8 @@ interface SerialBatchBundleModalProps {
   onQtyChange?: (qty: number) => void;
   availableBatches: BatchData[];
   availableSerials: SerialData[];
-  entries: SerialBatchEntry[];
-  onEntriesChange: (entries: SerialBatchEntry[]) => void;
+  entries: BundleEntry[];
+  onEntriesChange: (entries: BundleEntry[]) => void;
   isLoading: boolean;
   onFetchData: (qty: number) => Promise<void>;
   autoFetchBatch?: boolean;
@@ -72,7 +67,7 @@ export const SerialBatchBundleModal = ({
     }
   }, [isOpen, qty]);
 
-  const updateEntry = (index: number, field: keyof SerialBatchEntry, value: any) => {
+  const updateEntry = (index: number, field: keyof BundleEntry, value: any) => {
     const updated = [...entries];
     updated[index] = { ...updated[index], [field]: value };
     

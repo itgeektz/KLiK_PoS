@@ -20,6 +20,17 @@ export interface CartItem {
   item_code?: string
   base_uom?: string
   conversion_factor?: number
+  bundle_entries?: BundleEntry[]
+  has_serial_no?: boolean
+  has_batch_no?: boolean
+}
+
+export interface BundleEntry {
+  serial_no?: string
+  batch_no?: string
+  qty?: number
+  warehouse?: string
+  selected?: boolean
 }
 
 export interface PriceListRate {

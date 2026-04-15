@@ -20,7 +20,7 @@ interface CartItemRowProps {
   onRemoveItem?: (id: string) => void;
   onUOMChange: (itemId: string, uom: string, price: number) => void;
   onDiscountChange: (itemId: string, field: string, value: number | string) => void;
-  onCustomRateChange: (item: CartItem, rate: number) => void;
+  onCustomRateChange: (item: CartItem, rate?: number) => void;
   onDuplicateItem: (item: CartItem) => void;
   onBundleUpdate?: (itemId: string, bundleId: string, entries: any[]) => void;
   selectedCustomer?: { id: string } | null;
@@ -122,6 +122,8 @@ export const CartItemRow = ({
   const [isFetchingBundleData, setIsFetchingBundleData] = useState(false);
   const [modalEntries, setModalEntries] = useState<BundleEntry[]>([]);
   const [modalQty, setModalQty] = useState(item.quantity);
+  const [isRateEditing, setIsRateEditing] = useState(false);
+  const [rateInputValue, setRateInputValue] = useState("");
   const [localDiscountPct, setLocalDiscountPct] = useState<number>(() => {
     const amt = itemDiscount.discountAmount || 0;
     return item.price > 0 ? parseFloat(((amt / item.price) * 100).toFixed(2)) : 0;
@@ -293,8 +295,15 @@ export const CartItemRow = ({
     await fetchBundleData(qty, true);
   };
 
-  const handleRateChange = (value: number) => {
-    const rate = value || 0;
+  const handleRateChange = (value?: number) => {
+    if (value === undefined || value === null || Number.isNaN(value)) {
+      onCustomRateChange(item, undefined);
+      onDiscountChange(item.id, "discountAmount", 0);
+      setLocalDiscountPct(0);
+      return;
+    }
+
+    const rate = Math.max(0, value);
     onCustomRateChange(item, rate);
     onDiscountChange(item.id, "discountAmount", 0);
 
@@ -328,6 +337,7 @@ export const CartItemRow = ({
   const originalTotal = item.price * item.quantity;
   const discountedTotal = discountedPrice * item.quantity;
   const amount = (itemDiscount.customRate !== undefined && itemDiscount.customRate !== null ? itemDiscount.customRate : item.price) * item.quantity;
+  const displayRate = itemDiscount.customRate ?? (item.price > 0 ? item.price : "");
 
   const hasBundleEntries = bundleEntries.length > 0;
 
@@ -534,10 +544,29 @@ export const CartItemRow = ({
                     type="number"
                     min="0"
                     step="0.01"
-                    value={itemDiscount.customRate !== undefined && itemDiscount.customRate !== null ? itemDiscount.customRate : item.price}
-                    onChange={(e) => handleRateChange(parseFloat(e.target.value) || 0)}
+                    value={isRateEditing ? rateInputValue : displayRate}
+                    onFocus={() => {
+                      setIsRateEditing(true);
+                      setRateInputValue(String(displayRate));
+                    }}
+                    onBlur={() => {
+                      setIsRateEditing(false);
+                      setRateInputValue("");
+                    }}
+                    onChange={(e) => {
+                      const value = e.target.value.trim();
+                      setRateInputValue(value);
+
+                      if (value === "") {
+                        handleRateChange(undefined);
+                        return;
+                      }
+
+                      const parsedValue = parseFloat(value);
+                      handleRateChange(Number.isNaN(parsedValue) ? undefined : parsedValue);
+                    }}
                     readOnly={!posDetails?.allow_rate_change}
-                    placeholder="Rate"
+                    placeholder="0"
                     className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
                       showNegativeMarginWarning ? "border-red-300 dark:border-red-600" : showPositiveMarginWarning ? "border-blue-300 dark:border-blue-600" : ""
                     }`}

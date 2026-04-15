@@ -35,7 +35,6 @@ import { toast } from "react-toastify";
 import { usePaymentModes } from "../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../hooks/useSalesTaxCharges";
 import { usePOSDetails } from "../hooks/usePOSProfile";
-import { createDraftSalesInvoice } from "../services/salesInvoice";
 import { createSalesInvoice } from "../services/salesInvoice";
 import { useNavigate } from "react-router-dom";
 import DisplayPrintPreview from "../utils/invoicePrint";
@@ -490,7 +489,7 @@ export default function PaymentDialog({
   const getProcessedMessage = () => {
     const parameters: Record<string, string> = {
       customer_name: sharingData.name || 'there',
-      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD'),
+      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency),
       invoice_number: invoiceData?.name || '',
       company_name: 'KLiK PoS',
       date: new Date().toLocaleDateString(),
@@ -510,13 +509,13 @@ export default function PaymentDialog({
       address: typeof selectedCustomer?.address === 'string' ? selectedCustomer.address : JSON.stringify(selectedCustomer?.address || {}),
       customer_address: typeof selectedCustomer?.address === 'string' ? selectedCustomer.address : JSON.stringify(selectedCustomer?.address || {}),
       delivery_note: invoiceData?.name || '',
-      grand_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD'),
+      grand_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency),
       departure_time: new Date().toLocaleTimeString(),
       estimated_arrival: new Date(Date.now() + 30 * 60000).toLocaleTimeString(), // 30 minutes from now
       driver_name: 'Delivery Driver',
       cell_number: '+1234567890',
       vehicle: 'Delivery Vehicle',
-      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD'),
+      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency),
       invoice_number: invoiceData?.name || '',
       company_name: 'KLiK PoS',
       date: new Date().toLocaleDateString(),
@@ -1289,7 +1288,7 @@ export default function PaymentDialog({
                         : "Payment Completed Successfully!"}
                     </p>
                     <p className="text-sm opacity-75">
-                      Total: {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
+                      Total: {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
                     </p>
                   </div>
                 </div>
@@ -1326,7 +1325,7 @@ export default function PaymentDialog({
                           selectedCustomer?.name
                         },\n\nHere is your invoice total: ${formatCurrencyWithSymbol(
                           calculations.grandTotal,
-                          invoiceData?.currency || 'USD'
+                          invoiceData?.currency
                         )}\n\nThank you.`
                       );
                       window.open(
@@ -1345,7 +1344,7 @@ export default function PaymentDialog({
                       const msg = encodeURIComponent(
                         `Here is your invoice total: ${formatCurrencyWithSymbol(
                           calculations.grandTotal,
-                          invoiceData?.currency || 'USD'
+                          invoiceData?.currency
                         )}`
                       );
                       window.open(
@@ -1669,14 +1668,14 @@ export default function PaymentDialog({
                       Subtotal
                     </span>
                     <span className="font-medium text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency || 'USD')}
+                      {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency)}
                     </span>
                   </div>
                   {calculations.couponDiscount > 0 && (
                     <div className="flex justify-between text-green-600 dark:text-green-400">
                       <span>Discount</span>
                       <span>
-                        -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency || 'USD')}
+                        -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency)}
                       </span>
                     </div>
                   )}
@@ -1693,8 +1692,8 @@ export default function PaymentDialog({
                       }`}
                     >
                       {calculations.isInclusive
-                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')})`
-                        : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')}
+                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)})`
+                        : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)}
                     </span>
                   </div>
                   {roundOffAmount !== 0 && (
@@ -1703,7 +1702,7 @@ export default function PaymentDialog({
                         Round Off
                       </span>
                       <span className="font-medium text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency || 'USD')}
+                        {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency)}
                       </span>
                     </div>
                   )}
@@ -1713,7 +1712,7 @@ export default function PaymentDialog({
                         Grand Total
                       </span>
                       <span className="text-lg font-bold text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
+                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
                       </span>
                     </div>
                   </div>
@@ -1725,7 +1724,7 @@ export default function PaymentDialog({
                           Total Paid
                         </span>
                         <span className="font-medium text-beveren-600 dark:text-blue-400">
-                          {formatCurrencyWithSymbol(totalPaidAmount, invoiceData?.currency || 'USD')}
+                          {formatCurrencyWithSymbol(totalPaidAmount, invoiceData?.currency)}
                         </span>
                       </div>
                       <div className="flex justify-between">
@@ -1733,7 +1732,7 @@ export default function PaymentDialog({
                           Outstanding
                         </span>
                         <span className="font-medium text-red-600 dark:text-red-400">
-                          {formatCurrencyWithSymbol(outstandingAmount, invoiceData?.currency || 'USD')}
+                          {formatCurrencyWithSymbol(outstandingAmount, invoiceData?.currency)}
                         </span>
                       </div>
                       {totalPaidAmount > calculations.grandTotal && (
@@ -1744,7 +1743,7 @@ export default function PaymentDialog({
                           <span className="font-medium text-beveren-600 dark:text-beveren-400">
                             {formatCurrencyWithSymbol(
                               subtractCurrency(totalPaidAmount, calculations.grandTotal),
-                              invoiceData?.currency || 'USD'
+                              invoiceData?.currency
                             )}
                           </span>
                         </div>
@@ -1758,7 +1757,7 @@ export default function PaymentDialog({
                         Outstanding Amount
                       </span>
                       <span className="font-medium text-orange-600 dark:text-orange-400">
-                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
+                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
                       </span>
                     </div>
                   )}
@@ -2260,7 +2259,7 @@ export default function PaymentDialog({
                           </p>
                           <p className="mt-1">
                             Invoice Total:{" "}
-                            {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
+                            {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
                           </p>
                           <p className="mt-1">Thank you!</p>
                         </div>
@@ -2272,7 +2271,7 @@ export default function PaymentDialog({
                           await sendSMSMessage({
                             mobile_no: sharingData.phone,
                             customer_name: sharingData.name,
-                            message: `Thank you for your purchase at KLiK PoS.\nInvoice Total: ${formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}\nThank you!`
+                            message: `Thank you for your purchase at KLiK PoS.\nInvoice Total: ${formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}\nThank you!`
                           });
                           toast.success("SMS sent successfully!");
                           setSharingMode(null);
@@ -2463,8 +2462,8 @@ export default function PaymentDialog({
                         }`}
                       >
                         {calculations.isInclusive
-                          ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD' )})`
-                          : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')}
+                          ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)})`
+                          : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)}
                       </div>
                     </div>
                     <div className="md:col-span-2">
@@ -2674,14 +2673,14 @@ export default function PaymentDialog({
                           Subtotal
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white">
-                          {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency || 'USD')}
+                          {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency)}
                         </span>
                       </div>
                       {calculations.couponDiscount > 0 && (
                         <div className="flex justify-between text-green-600 dark:text-green-400">
                           <span>Coupon Discount</span>
                           <span>
-                            -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency || 'USD')}
+                            -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency)}
                           </span>
                         </div>
                       )}
@@ -2698,8 +2697,8 @@ export default function PaymentDialog({
                           }`}
                         >
                           {calculations.isInclusive
-                            ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')})`
-                            : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')}
+                            ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)})`
+                            : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)}
                         </span>
                       </div>
                       {roundOffAmount !== 0 && (
@@ -2708,7 +2707,7 @@ export default function PaymentDialog({
                             Round Off
                           </span>
                           <span className="font-medium text-gray-900 dark:text-white">
-                            {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency || 'USD')}
+                            {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency)}
                           </span>
                         </div>
                       )}
@@ -2718,7 +2717,7 @@ export default function PaymentDialog({
                             Grand Total
                           </span>
                           <span className="text-xl font-bold text-gray-900 dark:text-white">
-                            {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
+                            {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
                           </span>
                         </div>
                       </div>
@@ -2730,7 +2729,7 @@ export default function PaymentDialog({
                               Total Paid
                             </span>
                             <span className="font-medium text-blue-600 dark:text-blue-400">
-                              {formatCurrencyWithSymbol(totalPaidAmount, invoiceData?.currency || 'USD')}
+                              {formatCurrencyWithSymbol(totalPaidAmount, invoiceData?.currency)}
                             </span>
                           </div>
                           <div className="flex justify-between">
@@ -2744,7 +2743,7 @@ export default function PaymentDialog({
                                   : "text-green-600 dark:text-green-400"
                               }`}
                             >
-                              {formatCurrencyWithSymbol(outstandingAmount, invoiceData?.currency || 'USD')}
+                              {formatCurrencyWithSymbol(outstandingAmount, invoiceData?.currency)}
                             </span>
                           </div>
                           {totalPaidAmount > calculations.grandTotal && (
@@ -2755,7 +2754,7 @@ export default function PaymentDialog({
                               <span className="font-bold text-green-600 dark:text-green-400">
                                 {formatCurrencyWithSymbol(
                                   subtractCurrency(totalPaidAmount, calculations.grandTotal),
-                                  invoiceData?.currency || 'USD'
+                                  invoiceData?.currency
 
                                 )}
                               </span>
@@ -2826,11 +2825,11 @@ export default function PaymentDialog({
                             {item.name}
                           </p>
                           <p className="text-gray-600 dark:text-gray-400">
-                            {item.quantity} x {formatCurrencyWithSymbol(item.price, invoiceData?.currency || 'USD')}
+                            {item.quantity} x {formatCurrencyWithSymbol(item.price, invoiceData?.currency)}
                           </p>
                         </div>
                         <p className="font-medium text-gray-900 dark:text-white">
-                          {formatCurrencyWithSymbol(item.quantity * item.price, invoiceData?.currency || 'USD')}
+                          {formatCurrencyWithSymbol(item.quantity * item.price, invoiceData?.currency)}
                         </p>
                       </div>
                     ))
@@ -2870,7 +2869,7 @@ export default function PaymentDialog({
                               {formatCurrencyWithSymbol(
                                 externalInvoiceData?.grand_total ||
                                   calculations.grandTotal,
-                                invoiceData?.currency || 'USD'
+                                invoiceData?.currency
                               )}
                             </span>
                           </div>
@@ -2895,14 +2894,14 @@ export default function PaymentDialog({
                       Subtotal
                     </span>
                     <span className="text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency || 'USD')}
+                      {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency)}
                     </span>
                   </div>
                   {calculations.couponDiscount > 0 && (
                     <div className="flex justify-between text-green-600 dark:text-green-400">
                       <span>Discount</span>
                       <span>
-                        -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency || 'USD')}
+                        -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency)}
                       </span>
                     </div>
                   )}
@@ -2919,8 +2918,8 @@ export default function PaymentDialog({
                       }`}
                     >
                       {calculations.isInclusive
-                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')})`
-                        : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency || 'USD')}
+                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)})`
+                        : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)}
                     </span>
                   </div>
                   {roundOffAmount !== 0 && (
@@ -2929,7 +2928,7 @@ export default function PaymentDialog({
                         Round Off
                       </span>
                       <span className="text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency || 'USD')}
+                        {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency)}
                       </span>
                     </div>
                   )}
@@ -2939,7 +2938,7 @@ export default function PaymentDialog({
                         Total
                       </span>
                       <span className="text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
+                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
                       </span>
                     </div>
                   </div>
@@ -2964,7 +2963,7 @@ export default function PaymentDialog({
                                 {method}
                               </span>
                               <span className="text-gray-900 dark:text-white">
-                                {formatCurrencyWithSymbol(amount, invoiceData?.currency || 'USD')}
+                                {formatCurrencyWithSymbol(amount, invoiceData?.currency)}
                               </span>
                             </div>
                           ))}
@@ -2979,7 +2978,7 @@ export default function PaymentDialog({
                           Outstanding Amount:
                         </span>
                         <span className="text-orange-600 dark:text-orange-400 font-bold">
-                          {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency || 'USD')}
+                          {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
                         </span>
                       </div>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">

@@ -122,7 +122,7 @@ export const getCurrencySymbol = (currency: string): string => {
  */
 export const formatCurrencyWithSymbol = (amount: number, currencySymbol?: string): string => {
   const safeAmount = Number(amount || 0);
-  const symbol = currencySymbol || '$';
+  const symbol = currencySymbol || 'KES';
 
   return `${symbol} ${safeAmount.toLocaleString('en-US', {
     minimumFractionDigits: 2,

@@ -83,6 +83,14 @@ export const SerialBatchBundleModal = ({
         updated[index].qty = 1;
       }
     }
+
+    if (field === "qty") {
+      const newTotalQty = updated.reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+      setLocalQty(newTotalQty);
+      if (onQtyChange) {
+        onQtyChange(newTotalQty);
+      }
+    }
     
     onEntriesChange(updated);
   };
@@ -98,16 +106,18 @@ export const SerialBatchBundleModal = ({
 
   const deleteSelected = () => {
     const remaining = entries.filter(e => !e.selected);
-    if (remaining.length === 0) {
-      onEntriesChange([{ 
+    const finalEntries = remaining.length === 0 ? [{ 
         qty: 1, 
         selected: false, 
         serial_no: hasSerialNo ? "" : undefined, 
         batch_no: hasBatchNo ? "" : undefined 
-      }]);
-    } else {
-      onEntriesChange(remaining);
-    }
+      }] : remaining;
+
+    const newTotalQty = finalEntries.reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+    setLocalQty(newTotalQty);
+    if (onQtyChange) onQtyChange(newTotalQty);
+    
+    onEntriesChange(finalEntries);
   };
 
   const handleSave = () => {
@@ -318,12 +328,18 @@ export const SerialBatchBundleModal = ({
                         <button 
                           onClick={() => {
                             const filtered = entries.filter((_, i) => i !== idx);
-                            onEntriesChange(filtered.length ? filtered : [{ 
+                            const finalEntries = filtered.length ? filtered : [{ 
                               qty: 1, 
                               selected: false, 
                               serial_no: hasSerialNo ? "" : undefined, 
                               batch_no: hasBatchNo ? "" : undefined 
-                            }]);
+                            }];
+                            
+                            const newTotalQty = finalEntries.reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+                            setLocalQty(newTotalQty);
+                            if (onQtyChange) onQtyChange(newTotalQty);
+                            
+                            onEntriesChange(finalEntries);
                           }} 
                           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
                           disabled={isLoading}

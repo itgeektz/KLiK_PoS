@@ -22,7 +22,8 @@ export interface CartItem {
   conversion_factor?: number
   bundle_entries?: BundleEntry[]
   has_serial_no?: boolean
-  has_batch_no?: boolean
+  has_batch_no?: boolean,
+  valuation_rate?: number
 }
 
 export interface BundleEntry {

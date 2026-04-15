@@ -161,7 +161,7 @@ export default function OrderSummary({
     }));
   };
 
-  const handleCustomRateChange = (item: CartItem, newRate: number) => {
+  const handleCustomRateChange = (item: CartItem, newRate?: number) => {
     setItemDiscounts(prev => ({
       ...prev,
       [item.id]: {

@@ -292,8 +292,6 @@ export default function PaymentDialog({
         ? posDetails.currency.trim()
         : "";
     if (posCurrency) return getCurrencySymbol(posCurrency);
-
-    return "KES";
   }, [
     invoiceData?.currency_symbol,
     invoiceData?.currency,

@@ -22,56 +22,6 @@ app_license = "mit"
 # ]
 
 
-fixtures = [
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            [
-                "name",
-                "in",
-                (
-                    "POS Profile-custom_klik_pos_settings",
-                    "POS Profile-custom_business_type",
-                    "POS Profile-custom_pos_printformat",
-                    "POS Profile-custom_column_break_7pdsa",
-                    "Sales Invoice-custom_roundoff_account",
-                    "Sales Invoice-custom_base_roundoff_amount",
-                    "Sales Invoice-custom_column_break_vtq6c",
-                    "Sales Invoice-custom_roundoff_amount",
-                    "Sales Invoice-custom_roundoff",
-                    "POS Profile-custom_allow_credit_sales",
-                    "POS Profile-custom_hide_expected_amount",
-                    "POS Profile-custom_allow_return",
-                    "POS Profile-custom_use_scanner_fully",
-                    "POS Profile-custom_whatsapp_template",
-                    "Sales Invoice-custom_pos_opening_entry",
-                    "POS Profile-custom_email_template",
-                    "POS Profile-custom_default_view",
-                    "POS Profile-custom_enable_whatsapp",
-                    "POS Profile-custom_enable_sms",
-                    "POS Profile-custom_scale_barcodes_start_with",
-                    "POS Profile-custom_ignore_write_off_on_partial_returns",
-                    "POS Profile-custom_allow_write_off",
-                    "POS Closing Entry-custom_sales_invoice",
-                    "POS Profile-custom_delivery_required",
-                    "Sales Invoice-custom_delivery",
-                    "Sales Invoice-custom_column_break_hnemi",
-                    "Sales Invoice-custom_delivery_personnel",
-                    "Sales Invoice-custom_delivery_personnel_name",
-                    "POS Profile-custom_autofetch_batchserial_",
-                    "POS Profile-custom_clear_draft_invoices",
-                    "Sales Person-pos_pin",
-                    "POS Profile-custom_sales_person_pin_required",
-                    "Customer-custom_is_walkin",
-                    "Item Group-custom_exclude_from_pos",
-                    "POS Profile-custom_allow_to_create_and_edit_customers",
-                    "POS Profile-restrict_cost_visibility_in_tooltip",
-                ),
-            ]
-        ],
-    },
-]
-
 add_to_apps_screen = [
     {
         "name": "klik_pos",

@@ -126,6 +126,12 @@ export const CartItemRow = ({
     const amt = itemDiscount.discountAmount || 0;
     return item.price > 0 ? parseFloat(((amt / item.price) * 100).toFixed(2)) : 0;
   });
+
+  useEffect(() => {
+    const amt = itemDiscount.discountAmount || 0;
+    const nextDiscountPct = item.price > 0 ? parseFloat(((amt / item.price) * 100).toFixed(2)) : 0;
+    setLocalDiscountPct(nextDiscountPct);
+  }, [itemDiscount.discountAmount, item.price]);
   const [fullItemData, setFullItemData] = useState<ItemFullData | null>(null);
   const [isLoadingFullData, setIsLoadingFullData] = useState(false);
 

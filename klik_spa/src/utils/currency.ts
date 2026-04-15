@@ -107,7 +107,9 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
  * @returns Currency symbol (e.g., '$', 'ر.س', '€')
  */
 export const getCurrencySymbol = (currency: string): string => {
-  if (!currency) return '$';
+  if (!/^[A-Za-z]{3}$/.test(currency)) {
+    return currency;
+  }
 
   const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()];
   return symbol || currency; // Return currency code if symbol not found
@@ -122,7 +124,7 @@ export const getCurrencySymbol = (currency: string): string => {
  */
 export const formatCurrencyWithSymbol = (amount: number, currencySymbol?: string): string => {
   const safeAmount = Number(amount || 0);
-  const symbol = currencySymbol || 'KES';
+  const symbol = currencySymbol;
 
   return `${symbol} ${safeAmount.toLocaleString('en-US', {
     minimumFractionDigits: 2,

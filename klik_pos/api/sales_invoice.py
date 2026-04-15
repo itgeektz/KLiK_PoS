@@ -74,7 +74,7 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 
 		# Build search filters
 		or_filters = _build_search_filters(search)
-		
+
 		invoices = frappe.get_all(
 			"Sales Invoice",
 			filters=filters,
@@ -661,6 +661,8 @@ def create_and_submit_invoice(data):
 				"posting_date": doc.posting_date,
 				"base_grand_total": doc.base_grand_total,
 				"currency": doc.currency,
+				"currency_symbol": frappe.db.get_value("Currency", doc.currency, "symbol")
+				or doc.currency,
 				"status": doc.status,
 				"is_pos": doc.is_pos,
 				"company": doc.company,
@@ -879,7 +881,7 @@ def build_sales_invoice_doc(
 
 	# Add items to invoice
 	_populate_invoice_items(doc, items, pos_profile)
-	
+
 	if create_batch_and_serial_bundle:
 		_create_batch_and_serial_bundle(items, doc)
 
@@ -908,7 +910,7 @@ def _create_batch_and_serial_bundle(items, doc):
 			continue
 
 		item_meta = frappe.db.get_value("Item", item_code, ["has_batch_no", "has_serial_no"], as_dict=1)
-		
+
 		if not item_meta or not (item_meta.has_batch_no or item_meta.has_serial_no):
 			continue
 

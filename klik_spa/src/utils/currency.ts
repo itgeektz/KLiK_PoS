@@ -107,18 +107,12 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
  * @returns Currency symbol (e.g., '$', 'ر.س', '€')
  */
 export const getCurrencySymbol = (currency: string): string => {
-  if (!currency) return '$';
-
-  const normalizedCurrency = currency.trim();
-  if (!normalizedCurrency) return '$';
-
-  // If caller already passed a symbol (or non-ISO token), return as-is.
-  if (!/^[A-Za-z]{3}$/.test(normalizedCurrency)) {
-    return normalizedCurrency;
+  if (!/^[A-Za-z]{3}$/.test(currency)) {
+    return currency;
   }
 
-  const symbol = CURRENCY_SYMBOLS[normalizedCurrency.toUpperCase()];
-  return symbol || normalizedCurrency; // Return currency code if symbol not found
+  const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()];
+  return symbol || currency; // Return currency code if symbol not found
 };
 
 

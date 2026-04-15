@@ -412,25 +412,25 @@ export default function PaymentDialog({
   };
 
   // Debug log
-  useEffect(() => {
-    if (posDetails) {
-      console.log(
-        "POS Details - custom_delivery_required:",
-        deliveryRequiredValue,
-        "isDeliveryRequired:",
-        isDeliveryRequired,
-      );
-    }
-  }, [posDetails, deliveryRequiredValue, isDeliveryRequired]);
+  // useEffect(() => {
+  //   if (posDetails) {
+  //     console.log(
+  //       "POS Details - custom_delivery_required:",
+  //       deliveryRequiredValue,
+  //       "isDeliveryRequired:",
+  //       isDeliveryRequired,
+  //     );
+  //   }
+  // }, [posDetails, deliveryRequiredValue, isDeliveryRequired]);
 
   // Populate sharing data from external invoice data
   useEffect(() => {
     if (externalInvoiceData && sharingMode) {
-      console.log("External invoice data:", externalInvoiceData);
-      console.log(
-        "Customer address doc:",
-        externalInvoiceData.customer_address_doc,
-      );
+      // console.log("External invoice data:", externalInvoiceData);
+      // console.log(
+      //   "Customer address doc:",
+      //   externalInvoiceData.customer_address_doc,
+      // );
 
       // Try multiple sources for customer contact info
       const email =
@@ -459,7 +459,7 @@ export default function PaymentDialog({
           name,
         });
 
-        console.log("Updated sharing data:", { email, phone, name });
+        // console.log("Updated sharing data:", { email, phone, name });
       }
     }
   }, [externalInvoiceData, sharingMode]);
@@ -472,7 +472,7 @@ export default function PaymentDialog({
     existingName: string,
   ) => {
     try {
-      console.log("Fetching customer details for:", customerId);
+      // console.log("Fetching customer details for:", customerId);
       const response = await fetch(
         `/api/method/klik_pos.api.customer.get_customer_info?customer_name=${customerId}`,
       );
@@ -480,7 +480,7 @@ export default function PaymentDialog({
 
       if (data.message) {
         const customerData = data.message;
-        console.log("Customer details fetched:", customerData);
+        // console.log("Customer details fetched:", customerData);
 
         setSharingData({
           email: existingEmail || customerData.email_id || "",
@@ -492,15 +492,15 @@ export default function PaymentDialog({
             "",
         });
 
-        console.log("Updated sharing data with customer details:", {
-          email: existingEmail || customerData.email_id || "",
-          phone: existingPhone || customerData.mobile_no || "",
-          name:
-            existingName ||
-            customerData.customer_name ||
-            customerData.name ||
-            "",
-        });
+        // console.log("Updated sharing data with customer details:", {
+        //   email: existingEmail || customerData.email_id || "",
+        //   phone: existingPhone || customerData.mobile_no || "",
+        //   name:
+        //     existingName ||
+        //     customerData.customer_name ||
+        //     customerData.name ||
+        //     "",
+        // });
       } else {
         // Fallback to existing data if fetch fails
         setSharingData({
@@ -1278,8 +1278,6 @@ export default function PaymentDialog({
           );
           // Don't show error to user as the main invoice was created successfully
         }
-      } else {
-        console.log();
       }
 
       // Clear draft invoice cache since payment is completed

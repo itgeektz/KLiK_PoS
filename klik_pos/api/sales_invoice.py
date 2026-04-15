@@ -606,7 +606,7 @@ def create_and_submit_invoice(data):
 			allow_partial_payment=allow_partial_payment,
 			due_date=due_date,
 			salesperson=salesperson,
-   		tax_id=tax_id,
+   			tax_id=tax_id,
 		)
 
 		doc.base_paid_amount = amount_paid
@@ -616,6 +616,10 @@ def create_and_submit_invoice(data):
 		# Save then submit; if submit fails (e.g. negative stock), delete the draft and return error
 		# (do not re-raise: Frappe would rollback the transaction and undo the delete)
 		doc.save(ignore_permissions=True)
+
+		# Persist `tax_id` directly to the database it's overwritten by save()
+		if tax_id:
+			doc.db_set("tax_id", tax_id)
 		try:
 			doc.submit()
 		except Exception as submit_err:
@@ -711,6 +715,10 @@ def create_draft_invoice(data):
 			tax_id=tax_id,
 		)
 		doc.insert(ignore_permissions=True)
+
+		# Persist `tax_id` directly to the database it's overwritten by insert()
+		if tax_id:
+			doc.db_set("tax_id", tax_id)
 
 		return {"success": True, "invoice_name": doc.name, "invoice": doc}
 

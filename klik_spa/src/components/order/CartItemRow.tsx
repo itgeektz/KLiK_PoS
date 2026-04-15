@@ -300,7 +300,7 @@ export const CartItemRow = ({
 
     const diff = item.price - rate;
     if (diff > 0) {
-      setLocalDiscountPct(item.price > 0 ? parseFloat(((diff / item.price) * 100).toFixed(2)) : 0);
+      onDiscountChange(item.id, "discountAmount", diff);
     } else {
       setLocalDiscountPct(0);
     }

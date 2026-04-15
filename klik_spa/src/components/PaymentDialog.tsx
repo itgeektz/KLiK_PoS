@@ -7,7 +7,7 @@ import {
   calculateTotalPayments,
   roundCurrency,
 } from "../utils/currencyMath";
-import { formatCurrencyWithSymbol } from "../utils/currency";
+import { formatCurrencyWithSymbol, getCurrencySymbol } from "../utils/currency";
 import { getUserFriendlyError } from "../utils/errorMessages";
 import { extractErrorFromException } from "../utils/errorExtraction";
 import {
@@ -26,9 +26,13 @@ import {
   Loader2,
   Pencil,
   CheckCircle,
-  ChevronDown
+  ChevronDown,
 } from "lucide-react";
-import { verifyPin, getRememberedSalesperson, clearRememberedSalesperson } from "../services/salesPerson";
+import {
+  verifyPin,
+  getRememberedSalesperson,
+  clearRememberedSalesperson,
+} from "../services/salesPerson";
 import type { CartItem, GiftCoupon } from "../../types";
 import type { Customer } from "../types/customer";
 import { toast } from "react-toastify";
@@ -39,22 +43,29 @@ import { createSalesInvoice } from "../services/salesInvoice";
 import { useNavigate } from "react-router-dom";
 import DisplayPrintPreview from "../utils/invoicePrint";
 import { handlePrintInvoice } from "../utils/printHandler";
-import { sendEmails, sendWhatsAppMessage, sendSMSMessage } from "../services/useSharing";
-import { clearDraftInvoiceCache, getOriginalDraftInvoiceId } from "../utils/draftInvoiceCache";
+import {
+  sendEmails,
+  sendWhatsAppMessage,
+  sendSMSMessage,
+} from "../services/useSharing";
+import {
+  clearDraftInvoiceCache,
+  getOriginalDraftInvoiceId,
+} from "../utils/draftInvoiceCache";
 // import { deleteDraftInvoice } from "../services/salesInvoice";
 import {
   fetchWhatsAppTemplates,
   getDefaultWhatsAppTemplate,
   processTemplate,
   getDefaultMessageTemplate,
-  type WhatsAppTemplate
+  type WhatsAppTemplate,
 } from "../services/whatsappTemplateService";
 import {
   fetchEmailTemplates,
   getDefaultEmailTemplate,
   processEmailTemplate,
   getDefaultEmailMessageTemplate,
-  type EmailTemplate
+  type EmailTemplate,
 } from "../services/emailTemplateService";
 import DeliveryPersonnelModal from "./DeliveryPersonnelModal";
 import { useDeliveryPersonnel } from "../hooks/useDeliveryPersonnel";
@@ -94,7 +105,7 @@ interface PaymentAmount {
 }
 
 const getIconAndColor = (
-  label: string
+  label: string,
 ): { icon: React.ReactNode; color: string } => {
   const lowerLabel = label.toLowerCase();
 
@@ -141,7 +152,9 @@ export default function PaymentDialog({
   const [activeMethodId, setActiveMethodId] = useState<string | null>(null);
   // Track which payment method was last modified for round-off targeting
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [lastModifiedMethodId, setLastModifiedMethodId] = useState<string | null>(null);
+  const [lastModifiedMethodId, setLastModifiedMethodId] = useState<
+    string | null
+  >(null);
   const [roundOffAmount, setRoundOffAmount] = useState(0);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isHoldingOrder, setIsHoldingOrder] = useState(false);
@@ -155,7 +168,7 @@ export default function PaymentDialog({
   const [roundOffInput, setRoundOffInput] = useState(roundOffAmount.toFixed(2));
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
   const [sharingMode, setSharingMode] = useState<string | null>(
-    initialSharingMode
+    initialSharingMode,
   ); // 'email', 'sms', 'whatsapp'
   const [sharingData, setSharingData] = useState({
     email: selectedCustomer?.email || "",
@@ -167,22 +180,29 @@ export default function PaymentDialog({
   const [isSendingWhatsapp, setIsSendingWhatsapp] = useState(false);
 
   // WhatsApp template states
-  const [whatsappTemplates, setWhatsappTemplates] = useState<WhatsAppTemplate[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppTemplate | null>(null);
+  const [whatsappTemplates, setWhatsappTemplates] = useState<
+    WhatsAppTemplate[]
+  >([]);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<WhatsAppTemplate | null>(null);
   const [customMessage, setCustomMessage] = useState("");
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [isEditingWhatsapp, setIsEditingWhatsapp] = useState(false);
 
   // Email template states
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
-  const [selectedEmailTemplate, setSelectedEmailTemplate] = useState<EmailTemplate | null>(null);
+  const [selectedEmailTemplate, setSelectedEmailTemplate] =
+    useState<EmailTemplate | null>(null);
   const [emailMessage, setEmailMessage] = useState("");
   const [isLoadingEmailTemplates, setIsLoadingEmailTemplates] = useState(false);
   const [isEditingEmail, setIsEditingEmail] = useState(false);
 
   // Delivery personnel states (optional, user-controlled via footer field)
-  const [showDeliveryPersonnelModal, setShowDeliveryPersonnelModal] = useState(false);
-  const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
+  const [showDeliveryPersonnelModal, setShowDeliveryPersonnelModal] =
+    useState(false);
+  const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<
+    string | null
+  >(null);
 
   // Salesperson PIN states
   const [currentSalesperson, setCurrentSalesperson] = useState<{
@@ -200,10 +220,11 @@ export default function PaymentDialog({
   // Tax PIN states
   const [taxPin, setTaxPin] = useState("");
 
-
   // Hooks
   const { posDetails, loading: posLoading } = usePOSDetails();
-  const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
+  const { modes, isLoading, error } = usePaymentModes(
+    typeof posDetails?.name === "string" ? posDetails.name : "",
+  );
   const { salesTaxCharges, defaultTax } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
   const navigate = useNavigate();
@@ -220,13 +241,68 @@ export default function PaymentDialog({
   const isCombined = posDetails?.business_type === "B2B & B2C";
   const print_receipt_on_order_complete =
     posDetails?.print_receipt_on_order_complete;
-  const currencySymbol = posDetails?.currency_symbol;
   // Check if delivery is required - handle both 1/0 and true/false values
   const deliveryRequiredValue = posDetails?.custom_delivery_required;
-  const isDeliveryRequired = deliveryRequiredValue === 1 ||
-                             deliveryRequiredValue === true ||
-                             deliveryRequiredValue === "1";
+  const isDeliveryRequired =
+    deliveryRequiredValue === 1 ||
+    deliveryRequiredValue === true ||
+    deliveryRequiredValue === "1";
   const allowPartialPayments = Boolean(posDetails?.allow_partial_payment);
+  const displayCurrencySymbol = useMemo(() => {
+    const invoiceSymbol =
+      typeof invoiceData?.currency_symbol === "string"
+        ? invoiceData.currency_symbol.trim()
+        : "";
+    if (invoiceSymbol) return invoiceSymbol;
+
+    const invoiceCurrency =
+      typeof invoiceData?.currency === "string"
+        ? invoiceData.currency.trim()
+        : "";
+    if (invoiceCurrency) return getCurrencySymbol(invoiceCurrency);
+
+    const externalInvoiceSymbol =
+      typeof externalInvoiceData?.currency_symbol === "string"
+        ? externalInvoiceData.currency_symbol.trim()
+        : "";
+    if (externalInvoiceSymbol) return externalInvoiceSymbol;
+
+    const externalInvoiceCurrency =
+      typeof externalInvoiceData?.currency === "string"
+        ? externalInvoiceData.currency.trim()
+        : "";
+    if (externalInvoiceCurrency)
+      return getCurrencySymbol(externalInvoiceCurrency);
+
+    const companyDefaultCurrency =
+      typeof posDetails?.company?.default_currency === "string"
+        ? posDetails.company.default_currency.trim()
+        : "";
+    if (companyDefaultCurrency)
+      return getCurrencySymbol(companyDefaultCurrency);
+
+    const posCurrencySymbol =
+      typeof posDetails?.currency_symbol === "string"
+        ? posDetails.currency_symbol.trim()
+        : "";
+    if (posCurrencySymbol) return posCurrencySymbol;
+
+    const posCurrency =
+      typeof posDetails?.currency === "string"
+        ? posDetails.currency.trim()
+        : "";
+    if (posCurrency) return getCurrencySymbol(posCurrency);
+
+    return "KES";
+  }, [
+    invoiceData?.currency_symbol,
+    invoiceData?.currency,
+    externalInvoiceData?.currency_symbol,
+    externalInvoiceData?.currency,
+    posDetails?.company?.default_currency,
+    posDetails?.currency_symbol,
+    posDetails?.currency,
+  ]);
 
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const isWalkinCustomer = selectedCustomer?.is_walkin === 1;
@@ -253,7 +329,10 @@ export default function PaymentDialog({
       try {
         const result = await getRememberedSalesperson(getDeviceId());
         if (result?.success) {
-          setCurrentSalesperson({ name: result.salesperson, salesperson_name: result.salesperson_name });
+          setCurrentSalesperson({
+            name: result.salesperson,
+            salesperson_name: result.salesperson_name,
+          });
         }
       } catch (err) {
         console.error("Error fetching remembered salesperson:", err);
@@ -279,7 +358,10 @@ export default function PaymentDialog({
     try {
       const result = await verifyPin(pin, getDeviceId());
       if (result?.success) {
-        setCurrentSalesperson({ name: result.salesperson, salesperson_name: result.salesperson_name });
+        setCurrentSalesperson({
+          name: result.salesperson,
+          salesperson_name: result.salesperson_name,
+        });
         setSalespersonPin("");
         toast.success(`Welcome, ${result.salesperson_name}!`);
 
@@ -291,11 +373,15 @@ export default function PaymentDialog({
           }
         }
       } else {
-        setSalespersonPinError(result?.message || "Invalid PIN. Please try again.");
+        setSalespersonPinError(
+          result?.message || "Invalid PIN. Please try again.",
+        );
         setSalespersonPin("");
       }
     } catch (err: any) {
-      setSalespersonPinError(err?.message || "An error occurred. Please try again.");
+      setSalespersonPinError(
+        err?.message || "An error occurred. Please try again.",
+      );
       setSalespersonPin("");
     } finally {
       setIsVerifyingPin(false);
@@ -330,31 +416,40 @@ export default function PaymentDialog({
   // Debug log
   useEffect(() => {
     if (posDetails) {
-      console.log("POS Details - custom_delivery_required:", deliveryRequiredValue, "isDeliveryRequired:", isDeliveryRequired);
+      console.log(
+        "POS Details - custom_delivery_required:",
+        deliveryRequiredValue,
+        "isDeliveryRequired:",
+        isDeliveryRequired,
+      );
     }
   }, [posDetails, deliveryRequiredValue, isDeliveryRequired]);
 
   // Populate sharing data from external invoice data
   useEffect(() => {
     if (externalInvoiceData && sharingMode) {
-      console.log('External invoice data:', externalInvoiceData);
-      console.log('Customer address doc:', externalInvoiceData.customer_address_doc);
+      console.log("External invoice data:", externalInvoiceData);
+      console.log(
+        "Customer address doc:",
+        externalInvoiceData.customer_address_doc,
+      );
 
       // Try multiple sources for customer contact info
-      const email = externalInvoiceData.customer_address_doc?.email_id ||
-                   externalInvoiceData.customer_email ||
-                   externalInvoiceData.email_id ||
-                   "";
+      const email =
+        externalInvoiceData.customer_address_doc?.email_id ||
+        externalInvoiceData.customer_email ||
+        externalInvoiceData.email_id ||
+        "";
 
-      const phone = externalInvoiceData.mobile_no ||
-                   externalInvoiceData.customer_address_doc?.mobile_no ||
-                   externalInvoiceData.customer_address_doc?.phone ||
-                   externalInvoiceData.customer_phone ||
-                   "";
+      const phone =
+        externalInvoiceData.mobile_no ||
+        externalInvoiceData.customer_address_doc?.mobile_no ||
+        externalInvoiceData.customer_address_doc?.phone ||
+        externalInvoiceData.customer_phone ||
+        "";
 
-      const name = externalInvoiceData.customer_name ||
-                  externalInvoiceData.customer ||
-                  "";
+      const name =
+        externalInvoiceData.customer_name || externalInvoiceData.customer || "";
 
       // If email or phone is missing, try to fetch customer details
       if ((!email || !phone) && externalInvoiceData.customer) {
@@ -366,32 +461,47 @@ export default function PaymentDialog({
           name,
         });
 
-        console.log('Updated sharing data:', { email, phone, name });
+        console.log("Updated sharing data:", { email, phone, name });
       }
     }
   }, [externalInvoiceData, sharingMode]);
 
   // Function to fetch customer details if not available in invoice data
-  const fetchCustomerDetails = async (customerId: string, existingEmail: string, existingPhone: string, existingName: string) => {
+  const fetchCustomerDetails = async (
+    customerId: string,
+    existingEmail: string,
+    existingPhone: string,
+    existingName: string,
+  ) => {
     try {
-      console.log('Fetching customer details for:', customerId);
-      const response = await fetch(`/api/method/klik_pos.api.customer.get_customer_info?customer_name=${customerId}`);
+      console.log("Fetching customer details for:", customerId);
+      const response = await fetch(
+        `/api/method/klik_pos.api.customer.get_customer_info?customer_name=${customerId}`,
+      );
       const data = await response.json();
 
       if (data.message) {
         const customerData = data.message;
-        console.log('Customer details fetched:', customerData);
+        console.log("Customer details fetched:", customerData);
 
         setSharingData({
           email: existingEmail || customerData.email_id || "",
           phone: existingPhone || customerData.mobile_no || "",
-          name: existingName || customerData.customer_name || customerData.name || "",
+          name:
+            existingName ||
+            customerData.customer_name ||
+            customerData.name ||
+            "",
         });
 
-        console.log('Updated sharing data with customer details:', {
+        console.log("Updated sharing data with customer details:", {
           email: existingEmail || customerData.email_id || "",
           phone: existingPhone || customerData.mobile_no || "",
-          name: existingName || customerData.customer_name || customerData.name || "",
+          name:
+            existingName ||
+            customerData.customer_name ||
+            customerData.name ||
+            "",
         });
       } else {
         // Fallback to existing data if fetch fails
@@ -402,7 +512,7 @@ export default function PaymentDialog({
         });
       }
     } catch (error) {
-      console.error('Error fetching customer details:', error);
+      console.error("Error fetching customer details:", error);
       // Fallback to existing data if fetch fails
       setSharingData({
         email: existingEmail,
@@ -415,19 +525,21 @@ export default function PaymentDialog({
   // Load WhatsApp templates when sharing mode changes to WhatsApp
   useEffect(() => {
     const loadWhatsAppTemplates = async () => {
-      if (sharingMode === 'whatsapp' && whatsappTemplates.length === 0) {
+      if (sharingMode === "whatsapp" && whatsappTemplates.length === 0) {
         setIsLoadingTemplates(true);
         try {
           const [templates, defaultTemplateName] = await Promise.all([
             fetchWhatsAppTemplates(),
-            getDefaultWhatsAppTemplate()
+            getDefaultWhatsAppTemplate(),
           ]);
 
           setWhatsappTemplates(templates);
 
           // Set default template if available
           if (defaultTemplateName) {
-            const defaultTemplate = templates.find(t => t.name === defaultTemplateName);
+            const defaultTemplate = templates.find(
+              (t) => t.name === defaultTemplateName,
+            );
             if (defaultTemplate) {
               setSelectedTemplate(defaultTemplate);
               setCustomMessage(defaultTemplate.template);
@@ -437,7 +549,7 @@ export default function PaymentDialog({
             setCustomMessage(getDefaultMessageTemplate());
           }
         } catch (error) {
-          console.error('Error loading WhatsApp templates:', error);
+          console.error("Error loading WhatsApp templates:", error);
           setCustomMessage(getDefaultMessageTemplate());
         } finally {
           setIsLoadingTemplates(false);
@@ -451,29 +563,33 @@ export default function PaymentDialog({
   // Load Email templates when sharing mode changes to email
   useEffect(() => {
     const loadEmailTemplates = async () => {
-      if (sharingMode === 'email' && emailTemplates.length === 0) {
+      if (sharingMode === "email" && emailTemplates.length === 0) {
         setIsLoadingEmailTemplates(true);
         try {
           const [templates, defaultTemplateName] = await Promise.all([
             fetchEmailTemplates(),
-            getDefaultEmailTemplate()
+            getDefaultEmailTemplate(),
           ]);
 
           setEmailTemplates(templates);
 
           // Set default template if available
           if (defaultTemplateName) {
-            const defaultTemplate = templates.find(t => t.name === defaultTemplateName);
+            const defaultTemplate = templates.find(
+              (t) => t.name === defaultTemplateName,
+            );
             if (defaultTemplate) {
               setSelectedEmailTemplate(defaultTemplate);
-              setEmailMessage(defaultTemplate.response_html || defaultTemplate.response);
+              setEmailMessage(
+                defaultTemplate.response_html || defaultTemplate.response,
+              );
             }
           } else {
             // Use default message template if no template is set
             setEmailMessage(getDefaultEmailMessageTemplate());
           }
         } catch (error) {
-          console.error('Error loading Email templates:', error);
+          console.error("Error loading Email templates:", error);
           setEmailMessage(getDefaultEmailMessageTemplate());
         } finally {
           setIsLoadingEmailTemplates(false);
@@ -488,10 +604,13 @@ export default function PaymentDialog({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getProcessedMessage = () => {
     const parameters: Record<string, string> = {
-      customer_name: sharingData.name || 'there',
-      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency),
-      invoice_number: invoiceData?.name || '',
-      company_name: 'KLiK PoS',
+      customer_name: sharingData.name || "there",
+      invoice_total: formatCurrencyWithSymbol(
+        calculations.grandTotal,
+        displayCurrencySymbol,
+      ),
+      invoice_number: invoiceData?.name || "",
+      company_name: "KLiK PoS",
       date: new Date().toLocaleDateString(),
     };
 
@@ -502,22 +621,34 @@ export default function PaymentDialog({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getProcessedEmailMessage = () => {
     const parameters: Record<string, string | null> = {
-      customer_name: sharingData.name || 'Customer',
-      customer: sharingData.name || 'Customer',
-      first_name: sharingData.name?.split(' ')[0] || '',
-      last_name: sharingData.name?.split(' ').slice(1).join(' ') || '',
-      address: typeof selectedCustomer?.address === 'string' ? selectedCustomer.address : JSON.stringify(selectedCustomer?.address || {}),
-      customer_address: typeof selectedCustomer?.address === 'string' ? selectedCustomer.address : JSON.stringify(selectedCustomer?.address || {}),
-      delivery_note: invoiceData?.name || '',
-      grand_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency),
+      customer_name: sharingData.name || "Customer",
+      customer: sharingData.name || "Customer",
+      first_name: sharingData.name?.split(" ")[0] || "",
+      last_name: sharingData.name?.split(" ").slice(1).join(" ") || "",
+      address:
+        typeof selectedCustomer?.address === "string"
+          ? selectedCustomer.address
+          : JSON.stringify(selectedCustomer?.address || {}),
+      customer_address:
+        typeof selectedCustomer?.address === "string"
+          ? selectedCustomer.address
+          : JSON.stringify(selectedCustomer?.address || {}),
+      delivery_note: invoiceData?.name || "",
+      grand_total: formatCurrencyWithSymbol(
+        calculations.grandTotal,
+        displayCurrencySymbol,
+      ),
       departure_time: new Date().toLocaleTimeString(),
       estimated_arrival: new Date(Date.now() + 30 * 60000).toLocaleTimeString(), // 30 minutes from now
-      driver_name: 'Delivery Driver',
-      cell_number: '+1234567890',
-      vehicle: 'Delivery Vehicle',
-      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency),
-      invoice_number: invoiceData?.name || '',
-      company_name: 'KLiK PoS',
+      driver_name: "Delivery Driver",
+      cell_number: "+1234567890",
+      vehicle: "Delivery Vehicle",
+      invoice_total: formatCurrencyWithSymbol(
+        calculations.grandTotal,
+        displayCurrencySymbol,
+      ),
+      invoice_number: invoiceData?.name || "",
+      company_name: "KLiK PoS",
       date: new Date().toLocaleDateString(),
     };
 
@@ -526,7 +657,7 @@ export default function PaymentDialog({
 
   // Handle template selection
   const handleTemplateChange = (templateName: string) => {
-    const template = whatsappTemplates.find(t => t.name === templateName);
+    const template = whatsappTemplates.find((t) => t.name === templateName);
     if (template) {
       setSelectedTemplate(template);
       setCustomMessage(template.template);
@@ -535,7 +666,7 @@ export default function PaymentDialog({
 
   // Handle email template selection
   const handleEmailTemplateChange = (templateName: string) => {
-    const template = emailTemplates.find(t => t.name === templateName);
+    const template = emailTemplates.find((t) => t.name === templateName);
     if (template) {
       setSelectedEmailTemplate(template);
       setEmailMessage(template.response_html || template.response);
@@ -545,22 +676,19 @@ export default function PaymentDialog({
   // Calculate totals with memoization for performance
   const calculations = useMemo(() => {
     // Use discounted price if available, otherwise use original price
-    const subtotal = cartItems.reduce(
-      (sum, item) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const itemPrice = (item as any).discountedPrice || item.price;
-        return sum + itemPrice * item.quantity;
-      },
-      0
-    );
+    const subtotal = cartItems.reduce((sum, item) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const itemPrice = (item as any).discountedPrice || item.price;
+      return sum + itemPrice * item.quantity;
+    }, 0);
     const couponDiscount = appliedCoupons.reduce(
       (sum, coupon) => sum + coupon.value,
-      0
+      0,
     );
     const taxableAmount = Math.max(0, subtotal - couponDiscount);
 
     const selectedTax = salesTaxCharges.find(
-      (tax) => tax.id === selectedSalesTaxCharges
+      (tax) => tax.id === selectedSalesTaxCharges,
     );
     const taxRate = selectedTax?.rate || 0;
     const isInclusive = selectedTax?.is_inclusive || false;
@@ -599,7 +727,10 @@ export default function PaymentDialog({
 
   // Calculate total paid amount from all payment methods (for both B2C and B2B)
   const totalPaidAmount = calculateTotalPayments(Object.values(paymentAmounts));
-  const outstandingAmount = calculateRemainingAmount(calculations.grandTotal, Object.values(paymentAmounts));
+  const outstandingAmount = calculateRemainingAmount(
+    calculations.grandTotal,
+    Object.values(paymentAmounts),
+  );
 
   useEffect(() => {
     if (isOpen && defaultTax && !selectedSalesTaxCharges) {
@@ -623,13 +754,16 @@ export default function PaymentDialog({
       const defaultMode = modes.find((mode) => mode.default === 1);
       if (defaultMode) {
         // Calculate total of all payment methods
-        const totalPayments = Object.values(paymentAmounts).reduce((sum, amount) => sum + (amount || 0), 0);
+        const totalPayments = Object.values(paymentAmounts).reduce(
+          (sum, amount) => sum + (amount || 0),
+          0,
+        );
         const excess = totalPayments - calculations.grandTotal;
 
         // Find the payment method with the highest amount
         const paymentEntries = Object.entries(paymentAmounts);
         const highestAmountMethod = paymentEntries.reduce((max, current) =>
-          (current[1] || 0) > (max[1] || 0) ? current : max
+          (current[1] || 0) > (max[1] || 0) ? current : max,
         );
         const [highestMethodId, highestAmount] = highestAmountMethod;
 
@@ -643,7 +777,14 @@ export default function PaymentDialog({
         }
       }
     }
-  }, [calculations.grandTotal, modes, isB2C, isB2B, isCombined, paymentAmounts]);
+  }, [
+    calculations.grandTotal,
+    modes,
+    isB2C,
+    isB2B,
+    isCombined,
+    paymentAmounts,
+  ]);
 
   // Auto-print when invoice is submitted and auto-print is enabled
   useEffect(() => {
@@ -665,9 +806,9 @@ export default function PaymentDialog({
     }
 
     // Check if there are any cash payment methods with amounts
-    const cashMethods = modes.filter(mode => mode.type === "Cash");
-    const cashMethodsWithAmount = cashMethods.filter(mode =>
-      (paymentAmounts[mode.mode_of_payment] || 0) > 0
+    const cashMethods = modes.filter((mode) => mode.type === "Cash");
+    const cashMethodsWithAmount = cashMethods.filter(
+      (mode) => (paymentAmounts[mode.mode_of_payment] || 0) > 0,
     );
 
     // Must have cash methods with amounts
@@ -715,14 +856,17 @@ export default function PaymentDialog({
     }
 
     // Collect non-zero methods
-    const nonZero = Object.entries(paymentAmounts).filter(([, amt]) => (amt || 0) > 0).map(([id]) => id);
+    const nonZero = Object.entries(paymentAmounts)
+      .filter(([, amt]) => (amt || 0) > 0)
+      .map(([id]) => id);
 
     if (nonZero.length === 1) {
       return nonZero[0] ?? null;
     }
 
     // Prefer a non-default method that has a value
-    const defaultId = modes.find((m) => m.default === 1)?.mode_of_payment || null;
+    const defaultId =
+      modes.find((m) => m.default === 1)?.mode_of_payment || null;
 
     const nonDefaultWithValue = nonZero.find((id) => id !== defaultId);
     if (nonDefaultWithValue) {
@@ -757,7 +901,7 @@ export default function PaymentDialog({
     const newPaymentAmounts: PaymentAmount = {};
 
     // Set all payment methods to 0 first
-    paymentMethods.forEach(method => {
+    paymentMethods.forEach((method) => {
       newPaymentAmounts[method.id] = 0;
     });
 
@@ -781,8 +925,9 @@ export default function PaymentDialog({
     if (remainingAmount <= 0) return;
 
     // Find other payment methods that have 0 amount
-    const otherMethods = paymentMethods.filter(method =>
-      method.id !== methodId && (paymentAmounts[method.id] || 0) === 0
+    const otherMethods = paymentMethods.filter(
+      (method) =>
+        method.id !== methodId && (paymentAmounts[method.id] || 0) === 0,
     );
 
     if (otherMethods.length > 0) {
@@ -816,14 +961,16 @@ export default function PaymentDialog({
 
     // Check if writeoff is allowed in POS profile
     if (!posDetails?.custom_allow_write_off) {
-      toast.error("Writeoff not allowed.\n Ask your administrator to enable it in POS profile.");
+      toast.error(
+        "Writeoff not allowed.\n Ask your administrator to enable it in POS profile.",
+      );
       return;
     }
 
     // Check if there are any cash payment methods with amounts
-    const cashMethods = modes.filter(mode => mode.type === "Cash");
-    const cashMethodsWithAmount = cashMethods.filter(mode =>
-      (paymentAmounts[mode.mode_of_payment] || 0) > 0
+    const cashMethods = modes.filter((mode) => mode.type === "Cash");
+    const cashMethodsWithAmount = cashMethods.filter(
+      (mode) => (paymentAmounts[mode.mode_of_payment] || 0) > 0,
     );
 
     if (cashMethodsWithAmount.length === 0) {
@@ -832,8 +979,9 @@ export default function PaymentDialog({
     }
 
     // Check if cash has any amount
-    const totalCashAmount = cashMethodsWithAmount.reduce((sum, mode) =>
-      sum + (paymentAmounts[mode.mode_of_payment] || 0), 0
+    const totalCashAmount = cashMethodsWithAmount.reduce(
+      (sum, mode) => sum + (paymentAmounts[mode.mode_of_payment] || 0),
+      0,
     );
 
     if (totalCashAmount === 0) {
@@ -891,8 +1039,9 @@ export default function PaymentDialog({
 
       // Additional fallback: use default mode from modes if paymentMethods array is empty or unresolved
       if (!finalTargetId) {
-        const fallbackDefaultFromModes = modes.find((m) => m.default === 1)?.mode_of_payment
-          || modes[0]?.mode_of_payment;
+        const fallbackDefaultFromModes =
+          modes.find((m) => m.default === 1)?.mode_of_payment ||
+          modes[0]?.mode_of_payment;
         if (fallbackDefaultFromModes) {
           finalTargetId = fallbackDefaultFromModes;
         }
@@ -908,7 +1057,7 @@ export default function PaymentDialog({
 
         setPaymentAmounts(newPaymentAmounts);
       } else {
-        console.error('No payment methods available for roundoff!');
+        console.error("No payment methods available for roundoff!");
       }
     }
   };
@@ -928,19 +1077,22 @@ export default function PaymentDialog({
     let processedValue = value;
 
     // If user enters a positive number, make it negative
-    if (value && !value.startsWith('-') && !isNaN(parseFloat(value))) {
-      processedValue = '-' + value;
+    if (value && !value.startsWith("-") && !isNaN(parseFloat(value))) {
+      processedValue = "-" + value;
     }
 
     const parsed = parseFloat(processedValue);
     if (!isNaN(parsed)) {
       // Validate against write-off limit
       const writeOffLimit = posDetails?.write_off_limit || 1.0;
-      const maxAllowedRoundoff = writeOffLimit <= 1 ? 0.99 : writeOffLimit - 0.01;
+      const maxAllowedRoundoff =
+        writeOffLimit <= 1 ? 0.99 : writeOffLimit - 0.01;
 
       // Check if the absolute value exceeds the limit
       if (Math.abs(parsed) > maxAllowedRoundoff) {
-        toast.error(`Roundoff amount cannot exceed ${maxAllowedRoundoff.toFixed(2)}. Write-off limit is ${writeOffLimit}.`);
+        toast.error(
+          `Roundoff amount cannot exceed ${maxAllowedRoundoff.toFixed(2)}. Write-off limit is ${writeOffLimit}.`,
+        );
         return;
       }
 
@@ -958,7 +1110,10 @@ export default function PaymentDialog({
         const sumOthers = Object.entries(paymentAmounts)
           .filter(([id]) => id !== targetId)
           .reduce((sum, [, amt]) => sum + (amt || 0), 0);
-        const newTargetAmount = Math.max(0, parseFloat((newGrandTotal - sumOthers).toFixed(2)));
+        const newTargetAmount = Math.max(
+          0,
+          parseFloat((newGrandTotal - sumOthers).toFixed(2)),
+        );
         setPaymentAmounts((prev) => ({
           ...prev,
           [targetId]: newTargetAmount,
@@ -1006,12 +1161,17 @@ export default function PaymentDialog({
     const adjustedPaymentMethods = isB2B
       ? Object.entries(paymentAmounts).filter(([, amount]) => amount > 0)
       : (() => {
-          const validPayments = Object.entries(paymentAmounts).filter(([, amount]) => amount > 0);
+          const validPayments = Object.entries(paymentAmounts).filter(
+            ([, amount]) => amount > 0,
+          );
 
           if (validPayments.length === 0) return [];
 
           // Calculate total of all payment methods
-          const totalPaymentAmount = validPayments.reduce((sum, [, amount]) => sum + amount, 0);
+          const totalPaymentAmount = validPayments.reduce(
+            (sum, [, amount]) => sum + amount,
+            0,
+          );
 
           // If total exceeds grand total, adjust the last payment method
           if (totalPaymentAmount > calculations.grandTotal) {
@@ -1023,7 +1183,9 @@ export default function PaymentDialog({
             const [lastMethod, lastAmount] = lastPayment;
 
             // Reduce the last payment method by the excess amount
-            const adjustedLastAmount = parseFloat(Math.max(0, lastAmount - excess).toFixed(2));
+            const adjustedLastAmount = parseFloat(
+              Math.max(0, lastAmount - excess).toFixed(2),
+            );
 
             return validPayments.map(([method, amount], index) => {
               if (index === lastPaymentIndex) {
@@ -1048,22 +1210,29 @@ export default function PaymentDialog({
       //   discountPercentage: itemDiscounts[item.id]?.discountPercentage || 0,
       //   discountAmount: itemDiscounts[item.id]?.discountAmount || 0,
       // })),
-      items: cartItems.map(item => {
+      items: cartItems.map((item) => {
         const code = item.item_code || item.id;
-        const discountData = itemDiscounts[code] || itemDiscounts[item.id] || {};
+        const discountData =
+          itemDiscounts[code] || itemDiscounts[item.id] || {};
 
         return {
           ...item,
-          id: item.item_code || item.id,        // ← override the generated id
-          item_code: item.item_code || item.id,  // ← keep item_code correct too
+          id: item.item_code || item.id, // ← override the generated id
+          item_code: item.item_code || item.id, // ← keep item_code correct too
           price: (item as any).discountedPrice || item.price,
-          uom: item.uom || 'Nos',
+          uom: item.uom || "Nos",
           discountPercentage: discountData.discountPercentage || 0,
           discountAmount: discountData.discountAmount || 0,
           serial_batch_bundle: discountData.serial_batch_bundle || null,
-        }}),
+        };
+      }),
       customer: selectedCustomer,
-      paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => ({ method, amount: parseFloat((Number(amount) || 0).toFixed(2)) })),
+      paymentMethods: (adjustedPaymentMethods ?? []).map(
+        ([method, amount]) => ({
+          method,
+          amount: parseFloat((Number(amount) || 0).toFixed(2)),
+        }),
+      ),
       subtotal: calculations.subtotal,
       SalesTaxCharges: selectedSalesTaxCharges,
       taxAmount: calculations.taxAmount,
@@ -1105,7 +1274,10 @@ export default function PaymentDialog({
         try {
           // const deleteResult = await deleteDraftInvoice(originalDraftInvoiceId);
         } catch (deleteError) {
-          console.error("Failed to delete original draft invoice:", deleteError);
+          console.error(
+            "Failed to delete original draft invoice:",
+            deleteError,
+          );
           // Don't show error to user as the main invoice was created successfully
         }
       } else {
@@ -1132,7 +1304,7 @@ export default function PaymentDialog({
   const handleCompletePayment = async () => {
     if (requiresSalespersonPin && !currentSalesperson) {
       toast.error(
-        "Please verify your salesperson PIN before completing payment"
+        "Please verify your salesperson PIN before completing payment",
       );
       return;
     }
@@ -1150,10 +1322,12 @@ export default function PaymentDialog({
   // Get display name for selected delivery personnel
   const getSelectedDeliveryPersonnelName = () => {
     if (!selectedDeliveryPersonnel) return null;
-    const person = deliveryPersonnelList.find((p) => p.name === selectedDeliveryPersonnel);
+    const person = deliveryPersonnelList.find(
+      (p) => p.name === selectedDeliveryPersonnel,
+    );
     return person?.delivery_personnel || selectedDeliveryPersonnel;
   };
-//eslint-disable-next-line @typescript-eslint/no-explicit-any
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleViewInvoice = (invoice: any) => {
     clearOrderState();
     navigate(`/invoice/${invoice.name}`);
@@ -1187,7 +1361,10 @@ export default function PaymentDialog({
     try {
       onHoldOrder(orderData);
     } catch (err: any) {
-      const errorMessage = extractErrorFromException(err, "Failed to hold order");
+      const errorMessage = extractErrorFromException(
+        err,
+        "Failed to hold order",
+      );
       toast.error(errorMessage);
     } finally {
       setIsHoldingOrder(false);
@@ -1237,7 +1414,9 @@ export default function PaymentDialog({
       const nextValue = !prev;
 
       if (nextValue) {
-        const defaultModeId = modes.find((mode) => mode.default === 1)?.mode_of_payment;
+        const defaultModeId = modes.find(
+          (mode) => mode.default === 1,
+        )?.mode_of_payment;
         if (defaultModeId) {
           setPaymentAmounts((prevAmounts) => ({
             ...prevAmounts,
@@ -1269,8 +1448,8 @@ export default function PaymentDialog({
                 {invoiceSubmitted
                   ? "Invoice Complete"
                   : isB2B
-                  ? "Submit Invoice"
-                  : "Payment"}
+                    ? "Submit Invoice"
+                    : "Payment"}
               </h1>
               {/* ... rest of mobile header remains the same ... */}
             </div>
@@ -1288,7 +1467,11 @@ export default function PaymentDialog({
                         : "Payment Completed Successfully!"}
                     </p>
                     <p className="text-sm opacity-75">
-                      Total: {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
+                      Total:{" "}
+                      {formatCurrencyWithSymbol(
+                        calculations.grandTotal,
+                        displayCurrencySymbol,
+                      )}
                     </p>
                   </div>
                 </div>
@@ -1325,11 +1508,11 @@ export default function PaymentDialog({
                           selectedCustomer?.name
                         },\n\nHere is your invoice total: ${formatCurrencyWithSymbol(
                           calculations.grandTotal,
-                          invoiceData?.currency
-                        )}\n\nThank you.`
+                          displayCurrencySymbol,
+                        )}\n\nThank you.`,
                       );
                       window.open(
-                        `mailto:${selectedCustomer?.email}?subject=${subject}&body=${body}`
+                        `mailto:${selectedCustomer?.email}?subject=${subject}&body=${body}`,
                       );
                     }}
                   >
@@ -1344,12 +1527,12 @@ export default function PaymentDialog({
                       const msg = encodeURIComponent(
                         `Here is your invoice total: ${formatCurrencyWithSymbol(
                           calculations.grandTotal,
-                          invoiceData?.currency
-                        )}`
+                          displayCurrencySymbol,
+                        )}`,
                       );
                       window.open(
                         `https://wa.me/${selectedCustomer?.phone}?text=${msg}`,
-                        "_blank"
+                        "_blank",
                       );
                     }}
                   >
@@ -1474,7 +1657,7 @@ export default function PaymentDialog({
                                   setSalespersonPin(
                                     e.target.value
                                       .replace(/\D/g, "")
-                                      .slice(0, 4)
+                                      .slice(0, 4),
                                   );
                                   setSalespersonPinError("");
                                 }}
@@ -1536,7 +1719,7 @@ export default function PaymentDialog({
                               onChange={(e) =>
                                 handlePaymentAmountChange(
                                   method.id,
-                                  e.target.value
+                                  e.target.value,
                                 )
                               }
                               placeholder="0.00"
@@ -1636,19 +1819,31 @@ export default function PaymentDialog({
                           type="number"
                           value={roundOffInput}
                           onChange={(e) => handleRoundOffChange(e.target.value)}
-                          disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled}
+                          disabled={
+                            invoiceSubmitted ||
+                            isProcessingPayment ||
+                            !roundOffEnabled
+                          }
                           placeholder="-0.00"
                           className={`flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
-                            invoiceSubmitted || isProcessingPayment || !roundOffEnabled
+                            invoiceSubmitted ||
+                            isProcessingPayment ||
+                            !roundOffEnabled
                               ? "cursor-not-allowed opacity-50"
                               : ""
                           }`}
                         />
                         <button
                           onClick={handleRoundOff}
-                          disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled}
+                          disabled={
+                            invoiceSubmitted ||
+                            isProcessingPayment ||
+                            !roundOffEnabled
+                          }
                           className={`px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors ${
-                            invoiceSubmitted || isProcessingPayment || !roundOffEnabled
+                            invoiceSubmitted ||
+                            isProcessingPayment ||
+                            !roundOffEnabled
                               ? "cursor-not-allowed opacity-50"
                               : ""
                           }`}
@@ -1668,14 +1863,21 @@ export default function PaymentDialog({
                       Subtotal
                     </span>
                     <span className="font-medium text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency)}
+                      {formatCurrencyWithSymbol(
+                        calculations.subtotal,
+                        displayCurrencySymbol,
+                      )}
                     </span>
                   </div>
                   {calculations.couponDiscount > 0 && (
                     <div className="flex justify-between text-green-600 dark:text-green-400">
                       <span>Discount</span>
                       <span>
-                        -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency)}
+                        -
+                        {formatCurrencyWithSymbol(
+                          calculations.couponDiscount,
+                          displayCurrencySymbol,
+                        )}
                       </span>
                     </div>
                   )}
@@ -1692,8 +1894,11 @@ export default function PaymentDialog({
                       }`}
                     >
                       {calculations.isInclusive
-                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)})`
-                        : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)}
+                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)})`
+                        : formatCurrencyWithSymbol(
+                            calculations.taxAmount,
+                            displayCurrencySymbol,
+                          )}
                     </span>
                   </div>
                   {roundOffAmount !== 0 && (
@@ -1702,7 +1907,10 @@ export default function PaymentDialog({
                         Round Off
                       </span>
                       <span className="font-medium text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency)}
+                        {formatCurrencyWithSymbol(
+                          roundOffAmount,
+                          displayCurrencySymbol,
+                        )}
                       </span>
                     </div>
                   )}
@@ -1712,7 +1920,10 @@ export default function PaymentDialog({
                         Grand Total
                       </span>
                       <span className="text-lg font-bold text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
+                        {formatCurrencyWithSymbol(
+                          calculations.grandTotal,
+                          displayCurrencySymbol,
+                        )}
                       </span>
                     </div>
                   </div>
@@ -1724,7 +1935,10 @@ export default function PaymentDialog({
                           Total Paid
                         </span>
                         <span className="font-medium text-beveren-600 dark:text-blue-400">
-                          {formatCurrencyWithSymbol(totalPaidAmount, invoiceData?.currency)}
+                          {formatCurrencyWithSymbol(
+                            totalPaidAmount,
+                            displayCurrencySymbol,
+                          )}
                         </span>
                       </div>
                       <div className="flex justify-between">
@@ -1732,7 +1946,10 @@ export default function PaymentDialog({
                           Outstanding
                         </span>
                         <span className="font-medium text-red-600 dark:text-red-400">
-                          {formatCurrencyWithSymbol(outstandingAmount, invoiceData?.currency)}
+                          {formatCurrencyWithSymbol(
+                            outstandingAmount,
+                            displayCurrencySymbol,
+                          )}
                         </span>
                       </div>
                       {totalPaidAmount > calculations.grandTotal && (
@@ -1742,8 +1959,11 @@ export default function PaymentDialog({
                           </span>
                           <span className="font-medium text-beveren-600 dark:text-beveren-400">
                             {formatCurrencyWithSymbol(
-                              subtractCurrency(totalPaidAmount, calculations.grandTotal),
-                              invoiceData?.currency
+                              subtractCurrency(
+                                totalPaidAmount,
+                                calculations.grandTotal,
+                              ),
+                              displayCurrencySymbol,
                             )}
                           </span>
                         </div>
@@ -1757,7 +1977,10 @@ export default function PaymentDialog({
                         Outstanding Amount
                       </span>
                       <span className="font-medium text-orange-600 dark:text-orange-400">
-                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
+                        {formatCurrencyWithSymbol(
+                          calculations.grandTotal,
+                          displayCurrencySymbol,
+                        )}
                       </span>
                     </div>
                   )}
@@ -1874,7 +2097,11 @@ export default function PaymentDialog({
                 onClick={() =>
                   setSharingMode(sharingMode === "whatsapp" ? null : "whatsapp")
                 }
-                style={{ display: posDetails?.custom_enable_whatsapp ? 'block' : 'none' }}
+                style={{
+                  display: posDetails?.custom_enable_whatsapp
+                    ? "block"
+                    : "none",
+                }}
               >
                 <MessageCirclePlus size={20} />
               </button>
@@ -1889,7 +2116,9 @@ export default function PaymentDialog({
                 onClick={() =>
                   setSharingMode(sharingMode === "sms" ? null : "sms")
                 }
-                style={{ display: posDetails?.custom_enable_sms ? 'block' : 'none' }}
+                style={{
+                  display: posDetails?.custom_enable_sms ? "block" : "none",
+                }}
               >
                 <MessageSquarePlus size={20} />
               </button>
@@ -1981,10 +2210,10 @@ export default function PaymentDialog({
                           className="text-sm text-beveren-600 hover:text-beveren-700 dark:text-beveren-400 dark:hover:text-beveren-300 font-medium"
                         >
                           {isEditingEmail ? (
-      <Check className="w-4 h-4" />
-    ) : (
-      <Pencil className="w-4 h-4" />
-    )}
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <Pencil className="w-4 h-4" />
+                          )}
                         </button>
                       </div>
 
@@ -1997,20 +2226,32 @@ export default function PaymentDialog({
                             {isLoadingEmailTemplates ? (
                               <div className="flex items-center justify-center p-4">
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                <span className="text-sm text-gray-500">Loading templates...</span>
+                                <span className="text-sm text-gray-500">
+                                  Loading templates...
+                                </span>
                               </div>
                             ) : (
                               <select
                                 value={selectedEmailTemplate?.name || ""}
-                                onChange={(e) => handleEmailTemplateChange(e.target.value)}
+                                onChange={(e) =>
+                                  handleEmailTemplateChange(e.target.value)
+                                }
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                               >
-                                <option value="">Select a template (optional)</option>
+                                <option value="">
+                                  Select a template (optional)
+                                </option>
                                 {emailTemplates.map((template) => {
-                                  const isDefault = posDetails?.custom_email_template === template.name;
+                                  const isDefault =
+                                    posDetails?.custom_email_template ===
+                                    template.name;
                                   return (
-                                    <option key={template.name} value={template.name}>
-                                      {template.name}{isDefault ? ' [Default]' : ''}
+                                    <option
+                                      key={template.name}
+                                      value={template.name}
+                                    >
+                                      {template.name}
+                                      {isDefault ? " [Default]" : ""}
                                     </option>
                                   );
                                 })}
@@ -2040,7 +2281,9 @@ export default function PaymentDialog({
                         <div className="text-sm text-gray-900 dark:text-white">
                           <div
                             className="whitespace-pre-wrap"
-                            dangerouslySetInnerHTML={{ __html: getProcessedEmailMessage() }}
+                            dangerouslySetInnerHTML={{
+                              __html: getProcessedEmailMessage(),
+                            }}
                           />
                         </div>
                       </div>
@@ -2053,14 +2296,17 @@ export default function PaymentDialog({
                           await sendEmails({
                             email: sharingData.email,
                             customer_name: sharingData.name,
-                            invoice_data: invoiceData?.name || '',
+                            invoice_data: invoiceData?.name || "",
                             message: getProcessedEmailMessage(),
                           });
                           toast.success("Email sent successfully!");
                           setSharingMode(null);
                           //eslint-disable-next-line @typescript-eslint/no-explicit-any
                         } catch (error: any) {
-                          const userFriendlyError = getUserFriendlyError(error.message, 'email');
+                          const userFriendlyError = getUserFriendlyError(
+                            error.message,
+                            "email",
+                          );
                           toast.error(userFriendlyError);
                         } finally {
                           setIsSendingEmail(false);
@@ -2117,14 +2363,16 @@ export default function PaymentDialog({
                         </label>
                         <button
                           type="button"
-                          onClick={() => setIsEditingWhatsapp(!isEditingWhatsapp)}
+                          onClick={() =>
+                            setIsEditingWhatsapp(!isEditingWhatsapp)
+                          }
                           className="text-sm text-beveren-600 hover:text-beveren-700 dark:text-beveren-400 dark:hover:text-beveren-300 font-medium"
                         >
                           {isEditingWhatsapp ? (
-      <Check className="w-4 h-4" />
-    ) : (
-      <Pencil className="w-4 h-4" />
-    )}
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <Pencil className="w-4 h-4" />
+                          )}
                         </button>
                       </div>
 
@@ -2137,20 +2385,33 @@ export default function PaymentDialog({
                             {isLoadingTemplates ? (
                               <div className="flex items-center justify-center p-4">
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                <span className="text-sm text-gray-500">Loading templates...</span>
+                                <span className="text-sm text-gray-500">
+                                  Loading templates...
+                                </span>
                               </div>
                             ) : (
                               <select
                                 value={selectedTemplate?.name || ""}
-                                onChange={(e) => handleTemplateChange(e.target.value)}
+                                onChange={(e) =>
+                                  handleTemplateChange(e.target.value)
+                                }
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                               >
-                                <option value="">Select a template (optional)</option>
+                                <option value="">
+                                  Select a template (optional)
+                                </option>
                                 {whatsappTemplates.map((template) => {
-                                  const isDefault = posDetails?.custom_whatsap_template === template.name;
+                                  const isDefault =
+                                    posDetails?.custom_whatsap_template ===
+                                    template.name;
                                   return (
-                                    <option key={template.name} value={template.name}>
-                                      {template.template_name} - {template.category} ({template.status}){isDefault ? ' [Default]' : ''}
+                                    <option
+                                      key={template.name}
+                                      value={template.name}
+                                    >
+                                      {template.template_name} -{" "}
+                                      {template.category} ({template.status})
+                                      {isDefault ? " [Default]" : ""}
                                     </option>
                                   );
                                 })}
@@ -2188,14 +2449,17 @@ export default function PaymentDialog({
                           await sendWhatsAppMessage({
                             mobile_no: sharingData.phone,
                             customer_name: sharingData.name,
-                            invoice_data: invoiceData?.name || '',
+                            invoice_data: invoiceData?.name || "",
                             message: getProcessedMessage(),
                           });
                           toast.success("Whatsap message sent successfully!");
                           setSharingMode(null);
                           //eslint-disable-next-line @typescript-eslint/no-explicit-any
                         } catch (error: any) {
-                          const userFriendlyError = getUserFriendlyError(error.message, 'whatsapp');
+                          const userFriendlyError = getUserFriendlyError(
+                            error.message,
+                            "whatsapp",
+                          );
                           toast.error(userFriendlyError);
                         } finally {
                           setIsSendingWhatsapp(false);
@@ -2259,7 +2523,10 @@ export default function PaymentDialog({
                           </p>
                           <p className="mt-1">
                             Invoice Total:{" "}
-                            {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
+                            {formatCurrencyWithSymbol(
+                              calculations.grandTotal,
+                              displayCurrencySymbol,
+                            )}
                           </p>
                           <p className="mt-1">Thank you!</p>
                         </div>
@@ -2271,13 +2538,16 @@ export default function PaymentDialog({
                           await sendSMSMessage({
                             mobile_no: sharingData.phone,
                             customer_name: sharingData.name,
-                            message: `Thank you for your purchase at KLiK PoS.\nInvoice Total: ${formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}\nThank you!`
+                            message: `Thank you for your purchase at KLiK PoS.\nInvoice Total: ${formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}\nThank you!`,
                           });
                           toast.success("SMS sent successfully!");
                           setSharingMode(null);
                           //eslint-disable-next-line @typescript-eslint/no-explicit-any
                         } catch (error: any) {
-                          const userFriendlyError = getUserFriendlyError(error.message, 'sms');
+                          const userFriendlyError = getUserFriendlyError(
+                            error.message,
+                            "sms",
+                          );
                           toast.error(userFriendlyError);
                         }
                       }}
@@ -2331,7 +2601,9 @@ export default function PaymentDialog({
                             <div className="flex space-x-1">
                               <button
                                 onClick={() => handleAutoFillPayment(method.id)}
-                                disabled={invoiceSubmitted || isProcessingPayment}
+                                disabled={
+                                  invoiceSubmitted || isProcessingPayment
+                                }
                                 className={`p-1 rounded text-xs ${
                                   invoiceSubmitted || isProcessingPayment
                                     ? "cursor-not-allowed opacity-50"
@@ -2354,7 +2626,7 @@ export default function PaymentDialog({
                                 inputValue === "" ? 0 : parseFloat(inputValue);
                               handleManualAmountChange(
                                 method.id,
-                                isNaN(numValue) ? "0" : numValue.toString()
+                                isNaN(numValue) ? "0" : numValue.toString(),
                               );
                             }}
                             onBlur={(e) => {
@@ -2362,9 +2634,12 @@ export default function PaymentDialog({
                               const numValue = parseFloat(e.target.value);
                               if (!isNaN(numValue)) {
                                 const formatted = parseFloat(
-                                  numValue.toFixed(2)
+                                  numValue.toFixed(2),
                                 );
-                                handleManualAmountChange(method.id, formatted.toString());
+                                handleManualAmountChange(
+                                  method.id,
+                                  formatted.toString(),
+                                );
                               }
                             }}
                             placeholder="0.00"
@@ -2462,16 +2737,20 @@ export default function PaymentDialog({
                         }`}
                       >
                         {calculations.isInclusive
-                          ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)})`
-                          : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)}
+                          ? `(${formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)})`
+                          : formatCurrencyWithSymbol(
+                              calculations.taxAmount,
+                              displayCurrencySymbol,
+                            )}
                       </div>
                     </div>
                     <div className="md:col-span-2">
                       {isWalkinCustomer && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            {invoiceSubmitted ? 'Customer Tax ID' : 'Customer Tax ID (optional)'}
-
+                            {invoiceSubmitted
+                              ? "Customer Tax ID"
+                              : "Customer Tax ID (optional)"}
                           </label>
                           <input
                             type="text"
@@ -2559,7 +2838,7 @@ export default function PaymentDialog({
                             value={salespersonPin}
                             onChange={(e) => {
                               setSalespersonPin(
-                                e.target.value.replace(/\D/g, "").slice(0, 4)
+                                e.target.value.replace(/\D/g, "").slice(0, 4),
                               );
                               setSalespersonPinError("");
                             }}
@@ -2643,7 +2922,11 @@ export default function PaymentDialog({
                             onChange={(e) =>
                               handleRoundOffChange(e.target.value)
                             }
-                            disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled}
+                            disabled={
+                              invoiceSubmitted ||
+                              isProcessingPayment ||
+                              !roundOffEnabled
+                            }
                             placeholder="-0.00"
                             className={`flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
                               invoiceSubmitted || isProcessingPayment
@@ -2653,9 +2936,15 @@ export default function PaymentDialog({
                           />
                           <button
                             onClick={handleRoundOff}
-                            disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled}
+                            disabled={
+                              invoiceSubmitted ||
+                              isProcessingPayment ||
+                              !roundOffEnabled
+                            }
                             className={`px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors ${
-                              invoiceSubmitted || isProcessingPayment || !roundOffEnabled
+                              invoiceSubmitted ||
+                              isProcessingPayment ||
+                              !roundOffEnabled
                                 ? "cursor-not-allowed opacity-50"
                                 : ""
                             }`}
@@ -2673,14 +2962,21 @@ export default function PaymentDialog({
                           Subtotal
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white">
-                          {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency)}
+                          {formatCurrencyWithSymbol(
+                            calculations.subtotal,
+                            displayCurrencySymbol,
+                          )}
                         </span>
                       </div>
                       {calculations.couponDiscount > 0 && (
                         <div className="flex justify-between text-green-600 dark:text-green-400">
                           <span>Coupon Discount</span>
                           <span>
-                            -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency)}
+                            -
+                            {formatCurrencyWithSymbol(
+                              calculations.couponDiscount,
+                              displayCurrencySymbol,
+                            )}
                           </span>
                         </div>
                       )}
@@ -2697,8 +2993,11 @@ export default function PaymentDialog({
                           }`}
                         >
                           {calculations.isInclusive
-                            ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)})`
-                            : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)}
+                            ? `(${formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)})`
+                            : formatCurrencyWithSymbol(
+                                calculations.taxAmount,
+                                displayCurrencySymbol,
+                              )}
                         </span>
                       </div>
                       {roundOffAmount !== 0 && (
@@ -2707,7 +3006,10 @@ export default function PaymentDialog({
                             Round Off
                           </span>
                           <span className="font-medium text-gray-900 dark:text-white">
-                            {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency)}
+                            {formatCurrencyWithSymbol(
+                              roundOffAmount,
+                              displayCurrencySymbol,
+                            )}
                           </span>
                         </div>
                       )}
@@ -2717,7 +3019,10 @@ export default function PaymentDialog({
                             Grand Total
                           </span>
                           <span className="text-xl font-bold text-gray-900 dark:text-white">
-                            {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
+                            {formatCurrencyWithSymbol(
+                              calculations.grandTotal,
+                              displayCurrencySymbol,
+                            )}
                           </span>
                         </div>
                       </div>
@@ -2729,7 +3034,10 @@ export default function PaymentDialog({
                               Total Paid
                             </span>
                             <span className="font-medium text-blue-600 dark:text-blue-400">
-                              {formatCurrencyWithSymbol(totalPaidAmount, invoiceData?.currency)}
+                              {formatCurrencyWithSymbol(
+                                totalPaidAmount,
+                                displayCurrencySymbol,
+                              )}
                             </span>
                           </div>
                           <div className="flex justify-between">
@@ -2743,7 +3051,10 @@ export default function PaymentDialog({
                                   : "text-green-600 dark:text-green-400"
                               }`}
                             >
-                              {formatCurrencyWithSymbol(outstandingAmount, invoiceData?.currency)}
+                              {formatCurrencyWithSymbol(
+                                outstandingAmount,
+                                displayCurrencySymbol,
+                              )}
                             </span>
                           </div>
                           {totalPaidAmount > calculations.grandTotal && (
@@ -2753,9 +3064,11 @@ export default function PaymentDialog({
                               </span>
                               <span className="font-bold text-green-600 dark:text-green-400">
                                 {formatCurrencyWithSymbol(
-                                  subtractCurrency(totalPaidAmount, calculations.grandTotal),
-                                  invoiceData?.currency
-
+                                  subtractCurrency(
+                                    totalPaidAmount,
+                                    calculations.grandTotal,
+                                  ),
+                                  displayCurrencySymbol,
                                 )}
                               </span>
                             </div>
@@ -2825,11 +3138,18 @@ export default function PaymentDialog({
                             {item.name}
                           </p>
                           <p className="text-gray-600 dark:text-gray-400">
-                            {item.quantity} x {formatCurrencyWithSymbol(item.price, invoiceData?.currency)}
+                            {item.quantity} x{" "}
+                            {formatCurrencyWithSymbol(
+                              item.price,
+                              displayCurrencySymbol,
+                            )}
                           </p>
                         </div>
                         <p className="font-medium text-gray-900 dark:text-white">
-                          {formatCurrencyWithSymbol(item.quantity * item.price, invoiceData?.currency)}
+                          {formatCurrencyWithSymbol(
+                            item.quantity * item.price,
+                            displayCurrencySymbol,
+                          )}
                         </p>
                       </div>
                     ))
@@ -2869,7 +3189,7 @@ export default function PaymentDialog({
                               {formatCurrencyWithSymbol(
                                 externalInvoiceData?.grand_total ||
                                   calculations.grandTotal,
-                                invoiceData?.currency
+                                displayCurrencySymbol,
                               )}
                             </span>
                           </div>
@@ -2894,14 +3214,21 @@ export default function PaymentDialog({
                       Subtotal
                     </span>
                     <span className="text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(calculations.subtotal, invoiceData?.currency)}
+                      {formatCurrencyWithSymbol(
+                        calculations.subtotal,
+                        displayCurrencySymbol,
+                      )}
                     </span>
                   </div>
                   {calculations.couponDiscount > 0 && (
                     <div className="flex justify-between text-green-600 dark:text-green-400">
                       <span>Discount</span>
                       <span>
-                        -{formatCurrencyWithSymbol(calculations.couponDiscount, invoiceData?.currency)}
+                        -
+                        {formatCurrencyWithSymbol(
+                          calculations.couponDiscount,
+                          displayCurrencySymbol,
+                        )}
                       </span>
                     </div>
                   )}
@@ -2918,8 +3245,11 @@ export default function PaymentDialog({
                       }`}
                     >
                       {calculations.isInclusive
-                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)})`
-                        : formatCurrencyWithSymbol(calculations.taxAmount, invoiceData?.currency)}
+                        ? `(${formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)})`
+                        : formatCurrencyWithSymbol(
+                            calculations.taxAmount,
+                            displayCurrencySymbol,
+                          )}
                     </span>
                   </div>
                   {roundOffAmount !== 0 && (
@@ -2928,7 +3258,10 @@ export default function PaymentDialog({
                         Round Off
                       </span>
                       <span className="text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(roundOffAmount, invoiceData?.currency)}
+                        {formatCurrencyWithSymbol(
+                          roundOffAmount,
+                          displayCurrencySymbol,
+                        )}
                       </span>
                     </div>
                   )}
@@ -2938,7 +3271,10 @@ export default function PaymentDialog({
                         Total
                       </span>
                       <span className="text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
+                        {formatCurrencyWithSymbol(
+                          calculations.grandTotal,
+                          displayCurrencySymbol,
+                        )}
                       </span>
                     </div>
                   </div>
@@ -2946,7 +3282,7 @@ export default function PaymentDialog({
                   {/* Payment Methods Used - Only show for B2C with actual amounts */}
                   {(isB2C || isB2B) &&
                     Object.entries(paymentAmounts).filter(
-                      ([, amount]) => amount > 0
+                      ([, amount]) => amount > 0,
                     ).length > 0 && (
                       <div className="border-t border-gray-200 dark:border-gray-600 pt-2 mt-2">
                         <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -2963,7 +3299,10 @@ export default function PaymentDialog({
                                 {method}
                               </span>
                               <span className="text-gray-900 dark:text-white">
-                                {formatCurrencyWithSymbol(amount, invoiceData?.currency)}
+                                {formatCurrencyWithSymbol(
+                                  amount,
+                                  displayCurrencySymbol,
+                                )}
                               </span>
                             </div>
                           ))}
@@ -2978,7 +3317,10 @@ export default function PaymentDialog({
                           Outstanding Amount:
                         </span>
                         <span className="text-orange-600 dark:text-orange-400 font-bold">
-                          {formatCurrencyWithSymbol(calculations.grandTotal, invoiceData?.currency)}
+                          {formatCurrencyWithSymbol(
+                            calculations.grandTotal,
+                            displayCurrencySymbol,
+                          )}
                         </span>
                       </div>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -3054,14 +3396,21 @@ export default function PaymentDialog({
                   >
                     <span>
                       {getSelectedDeliveryPersonnelName() || (
-                        <span className="text-gray-500 dark:text-gray-400">Select Delivery Personnel</span>
+                        <span className="text-gray-500 dark:text-gray-400">
+                          Select Delivery Personnel
+                        </span>
                       )}
                     </span>
-                    <ChevronDown size={16} className="text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2" />
+                    <ChevronDown
+                      size={16}
+                      className="text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2"
+                    />
                   </button>
                 </div>
               )}
-              <div className={`flex justify-end space-x-4 ${isDeliveryRequired ? '' : 'w-full'}`}>
+              <div
+                className={`flex justify-end space-x-4 ${isDeliveryRequired ? "" : "w-full"}`}
+              >
                 {invoiceSubmitted && (
                   <button
                     onClick={() => {
@@ -3105,14 +3454,21 @@ export default function PaymentDialog({
                   >
                     <span>
                       {getSelectedDeliveryPersonnelName() || (
-                        <span className="text-gray-500 dark:text-gray-400">Select Delivery Personnel</span>
+                        <span className="text-gray-500 dark:text-gray-400">
+                          Select Delivery Personnel
+                        </span>
                       )}
                     </span>
-                    <ChevronDown size={16} className="text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2" />
+                    <ChevronDown
+                      size={16}
+                      className="text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2"
+                    />
                   </button>
                 </div>
               )}
-              <div className={`flex justify-end space-x-4 ${isDeliveryRequired ? '' : 'w-full'}`}>
+              <div
+                className={`flex justify-end space-x-4 ${isDeliveryRequired ? "" : "w-full"}`}
+              >
                 <button
                   onClick={handleHoldOrder}
                   disabled={

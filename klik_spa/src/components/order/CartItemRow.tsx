@@ -296,13 +296,12 @@ export const CartItemRow = ({
   const handleRateChange = (value: number) => {
     const rate = value || 0;
     onCustomRateChange(item, rate);
+    onDiscountChange(item.id, "discountAmount", 0);
+
     const diff = item.price - rate;
     if (diff > 0) {
-      const amt = parseFloat(diff.toFixed(2));
-      onDiscountChange(item.id, "discountAmount", amt);
       setLocalDiscountPct(item.price > 0 ? parseFloat(((diff / item.price) * 100).toFixed(2)) : 0);
     } else {
-      onDiscountChange(item.id, "discountAmount", 0);
       setLocalDiscountPct(0);
     }
   };

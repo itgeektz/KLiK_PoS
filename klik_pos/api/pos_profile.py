@@ -198,6 +198,7 @@ def get_pos_details():
             "customer_group": customer_doc.customer_group,
             "default_currency": customer_doc.default_currency,
             "is_walkin": getattr(customer_doc, "custom_is_walkin", 0),
+            "tax_id": customer_doc.tax_id,
         }
 
     details = {

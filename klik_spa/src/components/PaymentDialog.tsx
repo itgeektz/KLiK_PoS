@@ -303,7 +303,6 @@ export default function PaymentDialog({
   ]);
 
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
-  const isWalkinCustomer = selectedCustomer?.is_walkin === 1;
 
   // Device ID helper (persisted per browser)
   const getDeviceId = () => {
@@ -1780,7 +1779,7 @@ export default function PaymentDialog({
                 <div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* <div>
-                      {isWalkinCustomer && (
+                      {selectedCustomer?.is_walkin === 1 && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             {invoiceSubmitted ? 'Customer Tax ID' : 'Customer Tax ID (optional)'}
@@ -2699,6 +2698,34 @@ export default function PaymentDialog({
                     Tax Configuration
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      {selectedCustomer?.is_walkin === 1 && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            {invoiceSubmitted
+                              ? "Customer Tax ID"
+                              : "Customer Tax ID (optional)"}
+                          </label>
+                          <input
+                            type="text"
+                            value={taxPin}
+                            onChange={(e) =>
+                              setTaxPin(e.target.value.toUpperCase())
+                            }
+                            onBlur={() =>
+                              setTaxPin((v) => v.trim().toUpperCase())
+                            }
+                            placeholder="A123456789P"
+                            disabled={invoiceSubmitted || isProcessingPayment}
+                            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white uppercase tracking-widest ${
+                              invoiceSubmitted || isProcessingPayment
+                                ? "cursor-not-allowed opacity-50"
+                                : ""
+                            }`}
+                          />
+                        </div>
+                      )}
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Sales & Tax Charges
@@ -2739,34 +2766,6 @@ export default function PaymentDialog({
                               displayCurrencySymbol,
                             )}
                       </div>
-                    </div>
-                    <div className="md:col-span-2">
-                      {isWalkinCustomer && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            {invoiceSubmitted
-                              ? "Customer Tax ID"
-                              : "Customer Tax ID (optional)"}
-                          </label>
-                          <input
-                            type="text"
-                            value={taxPin}
-                            onChange={(e) =>
-                              setTaxPin(e.target.value.toUpperCase())
-                            }
-                            onBlur={() =>
-                              setTaxPin((v) => v.trim().toUpperCase())
-                            }
-                            placeholder="A123456789P"
-                            disabled={invoiceSubmitted || isProcessingPayment}
-                            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white uppercase tracking-widest ${
-                              invoiceSubmitted || isProcessingPayment
-                                ? "cursor-not-allowed opacity-50"
-                                : ""
-                            }`}
-                          />
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>

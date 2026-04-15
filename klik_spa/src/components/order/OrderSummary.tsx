@@ -374,6 +374,7 @@ export default function OrderSummary({
           tags: [],
           status: "active",
           is_walkin: 0,
+          taxId: newCustomer.taxId,
           createdAt: new Date().toISOString(),
         };
         setSelectedCustomer(customerToSelect);
@@ -415,6 +416,8 @@ export default function OrderSummary({
             notes: "",
             tags: [],
             status: "active",
+            is_walkin: defaultCustomer.is_walkin,
+            taxId: defaultCustomer.tax_id,
             createdAt: new Date().toISOString(),
             defaultCurrency: defaultCustomer.default_currency || undefined,
           };

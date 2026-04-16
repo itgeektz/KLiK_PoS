@@ -459,8 +459,8 @@ def get_price_list_with_customer_priority(customer=None):
         if customer:
             customer_sql = """
                 SELECT default_price_list, customer_group
-                FROM `tabCustomer`
-                WHERE name = %s
+                FROM `tabCustomer` c
+                WHERE c.name = %s
             """
             customer_sql = apply_sql_permissions(customer_sql)
 
@@ -476,8 +476,8 @@ def get_price_list_with_customer_priority(customer=None):
             if res and len(res[0]) > 1 and res[0][1]:
                 customer_group_sql = """
                     SELECT default_price_list
-                    FROM `tabCustomer Group`
-                    WHERE name = %s
+                    FROM `tabCustomer Group` cg
+                    WHERE cg.name = %s
                 """
                 customer_group_sql = apply_sql_permissions(customer_group_sql)
                 customer_group_res = frappe.db.sql(
@@ -496,7 +496,7 @@ def get_price_list_with_customer_priority(customer=None):
         # Selling Settings fallback
         selling_settings_sql = """
             SELECT selling_price_list
-            FROM `tabSelling Settings`
+            FROM `tabSelling Settings` ss
             LIMIT 1
         """
         selling_settings_sql = apply_sql_permissions(selling_settings_sql)

@@ -233,6 +233,7 @@ export default function PaymentDialog({
   const clearOrderState = () => {
     clearDraftInvoiceCache();
     clearCart();
+    window.location.reload();
   };
 
   // Determine if this is B2B business type
@@ -339,10 +340,18 @@ export default function PaymentDialog({
     })();
   }, [isOpen, requiresSalespersonPin]);
 
+  useEffect(() => {
+    if (isOpen && !dueDate) {
+      const today = new Date().toISOString().split("T")[0];
+      setDueDate(today);
+    }
+  }, [isOpen, dueDate]);
+
   // Reset Tax PIN when dialog opens for a new transaction
   useEffect(() => {
     if (isOpen) setTaxPin("");
   }, [isOpen]);
+  
 
   const handleVerifyPin = async () => {
     const pin = salespersonPin.trim();
@@ -1425,7 +1434,7 @@ export default function PaymentDialog({
       return nextValue;
     });
   };
-
+  
   if (isMobile) {
     // Mobile view remains mostly the same, just update the button text and validation
     return (

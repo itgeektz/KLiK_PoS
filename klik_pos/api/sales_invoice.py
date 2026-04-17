@@ -1096,7 +1096,6 @@ def queue_sales_invoice(data):
 		return {
 			"success": True,
 			"queue_status": doc.custom_queue_status,
-			"queue_job_id": job_id,
 			"invoice_name": doc.name,
 			"invoice_id": doc.name,
 			"invoice": {
@@ -1190,7 +1189,7 @@ def retry_failed_sales_invoice(invoice_name):
 		_update_queue_fields(doc, QUEUE_STATUSES["queued"], error_message="")
 		doc.save(ignore_permissions=True)
 
-		job_id = frappe.enqueue(
+		frappe.enqueue(
 			"klik_pos.api.sales_invoice.process_queued_sales_invoice",
 			queue="long",
 			enqueue_after_commit=True,
@@ -1199,7 +1198,7 @@ def retry_failed_sales_invoice(invoice_name):
 		)
 		doc.save(ignore_permissions=True)
 
-		return {"success": True, "queue_status": doc.custom_queue_status, "queue_job_id": job_id}
+		return {"success": True, "queue_status": doc.custom_queue_status}
 
 	except Exception as e:
 		return {"success": False, "message": str(e)}
@@ -2287,6 +2286,7 @@ class CustomSalesInvoice(SalesInvoice):
 
 	def before_submit(self):
 		if _should_reserve_stock(self):
+			_update_queue_fields(self, QUEUE_STATUSES["submitted"], error_message=None)
 			_cancel_sales_invoice_reservations(self.name)
 		self.validate_reserved_stock_availability()
 		self.validate_full_payment()

@@ -341,12 +341,10 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 		)
 
 
-def _update_queue_fields(doc, status, error_message=None, job_id=None, attempts=None):
+def _update_queue_fields(doc, status, error_message=None, attempts=None):
 	doc.custom_queue_status = _coerce_queue_status(status)
 	if hasattr(doc, "custom_queue_error"):
 		doc.custom_queue_error = _truncate_queue_error(error_message) if error_message else ""
-	if hasattr(doc, "custom_queue_job_id") and job_id is not None:
-		doc.custom_queue_job_id = job_id
 	if hasattr(doc, "custom_queue_attempts") and attempts is not None:
 		doc.custom_queue_attempts = attempts
 	if hasattr(doc, "custom_queue_last_attempt_at") and status == QUEUE_STATUSES["processing"]:
@@ -412,8 +410,6 @@ def _mark_invoice_queued(doc, requested_by=None):
 	_update_queue_fields(doc, QUEUE_STATUSES["queued"], attempts=0)
 	if hasattr(doc, "custom_queue_error"):
 		doc.custom_queue_error = ""
-	if hasattr(doc, "custom_queue_job_id"):
-		doc.custom_queue_job_id = ""
 	if hasattr(doc, "custom_queue_last_attempt_at"):
 		doc.custom_queue_last_attempt_at = None
 	if requested_by and hasattr(doc, "owner"):
@@ -619,7 +615,6 @@ def _build_filters_and_fields(skip_opening_entry_filter=False, cashier_user_ids=
 		"total_taxes_and_charges",
 		"custom_pos_opening_entry",
 		"custom_queue_status",
-		"custom_queue_job_id",
 		"custom_queue_error",
 		"custom_queue_attempts",
 		"custom_queue_last_attempt_at",
@@ -1084,7 +1079,7 @@ def queue_sales_invoice(data):
 			doc.save(ignore_permissions=True)
 			return {"success": False, "message": str(reserve_error)}
 
-		job_id = frappe.enqueue(
+		frappe.enqueue(
 			"klik_pos.api.sales_invoice.process_queued_sales_invoice",
 			queue="long",
 			enqueue_after_commit=True,
@@ -1092,9 +1087,7 @@ def queue_sales_invoice(data):
 			requested_by=frappe.session.user,
 		)
 
-		if job_id:
-			doc.custom_queue_job_id = job_id
-			doc.save(ignore_permissions=True)
+		doc.save(ignore_permissions=True)
 
 		processing_time = time.time() - start_time
 		frappe.logger().info(f"Invoice {doc.name} queued in {processing_time:.2f} seconds")
@@ -1135,7 +1128,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 	try:
 		doc = frappe.get_doc("Sales Invoice", invoice_name)
 		if doc.docstatus != 0:
-			_update_queue_fields(doc, QUEUE_STATUSES["submitted"], job_id=getattr(doc, "custom_queue_job_id", None))
+			_update_queue_fields(doc, QUEUE_STATUSES["submitted"], None)
 			doc.save(ignore_permissions=True)
 			return {"success": True, "message": "Invoice already submitted"}
 
@@ -1194,7 +1187,7 @@ def retry_failed_sales_invoice(invoice_name):
 		_validate_reserved_stock_for_items(doc, exclude_invoice=doc.name)
 		_reserve_stock_for_queued_invoice(doc)
 
-		_update_queue_fields(doc, QUEUE_STATUSES["queued"], error_message="", job_id="")
+		_update_queue_fields(doc, QUEUE_STATUSES["queued"], error_message="")
 		doc.save(ignore_permissions=True)
 
 		job_id = frappe.enqueue(
@@ -1204,9 +1197,7 @@ def retry_failed_sales_invoice(invoice_name):
 			invoice_name=doc.name,
 			requested_by=frappe.session.user,
 		)
-		if job_id:
-			doc.custom_queue_job_id = job_id
-			doc.save(ignore_permissions=True)
+		doc.save(ignore_permissions=True)
 
 		return {"success": True, "queue_status": doc.custom_queue_status, "queue_job_id": job_id}
 

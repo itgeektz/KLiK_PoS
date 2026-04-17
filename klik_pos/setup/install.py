@@ -35,3 +35,7 @@ def ensure_sales_invoice_reserve_stock_field():
         },
         ignore_validate=True,
     )
+
+def ensure_stock_reservation_is_enabled():
+    if not frappe.db.get_single_value("Stock Settings", "enable_stock_reservation"):
+        frappe.db.set_value("Stock Settings", None, "enable_stock_reservation", 1)

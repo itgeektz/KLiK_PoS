@@ -59,6 +59,7 @@ extend_doctype_class = {
 
 # Migration hooks
 before_migrate = [
+    "klik_pos.setup.install.ensure_stock_reservation_is_enabled",
     "klik_pos.setup.install.ensure_sales_invoice_reserve_stock_field",
     "klik_pos.setup.pos_opening_entry_links.ensure_pos_opening_entry_links"
 ]

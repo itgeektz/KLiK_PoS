@@ -63,6 +63,13 @@ before_migrate = [
     "klik_pos.setup.install.ensure_sales_invoice_reserve_stock_field",
     "klik_pos.setup.pos_opening_entry_links.ensure_pos_opening_entry_links"
 ]
+
+fixtures = [
+	{
+		"doctype": "Property Setter",
+		"filters": [[ "module", "=", "KLiK PoS", ]],
+	},
+]
 # Includes in <head>
 # ------------------
 

@@ -115,44 +115,6 @@ def _get_sales_invoice_reservation_map(invoice_name, item_codes=None, warehouse=
 	return {(row.item_code, row.warehouse): flt(row.reserved_qty or 0) for row in rows}
 
 
-def _ensure_sre_supports_sales_invoice_voucher_type():
-	"""Ensure Stock Reservation Entry allows Sales Invoice as voucher_type."""
-	meta = frappe.get_meta("Stock Reservation Entry")
-	voucher_type_df = meta.get_field("voucher_type")
-	current_options = [opt.strip() for opt in (voucher_type_df.options or "").split("\n") if opt.strip()]
-
-	if "Sales Invoice" in current_options:
-		return
-
-	updated_options = "\n" + "\n".join(current_options + ["Sales Invoice"])
-	ps_name = frappe.db.exists(
-		"Property Setter",
-		{
-			"doc_type": "Stock Reservation Entry",
-			"field_name": "voucher_type",
-			"property": "options",
-		},
-	)
-
-	if ps_name:
-		frappe.db.set_value("Property Setter", ps_name, "value", updated_options)
-	else:
-		frappe.make_property_setter(
-			{
-				"doctype": "Stock Reservation Entry",
-				"doctype_or_field": "DocField",
-				"fieldname": "voucher_type",
-				"property": "options",
-				"property_type": "Text",
-				"value": updated_options,
-			},
-			ignore_validate=True,
-			validate_fields_for_doctype=False,
-		)
-
-	frappe.clear_cache(doctype="Stock Reservation Entry")
-
-
 def _cancel_sales_invoice_reservations(invoice_name):
 	"""Cancel active Stock Reservation Entries for a Sales Invoice."""
 	if not invoice_name:
@@ -182,7 +144,6 @@ def _reserve_stock_for_queued_invoice(doc):
 	if getattr(doc, "is_return", 0):
 		return
 
-	_ensure_sre_supports_sales_invoice_voucher_type()
 	_cancel_sales_invoice_reservations(doc.name)
 
 	item_codes = list({row.item_code for row in doc.items if row.item_code})

@@ -1,4 +1,5 @@
 import frappe
+from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 
 
 def before_install():
@@ -13,3 +14,24 @@ def before_install():
     for field_name in custom_fields_to_remove:
         if frappe.db.exists("Custom Field", field_name):
             frappe.delete_doc("Custom Field", field_name, ignore_permissions=True)
+
+
+def ensure_sales_invoice_reserve_stock_field():
+    """Create the custom reserve stock flag on Sales Invoice if it does not exist."""
+    if frappe.db.exists("Custom Field", "Sales Invoice-custom_reserve_stock"):
+        return
+
+    create_custom_field(
+        "Sales Invoice",
+        {
+            "fieldname": "custom_reserve_stock",
+            "label": "Reserve Stock",
+            "fieldtype": "Check",
+            "insert_after": "is_pos",
+            "default": "0",
+            "read_only": 1,
+            "hidden": 1,
+            "description": "Reserve stock using ERPNext Stock Reservation Entry while the invoice is queued or pending submission.",
+        },
+        ignore_validate=True,
+    )

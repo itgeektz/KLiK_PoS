@@ -116,6 +116,7 @@ export default function InvoiceHistoryPage() {
 
   const tabs = [
     { id: "all", name: "All Invoices", icon: FileText, color: "text-gray-600" },
+    { id: "queue_failed", name: "Failed Queue", icon: AlertTriangle, color: "text-rose-600" },
     { id: "Draft", name: "Draft", icon: FilePlus, color: "text-gray-500" },
     { id: "Unpaid", name: "Unpaid", icon: Clock, color: "text-yellow-600" },
     { id: "Partly Paid", name: "Partly Paid", icon: AlertTriangle, color: "text-orange-600" },
@@ -123,7 +124,6 @@ export default function InvoiceHistoryPage() {
     { id: "Overdue", name: "Overdue", icon: XCircle, color: "text-red-600" },
     { id: "Return", name: "Returns", icon: RefreshCw, color: "text-purple-600" },
     { id: "Cancelled", name: "Cancelled", icon: XCircle, color: "text-red-500" },
-    { id: "queue_failed", name: "Failed Queue", icon: AlertTriangle, color: "text-rose-600" },
   ];
 
   const filterInvoiceByDate = (invoiceDateStr: string) => {

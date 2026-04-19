@@ -4,7 +4,11 @@ from frappe.utils import flt
 
 from erpnext.stock.utils import get_stock_balance
 
-from klik_pos.api.sales_invoice import get_current_pos_opening_entry
+from klik_pos.api.sales_invoice import (
+    get_current_pos_opening_entry,
+    get_reserved_qty_for_item_warehouse,
+    get_reserved_stock_map,
+)
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
 from ..sql_builder import apply_sql_permissions
@@ -12,13 +16,32 @@ from ..sql_builder import apply_sql_permissions
 
 def fetch_item_balance(item_code, warehouse):
     try:
-        return flt(get_stock_balance(item_code, warehouse))
+        actual_qty = flt(get_stock_balance(item_code, warehouse))
+        reserved_qty = get_reserved_qty_for_item_warehouse(item_code, warehouse)
+        return flt(actual_qty - reserved_qty)
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
             f"Error fetching balance for {item_code}",
         )
         return 0.0
+
+
+def apply_queue_reservations_to_stock_map(stock_map, warehouse):
+    """Subtract queued invoice reservations from raw stock map values."""
+    if not stock_map or not warehouse:
+        return stock_map
+
+    reserved_map = get_reserved_stock_map(
+        item_codes=list(stock_map.keys()),
+        warehouse=warehouse,
+    )
+
+    for item_code in stock_map:
+        reserved_qty = flt(reserved_map.get((item_code, warehouse), 0))
+        stock_map[item_code] = flt(stock_map.get(item_code, 0) - reserved_qty)
+
+    return stock_map
 
 
 @frappe.whitelist(allow_guest=True)
@@ -207,6 +230,8 @@ def _fetch_batch_stock(item_codes, warehouse):
 
         for row in results:
             stock_map[row["item_code"]] = flt(row["actual_qty"])
+
+        apply_queue_reservations_to_stock_map(stock_map, warehouse)
 
     except Exception:
         frappe.log_error(

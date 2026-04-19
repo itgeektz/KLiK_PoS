@@ -15,6 +15,404 @@ _cached_company_data = {}
 _cached_customer_data = {}
 _cached_item_accounts = {}
 
+QUEUE_STATUSES = {
+	"queued": "Queued",
+	"processing": "Processing",
+	"failed": "Failed",
+	"submitted": "Submitted",
+}
+
+def _coerce_queue_status(status):
+	if not status:
+		return QUEUE_STATUSES["queued"]
+	if isinstance(status, str):
+		normalized = status.strip().lower()
+		return QUEUE_STATUSES.get(normalized, status)
+	return QUEUE_STATUSES["queued"]
+
+
+def _truncate_queue_error(error_message, max_length=900):
+	message = str(error_message or "").strip()
+	if len(message) <= max_length:
+		return message
+	return f"{message[:max_length].rstrip()}..."
+
+
+def get_reserved_stock_map(item_codes=None, warehouse=None, exclude_invoice=None):
+	"""Return reserved stock from Stock Reservation Entries keyed by (item_code, warehouse)."""
+	conditions = [
+		"sre.docstatus = 1",
+		"sre.delivered_qty < sre.reserved_qty",
+		"IFNULL(sre.item_code, '') != ''",
+		"IFNULL(sre.warehouse, '') != ''",
+	]
+	params = []
+
+	if item_codes:
+		item_placeholders = ", ".join(["%s"] * len(item_codes))
+		conditions.append(f"sre.item_code IN ({item_placeholders})")
+		params.extend(list(item_codes))
+
+	if warehouse:
+		conditions.append("sre.warehouse = %s")
+		params.append(warehouse)
+
+	if exclude_invoice:
+		conditions.append("NOT (sre.voucher_type = 'Sales Invoice' AND sre.voucher_no = %s)")
+		params.append(exclude_invoice)
+
+	query = f"""
+		SELECT
+			sre.item_code,
+			sre.warehouse,
+			SUM(COALESCE(sre.reserved_qty, 0) - COALESCE(sre.delivered_qty, 0) - COALESCE(sre.transferred_qty, 0) - COALESCE(sre.consumed_qty, 0)) AS reserved_qty
+		FROM `tabStock Reservation Entry` sre
+		WHERE {' AND '.join(conditions)}
+		GROUP BY sre.item_code, sre.warehouse
+	"""
+
+	rows = frappe.db.sql(query, tuple(params), as_dict=True)
+	reserved_map = {}
+	for row in rows:
+		reserved_map[(row.item_code, row.warehouse)] = flt(row.reserved_qty or 0)
+
+	return reserved_map
+
+
+def _get_sales_invoice_reservation_map(invoice_name, item_codes=None, warehouse=None):
+	"""Return reservation qty map for one Sales Invoice from Stock Reservation Entry."""
+	if not invoice_name:
+		return {}
+
+	conditions = [
+		"docstatus = 1",
+		"voucher_type = 'Sales Invoice'",
+		"voucher_no = %s",
+		"delivered_qty < reserved_qty",
+	]
+	params = [invoice_name]
+
+	if item_codes:
+		placeholders = ", ".join(["%s"] * len(item_codes))
+		conditions.append(f"item_code IN ({placeholders})")
+		params.extend(list(item_codes))
+
+	if warehouse:
+		conditions.append("warehouse = %s")
+		params.append(warehouse)
+
+	query = f"""
+		SELECT
+			item_code,
+			warehouse,
+			SUM(COALESCE(reserved_qty, 0) - COALESCE(delivered_qty, 0) - COALESCE(transferred_qty, 0) - COALESCE(consumed_qty, 0)) AS reserved_qty
+		FROM `tabStock Reservation Entry`
+		WHERE {' AND '.join(conditions)}
+		GROUP BY item_code, warehouse
+	"""
+
+	rows = frappe.db.sql(query, tuple(params), as_dict=True)
+	return {(row.item_code, row.warehouse): flt(row.reserved_qty or 0) for row in rows}
+
+
+def _cancel_sales_invoice_reservations(invoice_name):
+	"""Cancel active Stock Reservation Entries for a Sales Invoice."""
+	if not invoice_name:
+		return
+
+	from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+		cancel_stock_reservation_entries,
+	)
+
+	cancel_stock_reservation_entries(
+		voucher_type="Sales Invoice",
+		voucher_no=invoice_name,
+		notify=False,
+	)
+
+
+def _should_reserve_stock(doc):
+	return bool(getattr(doc, "custom_reserve_stock", 0))
+
+
+def _reserve_stock_for_queued_invoice(doc):
+	"""Create Stock Reservation Entry rows for queued Sales Invoice draft rows."""
+	if not doc or doc.doctype != "Sales Invoice" or doc.docstatus != 0:
+		return
+	if not _should_reserve_stock(doc):
+		return
+	if getattr(doc, "is_return", 0):
+		return
+
+	_cancel_sales_invoice_reservations(doc.name)
+
+	item_codes = list({row.item_code for row in doc.items if row.item_code})
+	item_meta_map = {}
+	if item_codes:
+		item_meta_map = {
+			row.name: row
+			for row in frappe.get_all(
+				"Item",
+				filters={"name": ["in", item_codes]},
+				fields=["name", "is_stock_item", "has_serial_no", "has_batch_no", "stock_uom"],
+			)
+		}
+
+	for row in doc.items:
+		if not row.item_code or not row.warehouse:
+			continue
+
+		item_meta = item_meta_map.get(row.item_code)
+		if not item_meta or not int(item_meta.is_stock_item or 0):
+			continue
+
+		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
+		if required_qty <= 0:
+			required_qty = flt(abs(getattr(row, "qty", 0) or 0))
+		if required_qty <= 0:
+			continue
+
+		actual_qty = flt(
+			frappe.db.get_value(
+				"Bin",
+				{"item_code": row.item_code, "warehouse": row.warehouse},
+				"actual_qty",
+			)
+			or 0
+		)
+		reserved_map = get_reserved_stock_map(
+			item_codes=[row.item_code],
+			warehouse=row.warehouse,
+			exclude_invoice=doc.name,
+		)
+		available_to_reserve = flt(actual_qty - reserved_map.get((row.item_code, row.warehouse), 0))
+
+		if required_qty > available_to_reserve + 1e-9:
+			frappe.throw(
+				_(
+					"Insufficient stock to reserve for item {0} in warehouse {1}. Required: {2}, Available to reserve: {3}."
+				).format(
+					frappe.bold(row.item_code),
+					frappe.bold(row.warehouse),
+					flt(required_qty),
+					flt(available_to_reserve),
+				)
+			)
+
+		sre = frappe.new_doc("Stock Reservation Entry")
+		sre.item_code = row.item_code
+		sre.warehouse = row.warehouse
+		sre.has_serial_no = int(item_meta.has_serial_no or 0)
+		sre.has_batch_no = int(item_meta.has_batch_no or 0)
+		sre.voucher_type = "Sales Invoice"
+		sre.voucher_no = doc.name
+		sre.voucher_detail_no = row.name
+		sre.available_qty = available_to_reserve
+		sre.voucher_qty = required_qty
+		sre.reserved_qty = required_qty
+		sre.company = doc.company
+		sre.stock_uom = row.stock_uom or item_meta.stock_uom
+		sre.project = doc.project
+		sre.save(ignore_permissions=True)
+		sre.submit()
+
+
+def get_reserved_qty_for_item_warehouse(item_code, warehouse, exclude_invoice=None):
+	reserved_map = get_reserved_stock_map(
+		item_codes=[item_code],
+		warehouse=warehouse,
+		exclude_invoice=exclude_invoice,
+	)
+	return flt(reserved_map.get((item_code, warehouse), 0))
+
+
+def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
+	"""Validate stock considering quantities reserved via Stock Reservation Entry."""
+	if not _should_reserve_stock(doc):
+		return
+	if not getattr(doc, "items", None):
+		return
+
+	required_qty_map = {}
+	item_codes = set()
+	warehouses = set()
+
+	for row in doc.items:
+		if not row.item_code or not row.warehouse:
+			continue
+		if hasattr(row, "is_stock_item") and int(row.is_stock_item or 0) == 0:
+			continue
+
+		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
+		if required_qty <= 0:
+			required_qty = flt(abs(getattr(row, "qty", 0) or 0))
+		if required_qty <= 0:
+			continue
+
+		key = (row.item_code, row.warehouse)
+		required_qty_map[key] = flt(required_qty_map.get(key, 0) + required_qty)
+		item_codes.add(row.item_code)
+		warehouses.add(row.warehouse)
+
+	if not required_qty_map:
+		return
+
+	bins = frappe.get_all(
+		"Bin",
+		filters={"item_code": ["in", list(item_codes)], "warehouse": ["in", list(warehouses)]},
+		fields=["item_code", "warehouse", "actual_qty"],
+	)
+	actual_qty_map = {(row.item_code, row.warehouse): flt(row.actual_qty or 0) for row in bins}
+
+	reserved_map = get_reserved_stock_map(
+		item_codes=list(item_codes),
+		exclude_invoice=exclude_invoice,
+	)
+
+	insufficient = []
+	for key, required_qty in required_qty_map.items():
+		actual_qty = flt(actual_qty_map.get(key, 0))
+		reserved_qty = flt(reserved_map.get(key, 0))
+		available_qty = flt(actual_qty - reserved_qty)
+
+		if required_qty > available_qty + 1e-9:
+			insufficient.append(
+				{
+					"item_code": key[0],
+					"warehouse": key[1],
+					"required_qty": required_qty,
+					"available_qty": available_qty,
+					"actual_qty": actual_qty,
+					"reserved_qty": reserved_qty,
+				}
+			)
+
+	if insufficient:
+		first = insufficient[0]
+		frappe.throw(
+			_(
+				"Insufficient stock for item {0} in warehouse {1}. Required: {2}, Available (after stock reservations): {3}, Reserved: {4}."
+			).format(
+				frappe.bold(first["item_code"]),
+				frappe.bold(first["warehouse"]),
+				flt(first["required_qty"]),
+				flt(first["available_qty"]),
+				flt(first["reserved_qty"]),
+			)
+		)
+
+
+def _update_queue_fields(doc, status, error_message=None, attempts=None):
+	doc.custom_queue_status = _coerce_queue_status(status)
+	if hasattr(doc, "custom_queue_error"):
+		doc.custom_queue_error = _truncate_queue_error(error_message) if error_message else ""
+	if hasattr(doc, "custom_queue_attempts") and attempts is not None:
+		doc.custom_queue_attempts = attempts
+	if hasattr(doc, "custom_queue_last_attempt_at") and status == QUEUE_STATUSES["processing"]:
+		doc.custom_queue_last_attempt_at = frappe.utils.now_datetime()
+
+
+def _get_queue_failure_recipients(requested_by=None):
+	recipients = set()
+	user_ids = []
+
+	if requested_by:
+		user_ids.append(requested_by)
+
+	manager_users = frappe.get_all(
+		"Has Role",
+		filters={"role": ["in", ["Sales Manager", "System Manager"]]},
+		pluck="parent",
+	)
+	user_ids.extend(manager_users or [])
+
+	for user_id in user_ids:
+		try:
+			user_doc = frappe.get_doc("User", user_id)
+			if user_doc.enabled and user_doc.email:
+				recipients.add(user_doc.email)
+		except Exception:
+			continue
+
+	return list(recipients)
+
+
+def _notify_queue_failure(invoice_doc, requested_by, error_message):
+	subject = f"POS invoice queue failed: {invoice_doc.name}"
+	body = (
+		f"Invoice <b>{invoice_doc.name}</b> failed in the background queue."
+		f"<br><br><b>Customer:</b> {invoice_doc.customer_name or invoice_doc.customer}"
+		f"<br><b>Error:</b> {_truncate_queue_error(error_message)}"
+	)
+
+	try:
+		notification = frappe.get_doc(
+			{
+				"doctype": "Notification Log",
+				"subject": subject,
+				"email_content": body,
+				"for_user": requested_by or frappe.session.user,
+				"type": "Alert",
+			}
+		)
+		notification.insert(ignore_permissions=True)
+	except Exception:
+		pass
+
+	recipients = _get_queue_failure_recipients(requested_by or frappe.session.user)
+	if recipients:
+		try:
+			frappe.sendmail(recipients=recipients, subject=subject, message=body)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Failed to send queue failure alert for {invoice_doc.name}")
+
+
+def _mark_invoice_queued(doc, requested_by=None):
+	_update_queue_fields(doc, QUEUE_STATUSES["queued"], attempts=0)
+	if hasattr(doc, "custom_queue_error"):
+		doc.custom_queue_error = ""
+	if hasattr(doc, "custom_queue_last_attempt_at"):
+		doc.custom_queue_last_attempt_at = None
+	if requested_by and hasattr(doc, "owner"):
+		doc.owner = requested_by
+
+
+def _finalize_submitted_invoice(doc, amount_paid, mode_of_payment, business_type, customer):
+	payment_entry = None
+	should_create_payment_entry = False
+
+	if business_type == "B2B":
+		should_create_payment_entry = True
+	elif business_type == "B2B & B2C":
+		global _cached_customer_data
+		if customer not in _cached_customer_data:
+			_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
+
+		customer_doc = _cached_customer_data[customer]
+		if customer_doc.customer_type == "Company":
+			should_create_payment_entry = True
+
+	if should_create_payment_entry and mode_of_payment and amount_paid > 0:
+		try:
+			payment_entry = create_payment_entry(doc, mode_of_payment, amount_paid)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Payment Entry Error for {doc.name}")
+			payment_entry = None
+
+	return payment_entry
+
+
+def _get_payment_methods_from_invoice(doc):
+	payment_methods = []
+	for payment in getattr(doc, "payments", []) or []:
+		payment_methods.append(
+			{
+				"method": payment.mode_of_payment,
+				"amount": flt(payment.amount or 0),
+			}
+		)
+	return payment_methods
+
 
 class PartialPaymentValidationError(ValidationError):
 	pass
@@ -177,6 +575,10 @@ def _build_filters_and_fields(skip_opening_entry_filter=False, cashier_user_ids=
 		"discount_amount",
 		"total_taxes_and_charges",
 		"custom_pos_opening_entry",
+		"custom_queue_status",
+		"custom_queue_error",
+		"custom_queue_attempts",
+		"custom_queue_last_attempt_at",
 		"pos_profile",
 		"currency",
 	]
@@ -417,7 +819,7 @@ def validate_checkout_invoice(data):
 		) = parse_invoice_data(data)
 
 		# Build-only validation (no insert/save/submit).
-		build_sales_invoice_doc(
+		preview_doc = build_sales_invoice_doc(
 			customer,
 			items,
 			amount_paid,
@@ -433,6 +835,9 @@ def validate_checkout_invoice(data):
 			tax_id=tax_id,
 			create_batch_and_serial_bundle=False,  # Skip bundle creation for faster validation; batch/serial will still be validated
 		)
+
+		# Validate against queued reservations to avoid overselling before queueing.
+		_validate_reserved_stock_for_items(preview_doc)
 
 		return {"success": True, "message": "Checkout validation passed"}
 
@@ -560,6 +965,11 @@ def _get_address_and_customer_info(invoice):
 
 @frappe.whitelist()
 def create_and_submit_invoice(data):
+	return queue_sales_invoice(data)
+
+
+@frappe.whitelist()
+def queue_sales_invoice(data):
 	try:
 		import time
 
@@ -612,49 +1022,41 @@ def create_and_submit_invoice(data):
 		doc.base_paid_amount = amount_paid
 		doc.paid_amount = amount_paid
 		doc.outstanding_amount = max(flt(doc.grand_total) - flt(amount_paid), 0)
+		doc.custom_reserve_stock = 1
 
-		# Save then submit; if submit fails (e.g. negative stock), delete the draft and return error
-		# (do not re-raise: Frappe would rollback the transaction and undo the delete)
+		_validate_reserved_stock_for_items(doc)
+
+		_mark_invoice_queued(doc, frappe.session.user)
 		doc.save(ignore_permissions=True)
 
 		# Persist `tax_id` directly to the database it's overwritten by save()
 		if tax_id:
 			doc.db_set("tax_id", tax_id)
+
 		try:
-			doc.submit()
-		except Exception as submit_err:
-			frappe.db.rollback()  # ← undo the save + partial submit atomically
-			frappe.log_error(frappe.get_traceback(), "Submit Invoice Error (e.g. negative stock)")
-			return {"success": False, "message": str(submit_err)}
+			_reserve_stock_for_queued_invoice(doc)
+		except Exception as reserve_error:
+			_update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(reserve_error))
+			doc.save(ignore_permissions=True)
+			return {"success": False, "message": str(reserve_error)}
 
-		payment_entry = None
-		should_create_payment_entry = False
+		frappe.enqueue(
+			"klik_pos.api.sales_invoice.process_queued_sales_invoice",
+			queue="long",
+			enqueue_after_commit=True,
+			invoice_name=doc.name,
+			requested_by=frappe.session.user,
+		)
 
-		if business_type == "B2B":
-			should_create_payment_entry = True
-		elif business_type == "B2B & B2C":
-			# For B2B & B2C, only create payment entry for company customers
-			global _cached_customer_data
-			if customer not in _cached_customer_data:
-				_cached_customer_data[customer] = frappe.get_doc("Customer", customer)
-
-			customer_doc = _cached_customer_data[customer]
-			if customer_doc.customer_type == "Company":
-				should_create_payment_entry = True
-
-		if should_create_payment_entry and mode_of_payment and amount_paid > 0:
-			try:
-				payment_entry = create_payment_entry(doc, mode_of_payment, amount_paid)
-			except Exception:
-				frappe.log_error(frappe.get_traceback(), f"Payment Entry Error for {doc.name}")
-				payment_entry = None
+		doc.save(ignore_permissions=True)
 
 		processing_time = time.time() - start_time
-		frappe.logger().info(f"Invoice {doc.name} processed in {processing_time:.2f} seconds")
+		frappe.logger().info(f"Invoice {doc.name} queued in {processing_time:.2f} seconds")
 
 		# Return minimal invoice data for frontend performance
 		return {
 			"success": True,
+			"queue_status": doc.custom_queue_status,
 			"invoice_name": doc.name,
 			"invoice_id": doc.name,
 			"invoice": {
@@ -671,12 +1073,95 @@ def create_and_submit_invoice(data):
 				"is_pos": doc.is_pos,
 				"company": doc.company,
 			},
-			"payment_entry": payment_entry.name if payment_entry else None,
+			"payment_entry": None,
 			"processing_time": round(processing_time, 2),
 		}
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Submit Invoice Error")
+		return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def process_queued_sales_invoice(invoice_name, requested_by=None):
+	"""Background worker that submits a queued draft sales invoice."""
+	try:
+		doc = frappe.get_doc("Sales Invoice", invoice_name)
+		if doc.docstatus != 0:
+			_update_queue_fields(doc, QUEUE_STATUSES["submitted"], None)
+			doc.save(ignore_permissions=True)
+			return {"success": True, "message": "Invoice already submitted"}
+
+		attempts = int(getattr(doc, "custom_queue_attempts", 0) or 0) + 1
+		_update_queue_fields(doc, QUEUE_STATUSES["processing"], attempts=attempts)
+		doc.save(ignore_permissions=True)
+		doc.submit()
+		doc.reload()
+		try:
+			_cancel_sales_invoice_reservations(doc.name)
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				f"Failed to cancel reservations after submit for {doc.name}",
+			)
+		_update_queue_fields(doc, QUEUE_STATUSES["submitted"], attempts=attempts)
+		if hasattr(doc, "custom_queue_error"):
+			doc.custom_queue_error = ""
+		doc.save(ignore_permissions=True)
+
+		_finalize_submitted_invoice(
+			doc,
+			flt(doc.paid_amount or 0),
+			_get_payment_methods_from_invoice(doc),
+			getattr(doc, "business_type", None),
+			doc.customer,
+		)
+
+		return {"success": True, "message": f"Invoice {invoice_name} submitted successfully"}
+
+	except Exception as e:
+		frappe.db.rollback()
+		try:
+			doc = frappe.get_doc("Sales Invoice", invoice_name)
+			attempts = int(getattr(doc, "custom_queue_attempts", 0) or 0) + 1
+			_update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(e), attempts=attempts)
+			doc.save(ignore_permissions=True)
+			_notify_queue_failure(doc, requested_by, str(e))
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Queue failure update error for {invoice_name}")
+		frappe.log_error(frappe.get_traceback(), f"Queued Invoice Submit Error for {invoice_name}")
+		return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def retry_failed_sales_invoice(invoice_name):
+	"""Retry a failed queued invoice by enqueueing it again."""
+	try:
+		doc = frappe.get_doc("Sales Invoice", invoice_name)
+		if doc.docstatus != 0:
+			frappe.throw("Only draft invoices can be retried from the queue.")
+
+		if (getattr(doc, "custom_queue_status", "") or "").lower() not in ("failed", "processing", "queued"):
+			frappe.throw("This invoice is not in a retryable queue state.")
+
+		_validate_reserved_stock_for_items(doc, exclude_invoice=doc.name)
+		_reserve_stock_for_queued_invoice(doc)
+
+		_update_queue_fields(doc, QUEUE_STATUSES["queued"], error_message="")
+		doc.save(ignore_permissions=True)
+
+		frappe.enqueue(
+			"klik_pos.api.sales_invoice.process_queued_sales_invoice",
+			queue="long",
+			enqueue_after_commit=True,
+			invoice_name=doc.name,
+			requested_by=frappe.session.user,
+		)
+		doc.save(ignore_permissions=True)
+
+		return {"success": True, "queue_status": doc.custom_queue_status}
+
+	except Exception as e:
 		return {"success": False, "message": str(e)}
 
 
@@ -1761,7 +2246,55 @@ class CustomSalesInvoice(SalesInvoice):
 			)
 
 	def before_submit(self):
+		if _should_reserve_stock(self):
+			_update_queue_fields(self, QUEUE_STATUSES["submitted"], error_message=None)
+			_cancel_sales_invoice_reservations(self.name)
+		self.validate_reserved_stock_availability()
 		self.validate_full_payment()
+
+	def validate_reserved_stock_availability(self):
+		if not _should_reserve_stock(self):
+			return
+		if not self.update_stock or getattr(self, "is_return", 0):
+			return
+
+		own_reserved_map = _get_sales_invoice_reservation_map(self.name)
+
+		for row in self.items:
+			if not row.item_code or not row.warehouse:
+				continue
+			if hasattr(row, "is_stock_item") and int(row.is_stock_item or 0) == 0:
+				continue
+
+			required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
+			if required_qty <= 0:
+				required_qty = flt(abs(getattr(row, "qty", 0) or 0))
+			if required_qty <= 0:
+				continue
+
+			actual_qty = flt(
+				frappe.db.get_value(
+					"Bin",
+					{"item_code": row.item_code, "warehouse": row.warehouse},
+					"actual_qty",
+				)
+				or 0
+			)
+			reserved_map = get_reserved_stock_map(item_codes=[row.item_code], warehouse=row.warehouse)
+			reserved_qty = flt(reserved_map.get((row.item_code, row.warehouse), 0))
+			available_qty = flt(actual_qty - reserved_qty + flt(own_reserved_map.get((row.item_code, row.warehouse), 0)))
+
+			if required_qty > available_qty + 1e-9:
+				frappe.throw(
+					_(
+						"Reserved stock protection: item {0} in warehouse {1} has only {2} available after reservations, but {3} is required."
+					).format(
+						frappe.bold(row.item_code),
+						frappe.bold(row.warehouse),
+						flt(available_qty),
+						flt(required_qty),
+					)
+				)
 
 	def validate_full_payment(self):
 		if not self.pos_profile or getattr(self, "is_return", 0):
@@ -2432,6 +2965,7 @@ def delete_draft_invoices_for_opening_entry(opening_entry_name):
 			try:
 				doc = frappe.get_doc("Sales Invoice", name)
 				if doc.docstatus == 0:
+					_cancel_sales_invoice_reservations(doc.name)
 					doc.delete()
 					deleted += 1
 			except Exception as e:
@@ -2461,6 +2995,7 @@ def delete_draft_invoice(invoice_id):
 				"error": f"Cannot delete invoice {invoice_id}. Only Draft invoices can be deleted. Current status: {invoice_doc.status}",
 			}
 
+		_cancel_sales_invoice_reservations(invoice_doc.name)
 		invoice_doc.delete()
 
 		return {
@@ -2491,6 +3026,13 @@ def submit_draft_invoice(invoice_id):
 			}
 
 		invoice_doc.submit()
+		try:
+			_cancel_sales_invoice_reservations(invoice_doc.name)
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				f"Failed to cancel reservations after submit for {invoice_doc.name}",
+			)
 
 		return {
 			"success": True,

@@ -6,7 +6,7 @@ from klik_pos.klik_pos.utils import get_current_pos_profile
 
 from ..sql_builder import apply_sql_permissions
 from .item_price import fetch_item_price
-from .item_stock import fetch_item_balance
+from .item_stock import apply_queue_reservations_to_stock_map, fetch_item_balance
 
 
 @frappe.whitelist(allow_guest=True)
@@ -381,6 +381,8 @@ def _fetch_batch_stock(item_codes, warehouse):
 
         for row in results:
             stock_map[row["item_code"]] = flt(row["actual_qty"])
+
+        apply_queue_reservations_to_stock_map(stock_map, warehouse)
 
     except Exception:
         for code in item_codes:

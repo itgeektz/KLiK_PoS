@@ -27,7 +27,7 @@ def send_invoice_sms(**kwargs):
 
 		# Get POS print format
 		pos_profile = get_current_pos_profile()
-		print_format = pos_profile.custom_pos_printformat or pos_profile.print_format or "Standard"
+		print_format = pos_profile.print_format or pos_profile.print_format or "Standard"
 
 		# Format invoice amount
 		invoice_amount = fmt_money(doc.rounded_total or doc.grand_total, currency=doc.currency)

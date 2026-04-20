@@ -24,7 +24,7 @@ def send_invoice_email(**kwargs):
 		doc = frappe.get_doc("Sales Invoice", invoice_no)
 
 		pos_profile = get_current_pos_profile()
-		print_format = pos_profile.custom_pos_printformat or pos_profile.print_format or "Standard"
+		print_format = pos_profile.print_format or pos_profile.print_format or "Standard"
 
 		pdf_data = frappe.get_print("Sales Invoice", doc.name, print_format=print_format, as_pdf=True)
 

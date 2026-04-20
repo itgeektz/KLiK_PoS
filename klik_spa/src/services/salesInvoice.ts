@@ -73,6 +73,29 @@ export async function validateCheckoutInvoice(data: any) {
   return result.message;
 }
 
+export async function retryQueuedInvoice(invoiceId: string) {
+  const csrfToken = window.csrf_token;
+
+  const response = await fetch('/api/method/klik_pos.api.sales_invoice.retry_failed_sales_invoice', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken
+    },
+    body: JSON.stringify({ invoice_name: invoiceId }),
+    credentials: 'include'
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || !result.message || result.message.success === false) {
+    const errorMessage = extractErrorMessage(result, result.message?.message || 'Failed to retry queued invoice');
+    throw new Error(errorMessage);
+  }
+
+  return result.message;
+}
+
 export async function createSalesReturn(invoiceName: string) {
   const csrfToken = window.csrf_token;
 

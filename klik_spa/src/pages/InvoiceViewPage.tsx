@@ -28,7 +28,7 @@ import {
 
 
 
-import PaymentDialog from "../components/PaymentDialog";
+import PaymentDialog from "../components/dialog/PaymentDialog";
 import { useInvoiceDetails } from "../hooks/useInvoiceDetails";
 import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
 import { usePOSDetails } from "../hooks/usePOSProfile";
@@ -277,6 +277,11 @@ export default function InvoiceViewPage() {
       </div>
     );
   }
+
+  const queueInvoice = invoice as typeof invoice & {
+    queue_status?: string;
+    queue_error?: string;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-12">
@@ -824,6 +829,20 @@ export default function InvoiceViewPage() {
                 ) : (
                   <p className="text-sm text-gray-500">No sales team assigned.</p>
                 )}
+
+                {queueInvoice.queue_status === "Failed" && (
+                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+                  <div className="flex items-start space-x-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <div>
+                      <div className="font-semibold">Invoice submission failed</div>
+                      <div className="mt-1 whitespace-pre-wrap break-words">
+                        {queueInvoice.queue_error || "No failure reason was recorded for this invoice."}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               </div>
             </div>
           </div>

@@ -132,7 +132,7 @@ def _cancel_sales_invoice_reservations(invoice_name):
 
 
 def _should_reserve_stock(doc):
-	return bool(getattr(doc, "custom_reserve_stock", 0))
+	return bool(getattr(doc, "reserve_stock", 0))
 
 
 def _reserve_stock_for_queued_invoice(doc):
@@ -303,13 +303,13 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 
 
 def _update_queue_fields(doc, status, error_message=None, attempts=None):
-	doc.custom_queue_status = _coerce_queue_status(status)
-	if hasattr(doc, "custom_queue_error"):
-		doc.custom_queue_error = _truncate_queue_error(error_message) if error_message else ""
-	if hasattr(doc, "custom_queue_attempts") and attempts is not None:
-		doc.custom_queue_attempts = attempts
-	if hasattr(doc, "custom_queue_last_attempt_at") and status == QUEUE_STATUSES["processing"]:
-		doc.custom_queue_last_attempt_at = frappe.utils.now_datetime()
+	doc.queue_status = _coerce_queue_status(status)
+	if hasattr(doc, "queue_error"):
+		doc.queue_error = _truncate_queue_error(error_message) if error_message else ""
+	if hasattr(doc, "queue_attempts") and attempts is not None:
+		doc.queue_attempts = attempts
+	if hasattr(doc, "queue_last_attempt_at") and status == QUEUE_STATUSES["processing"]:
+		doc.queue_last_attempt_at = frappe.utils.now_datetime()
 
 
 def _get_queue_failure_recipients(requested_by=None):
@@ -369,10 +369,10 @@ def _notify_queue_failure(invoice_doc, requested_by, error_message):
 
 def _mark_invoice_queued(doc, requested_by=None):
 	_update_queue_fields(doc, QUEUE_STATUSES["queued"], attempts=0)
-	if hasattr(doc, "custom_queue_error"):
-		doc.custom_queue_error = ""
-	if hasattr(doc, "custom_queue_last_attempt_at"):
-		doc.custom_queue_last_attempt_at = None
+	if hasattr(doc, "queue_error"):
+		doc.queue_error = ""
+	if hasattr(doc, "queue_last_attempt_at"):
+		doc.queue_last_attempt_at = None
 	if requested_by and hasattr(doc, "owner"):
 		doc.owner = requested_by
 
@@ -575,10 +575,10 @@ def _build_filters_and_fields(skip_opening_entry_filter=False, cashier_user_ids=
 		"discount_amount",
 		"total_taxes_and_charges",
 		"custom_pos_opening_entry",
-		"custom_queue_status",
-		"custom_queue_error",
-		"custom_queue_attempts",
-		"custom_queue_last_attempt_at",
+		"queue_status",
+		"queue_error",
+		"queue_attempts",
+		"queue_last_attempt_at",
 		"pos_profile",
 		"currency",
 	]
@@ -1092,7 +1092,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 			doc.save(ignore_permissions=True)
 			return {"success": True, "message": "Invoice already submitted"}
 
-		attempts = int(getattr(doc, "custom_queue_attempts", 0) or 0) + 1
+		attempts = int(getattr(doc, "queue_attempts", 0) or 0) + 1
 		_update_queue_fields(doc, QUEUE_STATUSES["processing"], attempts=attempts)
 		doc.save(ignore_permissions=True)
 		doc.submit()
@@ -1105,8 +1105,8 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 				f"Failed to cancel reservations after submit for {doc.name}",
 			)
 		_update_queue_fields(doc, QUEUE_STATUSES["submitted"], attempts=attempts)
-		if hasattr(doc, "custom_queue_error"):
-			doc.custom_queue_error = ""
+		if hasattr(doc, "queue_error"):
+			doc.queue_error = ""
 		doc.save(ignore_permissions=True)
 
 		_finalize_submitted_invoice(
@@ -1123,7 +1123,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 		frappe.db.rollback()
 		try:
 			doc = frappe.get_doc("Sales Invoice", invoice_name)
-			attempts = int(getattr(doc, "custom_queue_attempts", 0) or 0) + 1
+			attempts = int(getattr(doc, "queue_attempts", 0) or 0) + 1
 			_update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(e), attempts=attempts)
 			doc.save(ignore_permissions=True)
 			_notify_queue_failure(doc, requested_by, str(e))
@@ -1141,7 +1141,7 @@ def retry_failed_sales_invoice(invoice_name):
 		if doc.docstatus != 0:
 			frappe.throw("Only draft invoices can be retried from the queue.")
 
-		if (getattr(doc, "custom_queue_status", "") or "").lower() not in ("failed", "processing", "queued"):
+		if (getattr(doc, "queue_status", "") or "").lower() not in ("failed", "processing", "queued"):
 			frappe.throw("This invoice is not in a retryable queue state.")
 
 		_validate_reserved_stock_for_items(doc, exclude_invoice=doc.name)
@@ -1159,7 +1159,7 @@ def retry_failed_sales_invoice(invoice_name):
 		)
 		doc.save(ignore_permissions=True)
 
-		return {"success": True, "queue_status": doc.custom_queue_status}
+		return {"success": True, "queue_status": doc.queue_status}
 
 	except Exception as e:
 		return {"success": False, "message": str(e)}

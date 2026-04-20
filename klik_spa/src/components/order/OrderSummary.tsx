@@ -3,10 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useCartStore } from "../../stores/cartStore";
 import { useCustomers } from "../../hooks/useCustomers";
-import { usePOSDetails } from "../../hooks/usePOSProfile";
 import { useCustomerStatistics } from "../../hooks/useCustomerStatistics";
 import { useCustomerPermission } from "../../hooks/useCustomerPermission";
-import { useProducts } from "../../hooks/useProducts";
+import { useProductStore } from "../../stores/productStore";
 import { toast } from "react-toastify";
 import { extractErrorFromException } from "../../utils/errorExtraction";
 import { getBatches } from "../../utils/batch";
@@ -24,34 +23,26 @@ import {
 import { CustomerSearchSection } from "./CustomerSearchSection";
 import { CartItemRow } from "./CartItemRow";
 import { OrderSummaryFooter } from "./OrderSummaryFooter";
+import { usePOSProfileStore } from "../../stores/posProfileStore";
 
 interface OrderSummaryProps {
-  cartItems: CartItem[];
-  onUpdateQuantity: (id: string, quantity: number) => void;
-  onRemoveItem?: (id: string) => void;
   onClearCart?: () => void;
-  onDuplicateItem?: (item: CartItem) => void;
-  appliedCoupons: GiftCoupon[];
-  onApplyCoupon: (coupon: GiftCoupon) => void;
-  onRemoveCoupon: (couponCode: string) => void;
   isMobile?: boolean;
 }
 
 export default function OrderSummary({
-  cartItems,
-  onUpdateQuantity,
-  onRemoveItem,
   onClearCart,
-  onDuplicateItem,
-  appliedCoupons,
-  onRemoveCoupon,
   isMobile = false,
 }: OrderSummaryProps) {
   const {
+    cartItems,
     selectedCustomer,
     setSelectedCustomer,
     updateUOM,
     updatePricesForCustomer,
+    updateQuantity,
+    removeItem,
+    clearCart,
   } = useCartStore();
 
   const [userRemovedDefaultCustomer, setUserRemovedDefaultCustomer] = useState(false);
@@ -147,8 +138,20 @@ export default function OrderSummary({
     const discounted = getDiscountedPrice(item) * item.quantity;
     return sum + (original - discounted);
   }, 0);
-  const couponDiscount = appliedCoupons.reduce((sum, c) => sum + c.value, 0);
+  const couponDiscount = 0;
   const total = Math.max(0, subtotal - couponDiscount);
+
+  const handleUpdateQuantity = (id: string, quantity: number) => {
+    if (quantity <= 0) {
+      removeItem(id);
+    } else {
+      updateQuantity(id, quantity);
+    }
+  };
+
+  const handleRemoveItem = (id: string) => {
+    removeItem(id);
+  };
 
   const handleUOMChange = useCallback((itemId: string, uom: string, price: number) => {
     updateUOM(itemId, uom, price);
@@ -176,6 +179,16 @@ export default function OrderSummary({
   const handleBundleUpdate = (itemId: string, bundleId: string, entries: any[]) => {
     updateItemDiscount(itemId, "serial_batch_bundle", bundleId);
     updateItemDiscount(itemId, "bundle_entries", JSON.stringify(entries));
+  };
+
+  const handleDuplicateItem = (item: CartItem) => {
+    const newItem = {
+      ...item,
+      id: `${item.item_code || item.id}-${Date.now()}`,
+      item_code: item.item_code || item.id,
+      quantity: 1,
+    };
+    useCartStore.getState().addToCart(newItem);
   };
 
   const filteredCustomers =
@@ -275,12 +288,11 @@ export default function OrderSummary({
 
   const handleClearCart = () => {
     if (cartItems.length === 0) return;
-    onClearCart?.();
-    cartItems.forEach(item => onRemoveItem?.(item.id));
-    appliedCoupons.forEach(coupon => onRemoveCoupon(coupon.code));
+    clearCart();
     setItemDiscounts({});
     setSelectedCustomer(null);
     setCustomerSearchQuery("");
+    onClearCart?.();
   };
 
   const handleHoldOrder = async (orderData: any) => {
@@ -520,12 +532,12 @@ export default function OrderSummary({
                   isExpanded={expandedItems.has(item.id)}
                   onToggleExpand={() => toggleItemExpansion(item.id)}
                   itemDiscount={itemDiscount}
-                  onUpdateQuantity={onUpdateQuantity}
-                  onRemoveItem={onRemoveItem}
+                  onUpdateQuantity={handleUpdateQuantity}
+                  onRemoveItem={handleRemoveItem}
                   onUOMChange={handleUOMChange}
                   onDiscountChange={updateItemDiscount}
                   onCustomRateChange={handleCustomRateChange}
-                  onDuplicateItem={onDuplicateItem || (() => {})}
+                  onDuplicateItem={handleDuplicateItem}
                   onBundleUpdate={handleBundleUpdate}
                   selectedCustomer={selectedCustomer}
                   posDetails={posDetails}
@@ -561,7 +573,7 @@ export default function OrderSummary({
               customer: { id: sc.id },
               subtotal,
               total,
-              appliedCoupons,
+              appliedCoupons: [],
               itemDiscounts,
               totalItemDiscount,
               totalSavings: totalItemDiscount + couponDiscount,
@@ -599,7 +611,7 @@ export default function OrderSummary({
             originalPrice: item.price,
             finalAmount: getDiscountedPrice(item) * item.quantity,
           }))}
-          appliedCoupons={appliedCoupons}
+          appliedCoupons={[]}
           selectedCustomer={selectedCustomer}
           onCompletePayment={handleCompletePayment}
           onHoldOrder={handleHoldOrder}

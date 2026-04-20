@@ -1,8 +1,6 @@
-
 "use client";
 
-import { itemGroupIconMap } from "../utils/iconMap";
-import { useItemGroups } from "../hooks/useItemGroups";
+import { useProductStore } from "../stores/productStore";
 
 interface CategoryTabsProps {
   selectedCategory: string;
@@ -15,47 +13,46 @@ export default function CategoryTabs({
   onCategoryChange,
   isMobile = false,
 }: CategoryTabsProps) {
-  // const { isRTL } = useI18n();
+  const itemGroups = useProductStore((state) => state.itemGroups);
+  const totalCount = useProductStore((state) => state.totalCount);
+  const isLoading = useProductStore((state) => state.isLoading);
+  const isSearching = useProductStore((state) => state.isSearching);
 
- const {
-  itemGroups,
-  isLoading: isValidating,
-  error,
-  total_item_count,
-} = useItemGroups();
+  const isValidating = isLoading && !isSearching;
 
-
-  if (isValidating) return <div>Loading categories...</div>;
-
-  if (error) {
-    console.error("❌ Error fetching item groups:", error);
-
+  if (isValidating) {
     return (
-      <div className="text-red-600">
-        <p>Error loading categories:</p>
-        <pre className="text-xs bg-red-100 p-2 rounded">{error}</pre>
+      <div className="flex space-x-2 overflow-x-auto py-2 scrollbar-hide">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            className="px-3 py-2 rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse min-w-[80px]"
+          />
+        ))}
       </div>
     );
-  }
-
-  if (!itemGroups || itemGroups.length === 0) {
-    return <div>No item groups found.</div>;
   }
 
   const categories = [
     {
       id: "all",
       name: "All Items",
-      icon: itemGroupIconMap["All Items"] ?? "📦",
-      count: total_item_count
+      count: totalCount,
     },
-    ...itemGroups.map((group) => ({
+    ...itemGroups.filter((group) => (group.count ?? 0) > 0).map((group) => ({
       id: group.id,
       name: group.name,
-      icon: itemGroupIconMap[group.name] ?? "📦",
-      count: group.count ?? 1,
+      count: group.count ?? 0,
     })),
   ];
+
+  if (categories.length === 1 && categories[0].id === "all" && categories[0].count === 0) {
+    return (
+      <div className="text-center py-4 text-gray-500 dark:text-gray-400">
+        No categories available
+      </div>
+    );
+  }
 
   return (
     <div className="flex space-x-2 overflow-x-auto py-2 scrollbar-hide">

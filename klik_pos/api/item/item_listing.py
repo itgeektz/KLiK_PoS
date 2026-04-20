@@ -10,7 +10,7 @@ from .item_stock import apply_queue_reservations_to_stock_map, fetch_item_balanc
 
 
 @frappe.whitelist(allow_guest=True)
-def get_items_with_balance_and_price(
+def get_items(
     limit: int = 1000,
     offset: int = 0,
     search: str | None = None,
@@ -28,7 +28,6 @@ def get_items_with_balance_and_price(
 
     pos_doc, warehouse, price_list, hide_unavailable = _get_pos_context()
     
-    # Apply priority-based price list selection considering customer
     price_list = _get_priority_price_list(customer, pos_doc, price_list)
 
     try:
@@ -116,53 +115,7 @@ def get_items_with_balance_and_price(
             as_dict=True,
         )
 
-        total_count = total_result[0]["total"] if total_result else 0
-
-        if hide_unavailable:
-            unfiltered_count_query = [
-                "SELECT COUNT(DISTINCT i.name) as total",
-                "FROM `tabItem` i",
-                "WHERE i.disabled = 0",
-                "AND i.is_stock_item = 1",
-            ]
-
-            unfiltered_params = []
-
-            if getattr(pos_doc, "item_groups", None):
-                item_group_names = [d.item_group for d in pos_doc.item_groups if d.item_group]
-                if item_group_names:
-                    placeholders = ", ".join(["%s"] * len(item_group_names))
-                    unfiltered_count_query.append(f"AND i.item_group IN ({placeholders})")
-                    unfiltered_params.extend(item_group_names)
-
-            if category and category != "all":
-                unfiltered_count_query.append("AND i.item_group = %s")
-                unfiltered_params.append(category)
-
-            if search_term:
-                unfiltered_count_query.append(
-                    """
-                    AND (
-                        i.name LIKE %s OR i.item_name LIKE %s OR i.description LIKE %s
-                        OR EXISTS (
-                            SELECT 1 FROM `tabItem Barcode` ib
-                            WHERE ib.parent = i.name AND ib.barcode LIKE %s
-                        )
-                    )
-                    """
-                )
-                unfiltered_params.extend([search_term, search_term, search_term, search_term])
-
-            unfiltered_sql = "\n".join(unfiltered_count_query)
-            unfiltered_sql = apply_sql_permissions(unfiltered_sql)
-
-            unfiltered_res = frappe.db.sql(
-                unfiltered_sql,
-                tuple(unfiltered_params),
-                as_dict=True,
-            )
-
-            total_count = unfiltered_res[0]["total"] if unfiltered_res else 0
+        total_available_count = total_result[0]["total"] if total_result else 0
 
         base_query.append("ORDER BY i.item_name ASC LIMIT %s OFFSET %s")
         params_list.extend([limit, offset])
@@ -176,10 +129,15 @@ def get_items_with_balance_and_price(
             as_dict=True,
         )
 
+        item_groups_data = _get_item_groups_with_counts(
+            pos_doc, warehouse, hide_unavailable, search_term, category
+        )
+
         if not items:
             return {
                 "items": [],
-                "total_count": total_count,
+                "item_groups": item_groups_data,
+                "total_count": 0,
                 "has_more": False,
                 "limit": limit,
                 "offset": offset,
@@ -242,8 +200,9 @@ def get_items_with_balance_and_price(
 
         return {
             "items": enriched_items,
-            "total_count": total_count,
-            "has_more": (offset + len(enriched_items)) < total_count,
+            "item_groups": item_groups_data,
+            "total_count": len(enriched_items),
+            "has_more": (offset + limit) < total_available_count,
             "limit": limit,
             "offset": offset,
         }
@@ -254,6 +213,88 @@ def get_items_with_balance_and_price(
             "Get Combined Item Data Error",
         )
         frappe.throw(_("Something went wrong while fetching item data."))
+
+
+def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_term=None, selected_category=None):
+    try:
+        item_groups = []
+        
+        allowed_groups = []
+        
+        if getattr(pos_doc, "item_groups", None):
+            allowed_groups = [d.item_group for d in pos_doc.item_groups if d.item_group]
+        
+        if not allowed_groups:
+            allowed_groups = frappe.get_all("Item Group", filters={"show_in_pos": 1}, pluck="name")
+        
+        if not allowed_groups:
+            allowed_groups = frappe.get_all("Item Group", pluck="name")
+        
+        for group_name in allowed_groups:
+            count_query = """
+                SELECT COUNT(DISTINCT i.name) as item_count
+                FROM `tabItem` i
+                WHERE i.disabled = 0
+                AND i.is_stock_item = 1
+                AND i.item_group = %s
+            """
+            params = [group_name]
+            
+            if hide_unavailable and warehouse:
+                count_query += " AND EXISTS (SELECT 1 FROM `tabBin` b WHERE b.item_code = i.name AND b.warehouse = %s AND b.actual_qty > 0)"
+                params.append(warehouse)
+            
+            if search_term:
+                count_query += """
+                    AND (
+                        i.name LIKE %s
+                        OR i.item_name LIKE %s
+                        OR i.description LIKE %s
+                        OR EXISTS (
+                            SELECT 1 FROM `tabItem Barcode` ib
+                            WHERE ib.parent = i.name AND ib.barcode LIKE %s
+                        )
+                    )
+                """
+                params.extend([search_term, search_term, search_term, search_term])
+            
+            count_sql = apply_sql_permissions(count_query)
+            
+            result = frappe.db.sql(count_sql, tuple(params), as_dict=True)
+            item_count = result[0]["item_count"] if result else 0
+            
+            if item_count > 0:
+                try:
+                    group_doc = frappe.get_doc("Item Group", group_name)
+                    
+                    item_groups.append({
+                        "id": group_name,
+                        "name": group_doc.item_group_name,
+                        "name_en": group_doc.get("item_group_name"),
+                        "name_ar": group_doc.get("item_group_name_ar"),
+                        "parent_group": group_doc.parent_item_group,
+                        "is_group": group_doc.is_group,
+                        "image": group_doc.image,
+                        "count": item_count,
+                        "show_in_pos": group_doc.show_in_pos,
+                        "custom_icon": group_doc.get("custom_icon"),
+                        "custom_color": group_doc.get("custom_color"),
+                        "custom_order": group_doc.get("custom_order", 0),
+                    })
+                except Exception:
+                    item_groups.append({
+                        "id": group_name,
+                        "name": group_name,
+                        "count": item_count,
+                    })
+        
+        item_groups.sort(key=lambda x: x.get("custom_order", 0))
+        
+        return item_groups
+        
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Get Item Groups With Counts Error")
+        return []
 
 
 def _get_pos_context():
@@ -294,67 +335,40 @@ def _get_pos_context():
 
 
 def _get_priority_price_list(customer=None, pos_profile=None, default_price_list=None):
-	"""
-	Implement priority-based price list selection:
-	1. Customer's default price list
-	2. Customer group's default price list
-	3. POS Profile's default price list
-	4. Selling Settings' default price list
-	5. None (fallback to most recent item price)
-	"""
-	try:
-		# Priority 1: Customer's default price list
-		if customer:
-			try:
-				customer_doc = frappe.get_doc("Customer", customer)
-				if customer_doc.default_price_list:
-					frappe.logger().info(
-						f"Using customer {customer}'s default price list: {customer_doc.default_price_list}"
-					)
-					return customer_doc.default_price_list
-			except Exception:
-				pass
-			
-			# Priority 2: Customer group's default price list
-			try:
-				customer_doc = frappe.get_doc("Customer", customer)
-				if customer_doc.customer_group:
-					customer_group_doc = frappe.get_doc("Customer Group", customer_doc.customer_group)
-					if getattr(customer_group_doc, "default_price_list", None):
-						frappe.logger().info(
-							f"Using customer group {customer_doc.customer_group}'s default price list: {customer_group_doc.default_price_list}"
-						)
-						return customer_group_doc.default_price_list
-			except Exception:
-				pass
-	except Exception as e:
-		frappe.logger().warning(f"Error getting customer-based price list: {e}")
-	
-	# Priority 3: POS Profile's default price list
-	if pos_profile and getattr(pos_profile, "selling_price_list", None):
-		frappe.logger().info(f"Using POS profile's price list: {pos_profile.selling_price_list}")
-		return pos_profile.selling_price_list
-	
-	# Priority 4: Selling Settings' default price list
-	try:
-		selling_settings_price_list = frappe.db.get_single_value("Selling Settings", "selling_price_list")
-		if selling_settings_price_list:
-			frappe.logger().info(f"Using Selling Settings' default price list: {selling_settings_price_list}")
-			return selling_settings_price_list
-	except Exception:
-		pass
-	
-	# Priority 5: Use provided default (fallback)
-	if default_price_list:
-		frappe.logger().info(f"Using default price list: {default_price_list}")
-		return default_price_list
-	
-	# No price list found - will use most recent item price (handled by fetch_item_price fallback)
-	frappe.logger().info("No price list found in priority chain, will use most recent item price")
-	return None
-
-
-
+    try:
+        if customer:
+            try:
+                customer_doc = frappe.get_doc("Customer", customer)
+                if customer_doc.default_price_list:
+                    return customer_doc.default_price_list
+            except Exception:
+                pass
+            
+            try:
+                customer_doc = frappe.get_doc("Customer", customer)
+                if customer_doc.customer_group:
+                    customer_group_doc = frappe.get_doc("Customer Group", customer_doc.customer_group)
+                    if getattr(customer_group_doc, "default_price_list", None):
+                        return customer_group_doc.default_price_list
+            except Exception:
+                pass
+    except Exception as e:
+        frappe.logger().warning(f"Error getting customer-based price list: {e}")
+    
+    if pos_profile and getattr(pos_profile, "selling_price_list", None):
+        return pos_profile.selling_price_list
+    
+    try:
+        selling_settings_price_list = frappe.db.get_single_value("Selling Settings", "selling_price_list")
+        if selling_settings_price_list:
+            return selling_settings_price_list
+    except Exception:
+        pass
+    
+    if default_price_list:
+        return default_price_list
+    
+    return None
 
 
 def _fetch_batch_stock(item_codes, warehouse):

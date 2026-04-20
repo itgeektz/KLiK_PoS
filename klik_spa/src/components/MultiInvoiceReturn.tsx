@@ -26,7 +26,7 @@ interface InvoiceWithPaidAmount extends InvoiceForReturn {
 }
 import { formatCurrencyWithSymbol, getCurrencySymbol } from "../utils/currency";
 import { useCustomers } from "../hooks/useCustomers";
-import { usePOSDetails } from "../hooks/usePOSProfile";
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import { usePaymentModes } from "../hooks/usePaymentModes";
 
 interface MultiInvoiceReturnProps {
@@ -63,7 +63,7 @@ export default function MultiInvoiceReturn({
 
   // Use the customers hook with search to fetch from server when searching
   const { customers: searchableCustomers, isLoading: customersLoading } = useCustomers(customerSearchQuery);
-  const { posDetails } = usePOSDetails();
+  const { posDetails } = usePOSProfileStore();
   const { modes: paymentModes } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
   const currency = posDetails?.currency || 'USD';
   const currencySymbol = getCurrencySymbol(currency);

@@ -7,7 +7,6 @@ import { Calculator, ChevronDown, Eye, Loader2, MailPlus, MessageCirclePlus, Mes
 import { useCartStore } from "../../stores/cartStore";
 import { usePaymentModes } from "../../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../../hooks/useSalesTaxCharges";
-import { usePOSDetails } from "../../hooks/usePOSProfile";
 import { useDeliveryPersonnel } from "../../hooks/useDeliveryPersonnel";
 import { createSalesInvoice } from "../../services/salesInvoice";
 import { clearDraftInvoiceCache, getOriginalDraftInvoiceId } from "../../utils/draftInvoiceCache";
@@ -29,6 +28,7 @@ import SharingInterface from "./SharingInterface";
 import DeliveryPersonnelModal from "./DeliveryPersonnelModal";
 import type { PaymentDialogProps, PaymentAmount, Calculations } from "./types";
 import DisplayPrintPreview from "../../utils/invoicePrint";
+import { usePOSProfileStore } from "../../stores/posProfileStore";
 
 const getDeviceId = () => {
   let device_id = localStorage.getItem("pos_device_id");
@@ -123,7 +123,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   });
   const [taxPin, setTaxPin] = useState("");
 
-  const { posDetails, loading: posLoading } = usePOSDetails();
+  const { posDetails, loading: posLoading } = usePOSProfileStore();
   const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === "string" ? posDetails.name : "");
   const { salesTaxCharges, defaultTax } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();

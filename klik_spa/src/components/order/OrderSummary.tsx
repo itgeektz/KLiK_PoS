@@ -70,10 +70,10 @@ export default function OrderSummary({
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   const { customers, isLoading, refetch: refetchCustomers } = useCustomers(customerSearchQuery);
-  const { posDetails, loading: _posLoading } = usePOSDetails();
+  const { posDetails, loading: _posLoading } = usePOSProfileStore();
   const { checkCustomerPermission } = useCustomerPermission();
   const { statistics: customerStats } = useCustomerStatistics(selectedCustomer?.id || null);
-  const { refreshStockOnly, updateBatchQuantitiesForItems } = useProducts();
+  const { refreshStockOnly, updateBatchQuantitiesForItems } = useProductStore();
 
   const [itemDiscounts, setItemDiscounts] = useState<Record<string, any>>(() => {
     const saved: Record<string, any> = {};
@@ -93,7 +93,7 @@ export default function OrderSummary({
   const [itemSerials, setItemSerials] = useState<Record<string, string[]>>({});
 
   const currency_symbol = posDetails?.currency_symbol;
-  const autoFetchBatch = posDetails?.custom_autofetch_batchserial_ === 1;
+  const autoFetchBatch = (posDetails as any)?.custom_autofetch_batchserial_ === 1;
 
   useEffect(() => {
     const timer = setTimeout(() => setIsInitialLoad(false), 2000);

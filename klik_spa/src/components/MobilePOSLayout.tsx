@@ -5,7 +5,7 @@ import { useAuth } from "../hooks/useAuth"
 import { useTheme } from "../hooks/useTheme"
 import { useCartStore } from "../stores/cartStore"
 import { formatCurrencyWithSymbol } from "../utils/currency"
-import { usePOSDetails } from "../hooks/usePOSProfile"
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import { ShoppingCart, Search, Settings, LogOut, Moon, Sun, Scan, Grid3X3, List, Store, RefreshCw } from "lucide-react"
 import { clearCacheAndReload } from "../utils/clearCache"
 import CategoryTabs from "./CategoryTabs"
@@ -46,7 +46,7 @@ export default function MobilePOSLayout({
   const { t } = useI18n()
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
-  const { posDetails, loading: posLoading } = usePOSDetails()
+  const { posDetails, loading: posLoading } = usePOSProfileStore()
   const { cartItems, addToCart } = useCartStore()
   const navigate = useNavigate()
   const [showUserMenu, setShowUserMenu] = useState(false)

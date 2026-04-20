@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef, useLayoutEffect } from "react";
 import type { MenuItem } from "../../types";
-import { usePOSDetails } from "../hooks/usePOSProfile";
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 
 interface Batch {
@@ -47,7 +47,7 @@ export default function ProductTooltip({
   const [isLoading, setIsLoading] = useState(true);
   const [position, setPosition] = useState({ top: true, left: true });
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const { posDetails, loading } = usePOSDetails();
+  const { posDetails, loading, hideUnavailableItems, useScannerOnly, scalePrefix, defaultView } = usePOSProfileStore();
 
   const warehouse = useMemo(() => {
     if (loading) return null;
@@ -56,7 +56,7 @@ export default function ProductTooltip({
 
   const restrictCostVisibility = useMemo(() => {
     if (loading) return true;
-    return posDetails?.restrict_cost_visibility_in_tooltip ?? true;
+    return (posDetails as any)?.restrict_cost_visibility_in_tooltip ?? true;
   }, [posDetails, loading]);
 
   useEffect(() => {
@@ -75,7 +75,9 @@ export default function ProductTooltip({
       }
     };
 
-    fetchFullData();
+    if (warehouse !== null) {
+      fetchFullData();
+    }
   }, [item.id, warehouse]);
 
   useLayoutEffect(() => {
@@ -97,8 +99,7 @@ export default function ProductTooltip({
     });
   }, [isLoading]);
 
-  const costPrice =
-    data?.valuation_rate || data?.standard_rate || item.cost_price || 0;
+  const costPrice = data?.valuation_rate || data?.standard_rate || item.cost_price || 0;
   const margin = item.price - costPrice;
   const marginPercentage = costPrice > 0 ? (margin / item.price) * 100 : 0;
 

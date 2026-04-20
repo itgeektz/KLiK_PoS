@@ -15,7 +15,7 @@ import countryList from "react-select-country-list";
 import { parsePhoneNumber } from "react-phone-number-input";
 import type { CartItem, GiftCoupon } from "../../../types";
 import type { Customer } from "../../types/customer";
-import PaymentDialog from "../PaymentDialog";
+import PaymentDialog from "../dialog/PaymentDialog";
 import AddCustomerModal from "../AddCustomerModal";
 import {
   createDraftSalesInvoice,

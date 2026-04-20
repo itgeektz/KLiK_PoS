@@ -146,10 +146,10 @@ export function useSalesInvoices(
           notes: invoice.remarks || "",
           posProfile: invoice.pos_profile || "",
           custom_pos_opening_entry: invoice.custom_pos_opening_entry || "",
-          queueStatus: (invoice.custom_queue_status as string) || "",
-          queueError: (invoice.custom_queue_error as string) || "",
-          queueAttempts: Number(invoice.custom_queue_attempts) || 0,
-          queueLastAttemptAt: (invoice.custom_queue_last_attempt_at as string) || "",
+          queueStatus: (invoice.queue_status as string) || "",
+          queueError: (invoice.queue_error as string) || "",
+          queueAttempts: Number(invoice.queue_attempts) || 0,
+          queueLastAttemptAt: (invoice.queue_last_attempt_at as string) || "",
           canReturn: canReturn,
         } as SalesInvoice & {
           queueStatus?: string;

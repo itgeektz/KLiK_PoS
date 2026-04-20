@@ -132,7 +132,7 @@ def _cancel_sales_invoice_reservations(invoice_name):
 
 
 def _should_reserve_stock(doc):
-	return bool(getattr(doc, "custom_reserve_stock", 0))
+	return bool(getattr(doc, "reserve_stock", 0))
 
 
 def _reserve_stock_for_queued_invoice(doc):
@@ -303,13 +303,13 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 
 
 def _update_queue_fields(doc, status, error_message=None, attempts=None):
-	doc.custom_queue_status = _coerce_queue_status(status)
-	if hasattr(doc, "custom_queue_error"):
-		doc.custom_queue_error = _truncate_queue_error(error_message) if error_message else ""
-	if hasattr(doc, "custom_queue_attempts") and attempts is not None:
-		doc.custom_queue_attempts = attempts
-	if hasattr(doc, "custom_queue_last_attempt_at") and status == QUEUE_STATUSES["processing"]:
-		doc.custom_queue_last_attempt_at = frappe.utils.now_datetime()
+	doc.queue_status = _coerce_queue_status(status)
+	if hasattr(doc, "queue_error"):
+		doc.queue_error = _truncate_queue_error(error_message) if error_message else ""
+	if hasattr(doc, "queue_attempts") and attempts is not None:
+		doc.queue_attempts = attempts
+	if hasattr(doc, "queue_last_attempt_at") and status == QUEUE_STATUSES["processing"]:
+		doc.queue_last_attempt_at = frappe.utils.now_datetime()
 
 
 def _get_queue_failure_recipients(requested_by=None):
@@ -369,10 +369,10 @@ def _notify_queue_failure(invoice_doc, requested_by, error_message):
 
 def _mark_invoice_queued(doc, requested_by=None):
 	_update_queue_fields(doc, QUEUE_STATUSES["queued"], attempts=0)
-	if hasattr(doc, "custom_queue_error"):
-		doc.custom_queue_error = ""
-	if hasattr(doc, "custom_queue_last_attempt_at"):
-		doc.custom_queue_last_attempt_at = None
+	if hasattr(doc, "queue_error"):
+		doc.queue_error = ""
+	if hasattr(doc, "queue_last_attempt_at"):
+		doc.queue_last_attempt_at = None
 	if requested_by and hasattr(doc, "owner"):
 		doc.owner = requested_by
 
@@ -575,10 +575,10 @@ def _build_filters_and_fields(skip_opening_entry_filter=False, cashier_user_ids=
 		"discount_amount",
 		"total_taxes_and_charges",
 		"custom_pos_opening_entry",
-		"custom_queue_status",
-		"custom_queue_error",
-		"custom_queue_attempts",
-		"custom_queue_last_attempt_at",
+		"queue_status",
+		"queue_error",
+		"queue_attempts",
+		"queue_last_attempt_at",
 		"pos_profile",
 		"currency",
 	]
@@ -797,53 +797,53 @@ def get_invoice_details(invoice_id):
 
 @frappe.whitelist()
 def validate_checkout_invoice(data):
-	"""
-	Pre-validate invoice payload at checkout time without creating any document.
-	This catches batch/serial and item-account issues early before payment submission.
-	"""
-	try:
-		(
-			customer,
-			items,
-			amount_paid,
-			sales_and_tax_charges,
-			mode_of_payment,
-			business_type,
-			roundoff_amount,
-			delivery_personnel,
-			is_credit_sale,
-			allow_partial_payment,
-			due_date,
-			salesperson,
-			tax_id,
-		) = parse_invoice_data(data)
+    """
+    Pre-validate invoice payload at checkout time without creating any document.
+    This catches batch/serial and item-account issues early before payment submission.
+    """
+    try:
+        (
+            customer,
+            items,
+            amount_paid,
+            sales_and_tax_charges,
+            mode_of_payment,
+            business_type,
+            roundoff_amount,
+            delivery_personnel,
+            is_credit_sale,
+            allow_partial_payment,
+            due_date,
+            salesperson,
+            tax_id,
+            enable_background_submission,
+        ) = parse_invoice_data(data)
 
-		# Build-only validation (no insert/save/submit).
-		preview_doc = build_sales_invoice_doc(
-			customer,
-			items,
-			amount_paid,
-			sales_and_tax_charges,
-			mode_of_payment,
-			business_type,
-			roundoff_amount,
-			include_payments=False,
-			delivery_personnel=delivery_personnel,
-			is_credit_sale=is_credit_sale,
-			due_date=due_date,
-			salesperson=salesperson,
-			tax_id=tax_id,
-			create_batch_and_serial_bundle=False,  # Skip bundle creation for faster validation; batch/serial will still be validated
-		)
+        preview_doc = build_sales_invoice_doc(
+            customer,
+            items,
+            amount_paid,
+            sales_and_tax_charges,
+            mode_of_payment,
+            business_type,
+            roundoff_amount,
+            include_payments=False,
+            delivery_personnel=delivery_personnel,
+            is_credit_sale=is_credit_sale,
+            due_date=due_date,
+            salesperson=salesperson,
+            tax_id=tax_id,
+            create_batch_and_serial_bundle=False,
+			enable_background_submission=enable_background_submission,
+        )
 
-		# Validate against queued reservations to avoid overselling before queueing.
-		_validate_reserved_stock_for_items(preview_doc)
+        _validate_reserved_stock_for_items(preview_doc)
 
-		return {"success": True, "message": "Checkout validation passed"}
+        return {"success": True, "message": "Checkout validation passed"}
 
-	except Exception as e:
-		return {"success": False, "message": str(e)}
-
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+	
 
 def _get_invoice_items_with_returns(invoice_id, customer):
 	"""
@@ -970,117 +970,162 @@ def create_and_submit_invoice(data):
 
 @frappe.whitelist()
 def queue_sales_invoice(data):
-	try:
-		import time
+    try:
+        import time
 
-		start_time = time.time()
+        start_time = time.time()
 
-		# Validate input data
-		if not data:
-			frappe.throw("No data provided for invoice creation")
+        if not data:
+            frappe.throw("No data provided for invoice creation")
 
-		(
-			customer,
-			items,
-			amount_paid,
-			sales_and_tax_charges,
-			mode_of_payment,
-			business_type,
-			roundoff_amount,
-			delivery_personnel,
-			is_credit_sale,
-			allow_partial_payment,
-			due_date,
-			salesperson,
-			tax_id,
-		) = parse_invoice_data(data)
+        (
+            customer,
+            items,
+            amount_paid,
+            sales_and_tax_charges,
+            mode_of_payment,
+            business_type,
+            roundoff_amount,
+            delivery_personnel,
+            is_credit_sale,
+            allow_partial_payment,
+            due_date,
+            salesperson,
+            tax_id,
+            enable_background_submission,
+        ) = parse_invoice_data(data)
 
-		# Validate required fields
-		if not customer:
-			frappe.throw("Customer is required")
-		if not items or len(items) == 0:
-			frappe.throw("At least one item is required")
+        if not customer:
+            frappe.throw("Customer is required")
+        if not items or len(items) == 0:
+            frappe.throw("At least one item is required")
 
-		# Build invoice document
-		doc = build_sales_invoice_doc(
-			customer,
-			items,
-			amount_paid,
-			sales_and_tax_charges,
-			mode_of_payment,
-			business_type,
-			roundoff_amount,
-			include_payments=True,
-			delivery_personnel=delivery_personnel,
-			is_credit_sale=is_credit_sale,
-			allow_partial_payment=allow_partial_payment,
-			due_date=due_date,
-			salesperson=salesperson,
-   			tax_id=tax_id,
-		)
+        doc = build_sales_invoice_doc(
+            customer,
+            items,
+            amount_paid,
+            sales_and_tax_charges,
+            mode_of_payment,
+            business_type,
+            roundoff_amount,
+            include_payments=True,
+            delivery_personnel=delivery_personnel,
+            is_credit_sale=is_credit_sale,
+            allow_partial_payment=allow_partial_payment,
+            due_date=due_date,
+            salesperson=salesperson,
+            tax_id=tax_id,
+			enable_background_submission=enable_background_submission,
+        )
 
-		doc.base_paid_amount = amount_paid
-		doc.paid_amount = amount_paid
-		doc.outstanding_amount = max(flt(doc.grand_total) - flt(amount_paid), 0)
-		doc.custom_reserve_stock = 1
+        doc.base_paid_amount = amount_paid
+        doc.paid_amount = amount_paid
+        doc.outstanding_amount = max(flt(doc.grand_total) - flt(amount_paid), 0)
+        doc.reserve_stock = 1
 
-		_validate_reserved_stock_for_items(doc)
+        _validate_reserved_stock_for_items(doc)
 
-		_mark_invoice_queued(doc, frappe.session.user)
-		doc.save(ignore_permissions=True)
+        if enable_background_submission:
+            _mark_invoice_queued(doc, frappe.session.user)
+            doc.save(ignore_permissions=True)
 
-		# Persist `tax_id` directly to the database it's overwritten by save()
-		if tax_id:
-			doc.db_set("tax_id", tax_id)
+            if tax_id:
+                doc.db_set("tax_id", tax_id)
 
-		try:
-			_reserve_stock_for_queued_invoice(doc)
-		except Exception as reserve_error:
-			_update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(reserve_error))
-			doc.save(ignore_permissions=True)
-			return {"success": False, "message": str(reserve_error)}
+            try:
+                _reserve_stock_for_queued_invoice(doc)
+            except Exception as reserve_error:
+                _update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(reserve_error))
+                doc.save(ignore_permissions=True)
+                return {"success": False, "message": str(reserve_error)}
 
-		frappe.enqueue(
-			"klik_pos.api.sales_invoice.process_queued_sales_invoice",
-			queue="long",
-			enqueue_after_commit=True,
-			invoice_name=doc.name,
-			requested_by=frappe.session.user,
-		)
+            frappe.enqueue(
+                "klik_pos.api.sales_invoice.process_queued_sales_invoice",
+                queue="long",
+                enqueue_after_commit=True,
+                invoice_name=doc.name,
+                requested_by=frappe.session.user,
+            )
 
-		doc.save(ignore_permissions=True)
+            doc.save(ignore_permissions=True)
 
-		processing_time = time.time() - start_time
-		frappe.logger().info(f"Invoice {doc.name} queued in {processing_time:.2f} seconds")
+            processing_time = time.time() - start_time
+            frappe.logger().info(f"Invoice {doc.name} queued in {processing_time:.2f} seconds")
 
-		# Return minimal invoice data for frontend performance
-		return {
-			"success": True,
-			"queue_status": doc.custom_queue_status,
-			"invoice_name": doc.name,
-			"invoice_id": doc.name,
-			"invoice": {
-				"name": doc.name,
-				"doctype": doc.doctype,
-				"customer": doc.customer,
-				"customer_name": doc.customer_name,
-				"posting_date": doc.posting_date,
-				"base_grand_total": doc.base_grand_total,
-				"currency": doc.currency,
-				"currency_symbol": frappe.db.get_value("Currency", doc.currency, "symbol")
-				or doc.currency,
-				"status": doc.status,
-				"is_pos": doc.is_pos,
-				"company": doc.company,
-			},
-			"payment_entry": None,
-			"processing_time": round(processing_time, 2),
-		}
+            return {
+                "success": True,
+                "queue_status": doc.queue_status,
+                "invoice_name": doc.name,
+                "invoice_id": doc.name,
+                "invoice": {
+                    "name": doc.name,
+                    "doctype": doc.doctype,
+                    "customer": doc.customer,
+                    "customer_name": doc.customer_name,
+                    "posting_date": doc.posting_date,
+                    "base_grand_total": doc.base_grand_total,
+                    "currency": doc.currency,
+                    "currency_symbol": frappe.db.get_value("Currency", doc.currency, "symbol") or doc.currency,
+                    "status": doc.status,
+                    "is_pos": doc.is_pos,
+                    "company": doc.company,
+                },
+                "payment_entry": None,
+                "processing_time": round(processing_time, 2),
+            }
+        else:
+            doc.insert(ignore_permissions=True)
 
-	except Exception as e:
-		frappe.log_error(frappe.get_traceback(), "Submit Invoice Error")
-		return {"success": False, "message": str(e)}
+            if tax_id:
+                doc.db_set("tax_id", tax_id)
 
+            doc.submit()
+            doc.reload()
+
+            try:
+                _cancel_sales_invoice_reservations(doc.name)
+            except Exception:
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    f"Failed to cancel reservations after submit for {doc.name}",
+                )
+
+            _finalize_submitted_invoice(
+                doc,
+                flt(doc.paid_amount or 0),
+                _get_payment_methods_from_invoice(doc),
+                getattr(doc, "business_type", None),
+                doc.customer,
+            )
+
+            processing_time = time.time() - start_time
+            frappe.logger().info(f"Invoice {doc.name} submitted directly in {processing_time:.2f} seconds")
+
+            return {
+                "success": True,
+                "invoice_name": doc.name,
+                "invoice_id": doc.name,
+                "invoice": {
+                    "name": doc.name,
+                    "doctype": doc.doctype,
+                    "customer": doc.customer,
+                    "customer_name": doc.customer_name,
+                    "posting_date": doc.posting_date,
+                    "base_grand_total": doc.base_grand_total,
+                    "currency": doc.currency,
+                    "currency_symbol": frappe.db.get_value("Currency", doc.currency, "symbol") or doc.currency,
+                    "status": doc.status,
+                    "is_pos": doc.is_pos,
+                    "company": doc.company,
+                },
+                "payment_entry": None,
+                "processing_time": round(processing_time, 2),
+            }
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Submit Invoice Error")
+        return {"success": False, "message": str(e)}
+	
 
 @frappe.whitelist()
 def process_queued_sales_invoice(invoice_name, requested_by=None):
@@ -1092,7 +1137,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 			doc.save(ignore_permissions=True)
 			return {"success": True, "message": "Invoice already submitted"}
 
-		attempts = int(getattr(doc, "custom_queue_attempts", 0) or 0) + 1
+		attempts = int(getattr(doc, "queue_attempts", 0) or 0) + 1
 		_update_queue_fields(doc, QUEUE_STATUSES["processing"], attempts=attempts)
 		doc.save(ignore_permissions=True)
 		doc.submit()
@@ -1105,8 +1150,8 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 				f"Failed to cancel reservations after submit for {doc.name}",
 			)
 		_update_queue_fields(doc, QUEUE_STATUSES["submitted"], attempts=attempts)
-		if hasattr(doc, "custom_queue_error"):
-			doc.custom_queue_error = ""
+		if hasattr(doc, "queue_error"):
+			doc.queue_error = ""
 		doc.save(ignore_permissions=True)
 
 		_finalize_submitted_invoice(
@@ -1123,7 +1168,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 		frappe.db.rollback()
 		try:
 			doc = frappe.get_doc("Sales Invoice", invoice_name)
-			attempts = int(getattr(doc, "custom_queue_attempts", 0) or 0) + 1
+			attempts = int(getattr(doc, "queue_attempts", 0) or 0) + 1
 			_update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(e), attempts=attempts)
 			doc.save(ignore_permissions=True)
 			_notify_queue_failure(doc, requested_by, str(e))
@@ -1141,7 +1186,7 @@ def retry_failed_sales_invoice(invoice_name):
 		if doc.docstatus != 0:
 			frappe.throw("Only draft invoices can be retried from the queue.")
 
-		if (getattr(doc, "custom_queue_status", "") or "").lower() not in ("failed", "processing", "queued"):
+		if (getattr(doc, "queue_status", "") or "").lower() not in ("failed", "processing", "queued"):
 			frappe.throw("This invoice is not in a retryable queue state.")
 
 		_validate_reserved_stock_for_items(doc, exclude_invoice=doc.name)
@@ -1159,7 +1204,7 @@ def retry_failed_sales_invoice(invoice_name):
 		)
 		doc.save(ignore_permissions=True)
 
-		return {"success": True, "queue_status": doc.custom_queue_status}
+		return {"success": True, "queue_status": doc.queue_status}
 
 	except Exception as e:
 		return {"success": False, "message": str(e)}
@@ -1167,150 +1212,150 @@ def retry_failed_sales_invoice(invoice_name):
 
 @frappe.whitelist()
 def create_draft_invoice(data):
-	try:
-		(
-			customer,
-			items,
-			amount_paid,
-			sales_and_tax_charges,
-			mode_of_payment,
-			business_type,
-			roundoff_amount,
-			delivery_personnel,
-			is_credit_sale,
-			allow_partial_payment,
-			due_date,
-			salesperson,
-			tax_id,
-		) = parse_invoice_data(data)
-		doc = build_sales_invoice_doc(
-			customer,
-			items,
-			amount_paid,
-			sales_and_tax_charges,
-			mode_of_payment,
-			business_type,
-			roundoff_amount,
-			include_payments=True,
-			delivery_personnel=delivery_personnel,
-			is_credit_sale=is_credit_sale,
-			allow_partial_payment=allow_partial_payment,
-			due_date=due_date,
-			salesperson=salesperson,
-			tax_id=tax_id,
-		)
-		doc.insert(ignore_permissions=True)
+    try:
+        (
+            customer,
+            items,
+            amount_paid,
+            sales_and_tax_charges,
+            mode_of_payment,
+            business_type,
+            roundoff_amount,
+            delivery_personnel,
+            is_credit_sale,
+            allow_partial_payment,
+            due_date,
+            salesperson,
+            tax_id,
+            enable_background_submission,
+        ) = parse_invoice_data(data)
+        
+        doc = build_sales_invoice_doc(
+            customer,
+            items,
+            amount_paid,
+            sales_and_tax_charges,
+            mode_of_payment,
+            business_type,
+            roundoff_amount,
+            include_payments=True,
+            delivery_personnel=delivery_personnel,
+            is_credit_sale=is_credit_sale,
+            allow_partial_payment=allow_partial_payment,
+            due_date=due_date,
+            salesperson=salesperson,
+            tax_id=tax_id,
+			enable_background_submission=enable_background_submission,
+        )
+        doc.insert(ignore_permissions=True)
 
-		# Persist `tax_id` directly to the database it's overwritten by insert()
-		if tax_id:
-			doc.db_set("tax_id", tax_id)
+        if tax_id:
+            doc.db_set("tax_id", tax_id)
 
-		return {"success": True, "invoice_name": doc.name, "invoice": doc}
+        return {"success": True, "invoice_name": doc.name, "invoice": doc}
 
-	except Exception as e:
-		frappe.log_error(frappe.get_traceback(), "Draft Invoice Error")
-		return {"success": False, "message": str(e)}
-
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Draft Invoice Error")
+        return {"success": False, "message": str(e)}
+	
 
 def parse_invoice_data(data):
-	"""Sanitize and extract customer and items from request payload including round-off."""
-	if isinstance(data, str):
-		data = json.loads(data)
+    if isinstance(data, str):
+        data = json.loads(data)
 
-	def _as_bool(value):
-		if isinstance(value, str):
-			return value.lower() in ("true", "1", "yes", "on")
-		return bool(value)
+    def _as_bool(value):
+        if isinstance(value, str):
+            return value.lower() in ("true", "1", "yes", "on")
+        return bool(value)
 
-	customer = data.get("customer", {}).get("id")
-	items = []
-	item_discounts = data.get("itemDiscounts", {})
-	is_credit_sale = _as_bool(data.get("isCreditSale") or data.get("is_credit_sale"))
-	allow_partial_payment = _as_bool(
-		data.get("allowPartialPayment") or data.get("allow_partial_payment")
-	)
-	due_date = data.get("dueDate") or data.get("due_date")
-	mode_of_payment = None
-	default_payment_mode = None
+    customer = data.get("customer", {}).get("id")
+    items = []
+    item_discounts = data.get("itemDiscounts", {})
+    is_credit_sale = _as_bool(data.get("isCreditSale") or data.get("is_credit_sale"))
+    allow_partial_payment = _as_bool(
+        data.get("allowPartialPayment") or data.get("allow_partial_payment")
+    )
+    enable_background_submission = _as_bool(
+        data.get("enable_background_invoice_submission") or 0
+    )
+    due_date = data.get("dueDate") or data.get("due_date")
+    mode_of_payment = None
+    default_payment_mode = None
 
-	for item in data.get("items", []):
-		item_code = item.get("id")
+    for item in data.get("items", []):
+        item_code = item.get("id")
 
-		discount_data = item_discounts.get(item_code, {})
+        discount_data = item_discounts.get(item_code, {})
 
-		discount_percentage = flt(item.get("discountPercentage") or discount_data.get("discountPercentage") or 0)
-		discount_amount = flt(item.get("discountAmount") or discount_data.get("discountAmount") or 0)
+        discount_percentage = flt(item.get("discountPercentage") or discount_data.get("discountPercentage") or 0)
+        discount_amount = flt(item.get("discountAmount") or discount_data.get("discountAmount") or 0)
 
-		items.append({
-			"id": item_code,
+        items.append({
+            "id": item_code,
             "quantity": item.get("quantity"),
             "price": item.get("price"),
             "bundle_entries": item.get("bundle_entries", []),
             "uom": item.get("uom"),
-			"discountPercentage": discount_percentage,
-			"discountAmount": discount_amount,
-		})
+            "discountPercentage": discount_percentage,
+            "discountAmount": discount_amount,
+        })
 
-		price = flt(item.get("price") or 0)
+        price = flt(item.get("price") or 0)
 
-		if price <= 0 and discount_percentage <= 0 and discount_amount <= 0:
-			frappe.throw(
-				_("Rate must be greater than 0 for item {0} when no discount is set").format(
-					item_code or _("Unknown Item")
-				)
-			)
+        if price <= 0 and discount_percentage <= 0 and discount_amount <= 0:
+            frappe.throw(
+                _("Rate must be greater than 0 for item {0} when no discount is set").format(
+                    item_code or _("Unknown Item")
+                )
+            )
 
-	amount_paid = 0.0
-	sales_and_tax_charges = get_current_pos_profile().taxes_and_charges
-	business_type = data.get("businessType")
+    amount_paid = 0.0
+    sales_and_tax_charges = get_current_pos_profile().taxes_and_charges
+    business_type = data.get("businessType")
 
-	# Extract round-off data from frontend
-	roundoff_amount = data.get("roundOffAmount", 0.0)
+    roundoff_amount = data.get("roundOffAmount", 0.0)
 
-	# Only get round-off account if round-off amount is not zero
-	if roundoff_amount != 0:
-		_roundoff_account = get_writeoff_account()
+    if roundoff_amount != 0:
+        _roundoff_account = get_writeoff_account()
 
-	if data.get("amountPaid"):
-		amount_paid = data.get("amountPaid")
+    if data.get("amountPaid"):
+        amount_paid = data.get("amountPaid")
 
-	if data.get("paymentMethods"):
-		mode_of_payment = data.get("paymentMethods")
+    if data.get("paymentMethods"):
+        mode_of_payment = data.get("paymentMethods")
 
-	if is_credit_sale:
-		default_payment_mode = _get_default_payment_mode()
-		mode_of_payment = _normalize_credit_sale_payment_methods(mode_of_payment, default_payment_mode)
-		if not _has_positive_payment_amount(mode_of_payment):
-			amount_paid = 0.0
+    if is_credit_sale:
+        default_payment_mode = _get_default_payment_mode()
+        mode_of_payment = _normalize_credit_sale_payment_methods(mode_of_payment, default_payment_mode)
+        if not _has_positive_payment_amount(mode_of_payment):
+            amount_paid = 0.0
 
-	if data.get("SalesTaxCharges"):
-		sales_and_tax_charges = data.get("SalesTaxCharges")
+    if data.get("SalesTaxCharges"):
+        sales_and_tax_charges = data.get("SalesTaxCharges")
 
-	# Extract delivery personnel
-	delivery_personnel = data.get("deliveryPersonnel")
+    delivery_personnel = data.get("deliveryPersonnel")
+    salesperson = data.get("salesperson")
+    tax_id = data.get("tax_id")
 
-	# Extract salesperson and tax_id
-	salesperson = data.get("salesperson")
-	tax_id = data.get("tax_id")
+    if not customer or not items:
+        frappe.throw(_("Customer and items are required"))
 
-	if not customer or not items:
-		frappe.throw(_("Customer and items are required"))
-
-	return (
-		customer,
-		items,
-		amount_paid,
-		sales_and_tax_charges,
-		mode_of_payment,
-		business_type,
-		roundoff_amount,
-		delivery_personnel,
-		is_credit_sale,
-		allow_partial_payment,
-		due_date,
-		salesperson,
-		tax_id,
-	)
+    return (
+        customer,
+        items,
+        amount_paid,
+        sales_and_tax_charges,
+        mode_of_payment,
+        business_type,
+        roundoff_amount,
+        delivery_personnel,
+        is_credit_sale,
+        allow_partial_payment,
+        due_date,
+        salesperson,
+        tax_id,
+        enable_background_submission,
+    )
 
 
 def build_sales_invoice_doc(
@@ -1329,12 +1374,14 @@ def build_sales_invoice_doc(
 	salesperson=None,
 	tax_id=None,
 	create_batch_and_serial_bundle=True,
+	enable_background_submission=False,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
 	doc.customer = customer
 	doc.due_date = due_date or frappe.utils.nowdate()
 	doc.custom_delivery_date = frappe.utils.nowdate()
+	doc.enable_background_invoice_submission = 1 if enable_background_submission else 0
 
 	# Set delivery personnel if provided
 	if delivery_personnel:

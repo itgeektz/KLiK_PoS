@@ -17,6 +17,8 @@ export default function CategoryTabs({
   const totalCount = useProductStore((state) => state.totalCount);
   const isLoading = useProductStore((state) => state.isLoading);
   const isSearching = useProductStore((state) => state.isSearching);
+  const searchProducts = useProductStore((state) => state.searchProducts);
+  const searchQuery = useProductStore((state) => state.searchQuery);
 
   const isValidating = isLoading && !isSearching;
 
@@ -46,6 +48,13 @@ export default function CategoryTabs({
     })),
   ];
 
+  const handleCategoryClick = (categoryId: string) => {
+    onCategoryChange(categoryId);
+    if (searchQuery) {
+      searchProducts(searchQuery);
+    }
+  };
+
   if (categories.length === 1 && categories[0].id === "all" && categories[0].count === 0) {
     return (
       <div className="text-center py-4 text-gray-500 dark:text-gray-400">
@@ -59,7 +68,7 @@ export default function CategoryTabs({
       {categories.map((category) => (
         <button
           key={category.id}
-          onClick={() => onCategoryChange(category.id)}
+          onClick={() => handleCategoryClick(category.id)}
           className={`flex items-center justify-center px-3 py-2 rounded-xl whitespace-nowrap transition-all duration-200 flex-shrink-0 min-w-fit ${
             selectedCategory === category.id
               ? "bg-beveren-50 dark:bg-beveren-900/20 text-beveren-700 dark:text-beveren-300 border border-beveren-200 dark:border-beveren-800 shadow-sm"

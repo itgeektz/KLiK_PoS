@@ -15,8 +15,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
         pos_profile = get_current_pos_profile()
         business_type = getattr(pos_profile, "custom_business_type", "B2C")
         company, company_currency = get_user_company_and_currency()
-        result = []
-
+        
         customer_group_names = []
         if hasattr(pos_profile, "customer_groups") and pos_profile.customer_groups:
             customer_group_names = [
@@ -38,196 +37,113 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
         if has_customer_permissions and not permitted_customer_names:
             return {"success": True, "data": [], "total_count": 0}
 
+        try:
+            limit_val = int(limit) if limit else 100
+        except Exception:
+            limit_val = 100
+
+        limit_val = min(limit_val, 500)
+        offset_val = int(start) or 0
+
+        where_conditions = ["c.disabled = 0"]
+        params = []
+
+        if business_type == "B2B":
+            where_conditions.append("c.customer_type = 'Company'")
+        elif business_type == "B2C":
+            where_conditions.append("c.customer_type = 'Individual'")
+        
+        if customer_group_names:
+            placeholders = ",".join(["%s"] * len(customer_group_names))
+            where_conditions.append(f"c.customer_group IN ({placeholders})")
+            params.extend(customer_group_names)
+        
+        if permitted_customer_names:
+            placeholders = ",".join(["%s"] * len(permitted_customer_names))
+            where_conditions.append(f"c.name IN ({placeholders})")
+            params.extend(permitted_customer_names)
+        
         if search:
-            like_param = f"%{search}%"
-
-            cust_type_filter = ""
-            cust_type_params = []
-            if business_type == "B2B":
-                cust_type_filter = "AND c.customer_type = %s"
-                cust_type_params.append("Company")
-            elif business_type == "B2C":
-                cust_type_filter = "AND c.customer_type = %s"
-                cust_type_params.append("Individual")
-
-            cust_group_filter = ""
-            cust_group_params = []
-            if customer_group_names:
-                placeholders = ",".join(["%s"] * len(customer_group_names))
-                cust_group_filter = f"AND c.customer_group IN ({placeholders})"
-                cust_group_params.extend(customer_group_names)
-
-            user_perm_filter = ""
-            user_perm_params = []
-            if permitted_customer_names:
-                placeholders = ",".join(["%s"] * len(permitted_customer_names))
-                user_perm_filter = f"AND c.name IN ({placeholders})"
-                user_perm_params.extend(permitted_customer_names)
-
-            try:
-                limit_val = int(limit) if limit else 100
-            except Exception:
-                limit_val = 100
-
-            limit_val = max(limit_val, 500)
-
-            query = f"""
-                SELECT DISTINCT c.name, c.customer_name, c.customer_type, c.customer_group, c.territory, c.default_currency
-                FROM `tabCustomer` c
-                LEFT JOIN `tabDynamic Link` dl ON dl.link_doctype='Customer' AND dl.link_name=c.name AND dl.parenttype='Contact'
-                LEFT JOIN `tabContact` ct ON ct.name = dl.parent
-                LEFT JOIN `tabContact Email` ce ON ce.parent = ct.name
-                LEFT JOIN `tabContact Phone` cp ON cp.parent = ct.name
-                WHERE (
-                    c.customer_name LIKE %s OR c.name LIKE %s OR
-                    ce.email_id LIKE %s OR cp.phone LIKE %s
-                )
-                {cust_type_filter}
-                {cust_group_filter}
-                {user_perm_filter}
-                ORDER BY c.creation DESC
-                LIMIT %s OFFSET %s
-            """
-            query = apply_sql_permissions(query)
-
-            customer_names = frappe.db.sql(
-                query,
-                tuple(
-                    [
-                        like_param,
-                        like_param,
-                        like_param,
-                        like_param,
-                        *cust_type_params,
-                        *cust_group_params,
-                        *user_perm_params,
-                        limit_val,
-                        int(start) or 0,
-                    ]
-                ),
-                as_dict=True,
-            )
-
-            count_query = f"""
-                SELECT COUNT(DISTINCT c.name) as total
-                FROM `tabCustomer` c
-                LEFT JOIN `tabDynamic Link` dl ON dl.link_doctype='Customer' AND dl.link_name=c.name AND dl.parenttype='Contact'
-                LEFT JOIN `tabContact` ct ON ct.name = dl.parent
-                LEFT JOIN `tabContact Email` ce ON ce.parent = ct.name
-                LEFT JOIN `tabContact Phone` cp ON cp.parent = ct.name
-                WHERE (
-                    c.customer_name LIKE %s OR c.name LIKE %s OR
-                    ce.email_id LIKE %s OR cp.phone LIKE %s
-                )
-                {cust_type_filter}
-                {cust_group_filter}
-                {user_perm_filter}
-            """
-            count_query = apply_sql_permissions(count_query)
-
-            total_count_row = frappe.db.sql(
-                count_query,
-                tuple(
-                    [
-                        like_param,
-                        like_param,
-                        like_param,
-                        like_param,
-                        *cust_type_params,
-                        *cust_group_params,
-                        *user_perm_params,
-                    ]
-                ),
-                as_dict=True,
-            )
-
-            total_count = (total_count_row[0].total if total_count_row else 0) or 0
-
-        else:
-            filters = {}
-
-            if business_type == "B2B":
-                filters["customer_type"] = "Company"
-            elif business_type == "B2C":
-                filters["customer_type"] = "Individual"
-
-            if customer_group_names:
-                filters["customer_group"] = ["in", customer_group_names]
-
-            if permitted_customer_names:
-                filters["name"] = ["in", permitted_customer_names]
-
-            customer_names = frappe.get_all(
-                "Customer",
-                filters=filters,
-                fields=[
-                    "name",
-                    "customer_name",
-                    "customer_type",
-                    "customer_group",
-                    "territory",
-                    "default_currency",
-                ],
-                order_by="creation desc",
-                limit=limit,
-                start=start,
-            )
-
-            total_count = frappe.db.count("Customer", filters=filters)
-
-        for cust in customer_names:
-            doc = frappe.get_doc("Customer", cust.name)
-
-            contact = (
-                frappe.db.get_value(
-                    "Contact",
-                    {"name": doc.customer_primary_contact},
-                    ["first_name", "last_name", "email_id", "phone", "mobile_no"],
-                    as_dict=True,
-                )
-                if doc.customer_primary_contact
-                else None
-            )
-
-            address = (
-                frappe.db.get_value(
-                    "Address",
-                    {"name": doc.customer_primary_address},
-                    ["address_line1", "city", "state", "country", "pincode"],
-                    as_dict=True,
-                )
-                if doc.customer_primary_address
-                else None
-            )
-
-            stats = get_customer_statistics(doc.name)
-            customer_stats = stats.get("data", {}) if stats.get("success") else {}
-
-            result.append(
-                {
-                    "name": doc.name,
-                    "customer_name": doc.customer_name,
-                    "customer_type": doc.customer_type,
-                    "customer_group": doc.customer_group,
-                    "territory": doc.territory,
-                    "contact": contact,
-                    "address": address,
-                    "default_currency": doc.default_currency,
-                    "company_currency": company_currency,
-                    "custom_total_orders": customer_stats.get("total_orders", 0),
-                    "custom_total_spent": customer_stats.get("total_spent", 0),
-                    "custom_last_visit": customer_stats.get("last_visit"),
-                    "is_walkin": getattr(doc, "custom_is_walkin", 0),
-                    "tax_id": doc.tax_id,
-                }
-            )
-
+            search_term = f"%{search}%"
+            where_conditions.append("(c.customer_name LIKE %s OR c.name LIKE %s OR c.email_id LIKE %s OR c.mobile_no LIKE %s)")
+            params.extend([search_term, search_term, search_term, search_term])
+        
+        where_clause = " AND ".join(where_conditions)
+        
+        count_query = f"""
+            SELECT COUNT(c.name) as total
+            FROM `tabCustomer` c
+            WHERE {where_clause}
+        """
+        count_query = apply_sql_permissions(count_query)
+        total_count_result = frappe.db.sql(count_query, tuple(params), as_dict=True)
+        total_count = total_count_result[0]["total"] if total_count_result else 0
+        
+        data_query = f"""
+            SELECT 
+                c.name,
+                c.customer_name,
+                c.customer_type,
+                c.customer_group,
+                c.territory,
+                c.default_currency,
+                c.email_id,
+                c.mobile_no,
+                c.tax_id,
+                c.custom_is_walkin as is_walkin,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM `tabSales Invoice` si
+                    WHERE si.customer = c.name
+                    AND si.docstatus = 1
+                    AND si.is_return = 0
+                    AND si.status != 'Cancelled'
+                    AND si.custom_pos_opening_entry IS NOT NULL
+                    AND si.custom_pos_opening_entry != ''
+                ), 0) as custom_total_orders,
+                COALESCE((
+                    SELECT SUM(si.grand_total)
+                    FROM `tabSales Invoice` si
+                    WHERE si.customer = c.name
+                    AND si.docstatus = 1
+                    AND si.is_return = 0
+                    AND si.status != 'Cancelled'
+                    AND si.custom_pos_opening_entry IS NOT NULL
+                    AND si.custom_pos_opening_entry != ''
+                ), 0) as custom_total_spent,
+                (
+                    SELECT MAX(si.posting_date)
+                    FROM `tabSales Invoice` si
+                    WHERE si.customer = c.name
+                    AND si.docstatus = 1
+                    AND si.is_return = 0
+                    AND si.status != 'Cancelled'
+                    AND si.custom_pos_opening_entry IS NOT NULL
+                    AND si.custom_pos_opening_entry != ''
+                ) as custom_last_visit
+            FROM `tabCustomer` c
+            WHERE {where_clause}
+            ORDER BY c.creation DESC
+            LIMIT %s OFFSET %s
+        """
+        
+        data_query = apply_sql_permissions(data_query)
+        params.extend([limit_val, offset_val])
+        
+        customers = frappe.db.sql(data_query, tuple(params), as_dict=True)
+        
+        for cust in customers:
+            cust["company_currency"] = company_currency
+            cust["contact"] = None
+            cust["address"] = None
+            cust["default_currency"] = cust.get("default_currency")
+        
         return {
             "success": True,
-            "data": result,
+            "data": customers,
             "total_count": total_count,
-            "start": start,
-            "limit": limit,
+            "start": offset_val,
+            "limit": limit_val,
         }
 
     except Exception:
@@ -239,8 +155,8 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
             "success": False,
             "error": _("Something went wrong while fetching customers."),
         }
-
-
+    
+    
 def get_user_company_and_currency():
     default_company = frappe.defaults.get_user_default("Company")
     if not default_company:

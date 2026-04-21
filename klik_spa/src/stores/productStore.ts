@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { MenuItem, Customer, ItemGroup } from '../../types';
 import { usePOSProfileStore } from './posProfileStore';
+import { useCartStore } from './cartStore';
 
 interface ProductStoreState {
   products: MenuItem[];
@@ -38,7 +39,7 @@ interface ProductStoreState {
   stopBackgroundRefresh: () => void;
   startBackgroundRefresh: () => void;
   executeSearch: (query: string) => Promise<void>;
-  fetchProductsFromAPI: (limit: number, offset: number, search: string, category: string, customerId: string) => Promise<{
+  fetchProductsFromAPI: (limit: number, offset: number, search: string, category: string, customerId: string, priceList?: string) => Promise<{
     items: MenuItem[];
     item_groups: ItemGroup[];
     total_count: number;
@@ -51,6 +52,8 @@ interface ProductStoreState {
   getScalePrefix: () => string;
   getDefaultView: () => 'grid' | 'list';
   checkAndInitialize: () => void;
+  syncCustomerFromCart: () => void;
+  getEffectiveCustomer: () => Customer | null;
 }
 
 const PAGE_SIZE = 1000;
@@ -96,9 +99,33 @@ export const useProductStore = create<ProductStoreState>()(
       getScalePrefix: () => usePOSProfileStore.getState().scalePrefix,
       getDefaultView: () => usePOSProfileStore.getState().defaultView,
 
+      getEffectiveCustomer: () => {
+        const cartCustomer = useCartStore.getState().selectedCustomer;
+        const { selectedCustomer } = get();
+        
+        if (cartCustomer) {
+          return cartCustomer;
+        }
+        return selectedCustomer;
+      },
+
+      syncCustomerFromCart: () => {
+        const cartCustomer = useCartStore.getState().selectedCustomer;
+        const { selectedCustomer } = get();
+        
+        if (cartCustomer && (!selectedCustomer || selectedCustomer.id !== cartCustomer.id)) {
+          set({ selectedCustomer: cartCustomer });
+          if (currentPosName) {
+            get().initializePOS(currentPosName, cartCustomer.id);
+          }
+        }
+      },
+
       checkAndInitialize: () => {
         const { posName, isInitialized, isLoading } = get();
         const profileStore = usePOSProfileStore.getState();
+        
+        get().syncCustomerFromCart();
         
         if (!posName && profileStore.isInitialized && profileStore.posDetails?.name) {
           const profileName = profileStore.posDetails.name;
@@ -109,17 +136,24 @@ export const useProductStore = create<ProductStoreState>()(
         }
       },
 
-      fetchProductsFromAPI: async (limit, offset, search, category, customerId) => {
+      fetchProductsFromAPI: async (limit, offset, search, category, customerId, priceList) => {
         try {
           const params = new URLSearchParams({
             limit: limit.toString(),
             offset: offset.toString(),
             pos_profile: currentPosName,
-          }); 
+          });
+          
+          if (customerId) {
+            params.append('customer', customerId);
+          }
+          
+          if (priceList) {
+            params.append('price_list', priceList);
+          }
           
           if (search) params.append('search', search);
           if (category && category !== 'all') params.append('category', category);
-          if (customerId) params.append('customer', customerId);
           
           const response = await fetch(`/api/method/klik_pos.api.item.item_listing.get_items?${params.toString()}`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -163,17 +197,19 @@ export const useProductStore = create<ProductStoreState>()(
       initializePOS: async (posName: string, customerId = '') => {
         const { lastFullRefresh, products, isLoading, isInitialized } = get();
         
+        const effectiveCustomer = get().getEffectiveCustomer();
+        const effectiveCustomerId = customerId || effectiveCustomer?.id || '';
+        const effectivePriceList = effectiveCustomer?.sellingPriceList || effectiveCustomer?.priceListCurrency;
+        
         const isCacheValid = lastFullRefresh && 
           (Date.now() - lastFullRefresh) < CACHE_DURATION && 
           products.length > 0;
         
-        if (isCacheValid && !customerId && isInitialized && !isLoading) {
-          console.log('Using cached product data');
+        if (isCacheValid && !effectiveCustomerId && isInitialized && !isLoading) {
           return;
         }
         
         if (isLoading) {
-          console.log('Initialization already in progress');
           return;
         }
         
@@ -181,13 +217,13 @@ export const useProductStore = create<ProductStoreState>()(
         currentPosName = posName;
         
         try {
-          const customerIdParam = customerId || '';
           const result = await get().fetchProductsFromAPI(
             PAGE_SIZE,
             0,
             '',
             'all',
-            customerIdParam
+            effectiveCustomerId,
+            effectivePriceList
           );
           
           set({
@@ -216,23 +252,26 @@ export const useProductStore = create<ProductStoreState>()(
       },
 
       fetchProducts: async (reset = true) => {
-        const { searchQuery, selectedCategory, selectedCustomer, fetchProductsFromAPI, posName } = get();
+        const { searchQuery, selectedCategory, fetchProductsFromAPI, posName } = get();
         
         if (!posName && !currentPosName) {
-          console.log('No POS name available, skipping fetch');
           return;
         }
+        
+        const effectiveCustomer = get().getEffectiveCustomer();
+        const customerId = effectiveCustomer?.id || '';
+        const priceList = effectiveCustomer?.sellingPriceList || effectiveCustomer?.priceListCurrency;
         
         set({ isLoading: reset, error: null });
         
         try {
-          const customerId = selectedCustomer?.id || '';
           const result = await fetchProductsFromAPI(
             reset ? PAGE_SIZE : LOAD_MORE_SIZE,
             reset ? 0 : get().currentOffset,
             searchQuery,
             selectedCategory,
-            customerId
+            customerId,
+            priceList
           );
           
           set({
@@ -281,11 +320,14 @@ export const useProductStore = create<ProductStoreState>()(
       },
 
       executeSearch: async (query: string) => {
-        const { fetchProductsFromAPI, selectedCustomer, selectedCategory } = get();
+        const { fetchProductsFromAPI, selectedCategory } = get();
+        
+        const effectiveCustomer = get().getEffectiveCustomer();
+        const customerId = effectiveCustomer?.id || '';
+        const priceList = effectiveCustomer?.sellingPriceList || effectiveCustomer?.priceListCurrency;
         
         try {
-          const customerId = selectedCustomer?.id || '';
-          const result = await fetchProductsFromAPI(500, 0, query, selectedCategory, customerId);
+          const result = await fetchProductsFromAPI(500, 0, query, selectedCategory, customerId, priceList);
           
           if (get().searchQuery === query) {
             set({
@@ -407,6 +449,10 @@ export const useProductStore = create<ProductStoreState>()(
 
       setSelectedCustomer: (customer: Customer | null) => {
         set({ selectedCustomer: customer });
+        
+        if (customer) {
+          useCartStore.getState().setSelectedCustomer(customer);
+        }
         
         if (currentPosName) {
           get().initializePOS(currentPosName, customer?.id || '');

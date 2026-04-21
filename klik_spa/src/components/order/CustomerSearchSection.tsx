@@ -18,6 +18,7 @@ import type { Customer } from "../../types/customer";
 import { useCustomers } from "../../hooks/useCustomers";
 import { useCustomerPermission } from "../../hooks/useCustomerPermission";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
+import { useProductStore } from "../../stores/productStore";
 import countryList from "react-select-country-list";
 import { parsePhoneNumber } from "react-phone-number-input";
 import AddCustomerModal from "../AddCustomerModal";
@@ -58,8 +59,109 @@ export const CustomerSearchSection = ({
   const { customers, isLoading: isLoadingCustomers, refetch: refetchCustomers } = useCustomers(search);
   const { posDetails } = usePOSProfileStore();
   const { checkCustomerPermission } = useCustomerPermission();
+  const { fetchProducts, setSelectedCustomer: setProductCustomer } = useProductStore();
 
   const canCreateCustomer = posDetails?.can_create_and_edit_customers === 1;
+
+  const fetchCustomerInfo = async (customerName: string): Promise<Customer | null> => {
+    try {
+      const response = await fetch(`/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(customerName)}`);
+      const resData = await response.json();
+
+      if (!resData.message || resData.message.success === false) {
+        throw new Error(resData.message?.error || "Failed to fetch customer info");
+      }
+
+      const customer = resData.message;
+      
+      const transformedCustomer: Customer = {
+        id: customer.name,
+        type: customer.customer_type === "Company" ? "company" : (customer.is_walkin ? "walk-in" : "individual"),
+        name: customer.customer_name || customer.name,
+        customerName: customer.customer_name || customer.name,
+        email: customer.contact_data?.email_id || customer.email_id || "",
+        phone: customer.contact_data?.mobile_no || customer.contact_data?.phone || customer.mobile_no || "",
+        address: {
+          addressType: "Billing",
+          street: customer.address_data?.address_line1 || "",
+          buildingNumber: customer.address_data?.address_line2 || "",
+          city: customer.address_data?.city || "",
+          state: customer.address_data?.state || "",
+          zipCode: customer.address_data?.pincode || "",
+          country: customer.address_data?.country || posDetails?.company?.country || ""
+        },
+        companyName: customer.company_name || (customer.customer_type === "Company" ? customer.customer_name : undefined),
+        contactPerson: customer.contact_data ?
+          `${customer.contact_data.first_name || ''} ${customer.contact_data.last_name || ''}`.trim() || customer.customer_name :
+          customer.contact_person || customer.customer_name || "",
+        taxId: customer.vat_number || customer.tax_id || "",
+        isWalkin: customer.is_walkin || 0,
+        industry: customer.industry || "",
+        employeeCount: customer.employee_count || "",
+        registrationScheme: customer.registration_scheme || "",
+        registrationNumber: customer.registration_number || "",
+        loyaltyPoints: customer.custom_loyalty_points || 0,
+        totalSpent: customer.custom_total_spent || 0,
+        totalOrders: customer.custom_total_orders || 0,
+        preferredPaymentMethod: (customer.payment_method as "Cash" | "Bank Card" | "Bank Payment" | "Credit") || "Cash",
+        tags: customer.custom_tags?.split(",").filter(Boolean) || [],
+        status: (customer.custom_status as "active" | "inactive" | "vip") || "active",
+        createdAt: customer.creation || new Date().toISOString(),
+        lastVisit: customer.custom_last_visit || undefined,
+        defaultCurrency: customer.currency || customer.price_list_currency || undefined,
+        companyCurrency: customer.price_list_currency || undefined,
+        customerGroup: customer.customer_group || "All Customer Groups",
+        territory: customer.territory || "All Territories",
+        emailId: customer.email_id || null,
+        mobileNo: customer.mobile_no || null,
+        customerType: customer.customer_type,
+        customerPrimaryContact: customer.customer_primary_contact,
+        customerPrimaryAddress: customer.customer_primary_address,
+        contactData: customer.contact_data ? {
+          firstName: customer.contact_data.first_name,
+          lastName: customer.contact_data.last_name,
+          emailId: customer.contact_data.email_id,
+          phone: customer.contact_data.phone,
+          mobileNo: customer.contact_data.mobile_no
+        } : null,
+        addressData: customer.address_data ? {
+          addressLine1: customer.address_data.address_line1,
+          addressLine2: customer.address_data.address_line2,
+          city: customer.address_data.city,
+          state: customer.address_data.state,
+          pincode: customer.address_data.pincode,
+          country: customer.address_data.country
+        } : null,
+        customerAddress: customer.customer_address,
+        addressDisplay: customer.address_display || null,
+        shippingAddressName: customer.shipping_address_name || null,
+        shippingAddress: customer.shipping_address || null,
+        taxCategory: customer.tax_category || null,
+        contactPersonName: customer.contact_person || null,
+        contactDisplay: customer.contact_display || null,
+        contactEmail: customer.contact_email || null,
+        contactMobile: customer.contact_mobile || null,
+        contactPhone: customer.contact_phone || null,
+        contactDesignation: customer.contact_designation || null,
+        contactDepartment: customer.contact_department || null,
+        taxWithholdingCategory: customer.tax_withholding_category || null,
+        taxWithholdingGroup: customer.tax_withholding_group || null,
+        language: customer.language || "en",
+        priceListCurrency: customer.price_list_currency,
+        sellingPriceList: customer.selling_price_list,
+        paymentTermsTemplate: customer.payment_terms_template || null,
+        currencyCode: customer.currency || null,
+        salesTeam: customer.sales_team || [],
+        vatNumber: customer.vat_number || "",
+        paymentMethod: customer.payment_method || "Cash"
+      };
+      
+      return transformedCustomer;
+    } catch (error) {
+      console.error("Error fetching customer info:", error);
+      return null;
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -99,29 +201,12 @@ export const CustomerSearchSection = ({
   useEffect(() => {
     if (posDetails?.default_customer && !selectedCustomer && !userRemovedDefaultCustomer) {
       const defaultCustomer = posDetails.default_customer as any;
-      checkCustomerPermission(defaultCustomer.id).then((result) => {
+      checkCustomerPermission(defaultCustomer.id).then(async (result) => {
         if (result.success && result.has_permission) {
-          const transformedCustomer: Customer = {
-            id: defaultCustomer.id,
-            name: defaultCustomer.name,
-            customer_name: defaultCustomer.name,
-            email: defaultCustomer.email || "",
-            phone: defaultCustomer.phone || "",
-            type: (defaultCustomer.customer_type === "Company" ? "company" : "individual") as "individual" | "company",
-            address: { street: "", city: "", state: "", zipCode: "", country: posDetails.company?.country || "" },
-            loyaltyPoints: 0,
-            totalSpent: 0,
-            totalOrders: 0,
-            preferredPaymentMethod: "Cash" as const,
-            notes: "",
-            tags: [],
-            status: "active",
-            is_walkin: defaultCustomer.is_walkin,
-            taxId: defaultCustomer.tax_id,
-            createdAt: new Date().toISOString(),
-            defaultCurrency: defaultCustomer.default_currency || undefined,
-          };
-          onCustomerSelect(transformedCustomer);
+          const fullCustomer = await fetchCustomerInfo(defaultCustomer.name);
+          if (fullCustomer) {
+            await handleSelect(fullCustomer);
+          }
         }
       });
     }
@@ -138,17 +223,38 @@ export const CustomerSearchSection = ({
     setDropdownPosition(spaceBelow < 360 && spaceAbove > spaceBelow ? "top" : "bottom");
   };
 
-  const handleSelect = (customer: Customer) => {
-    onCustomerSelect(customer);
-    setIsOpen(false);
-    setSearch("");
-    setHighlightedIndex(-1);
-    setUserRemovedDefaultCustomer(false);
+  const handleSelect = async (customer: Customer) => {
+    setIsLoading(true);
+    try {
+      const fullCustomer = await fetchCustomerInfo(customer.name);
+      if (fullCustomer) {
+        onCustomerSelect(fullCustomer);
+        setProductCustomer(fullCustomer);
+        await fetchProducts(true);
+      } else {
+        onCustomerSelect(customer);
+        setProductCustomer(customer);
+        await fetchProducts(true);
+      }
+    } catch (error) {
+      console.error("Error fetching customer info:", error);
+      onCustomerSelect(customer);
+      setProductCustomer(customer);
+      await fetchProducts(true);
+    } finally {
+      setIsLoading(false);
+      setIsOpen(false);
+      setSearch("");
+      setHighlightedIndex(-1);
+      setUserRemovedDefaultCustomer(false);
+    }
   };
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     onCustomerClear();
+    setProductCustomer(null);
+    fetchProducts(true);
     setUserRemovedDefaultCustomer(true);
     setSearch("");
     setIsOpen(false);
@@ -237,32 +343,10 @@ export const CustomerSearchSection = ({
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const resData = await response.json();
         if (resData.message) {
-          const erpCustomer = resData.message;
-          const customerToSelect: Customer = {
-            id: erpCustomer.name,
-            name: erpCustomer.customer_name || erpCustomer.name,
-            customer_name: erpCustomer.customer_name || erpCustomer.name,
-            email: erpCustomer.email_id || "",
-            phone: erpCustomer.mobile_no || "",
-            type: erpCustomer.customer_type === "Company" ? "company" : "individual",
-            address: {
-              street: "",
-              city: "",
-              state: "",
-              zipCode: "",
-              country: erpCustomer.address_data?.country || posDetails?.company?.country || "",
-            },
-            loyaltyPoints: erpCustomer.custom_loyalty_points || 0,
-            totalSpent: erpCustomer.custom_total_spent || 0,
-            totalOrders: erpCustomer.custom_total_orders || 0,
-            preferredPaymentMethod: "Cash",
-            tags: erpCustomer.custom_tags?.split(",").filter(Boolean) || [],
-            status: erpCustomer.custom_status || "active",
-            is_walkin: erpCustomer.is_walkin,
-            taxId: erpCustomer.tax_id || "",
-            createdAt: erpCustomer.creation || new Date().toISOString(),
-          };
-          handleSelect(customerToSelect);
+          const fullCustomer = await fetchCustomerInfo(newCustomer.customer_name);
+          if (fullCustomer) {
+            await handleSelect(fullCustomer);
+          }
           refetchCustomers?.();
         }
       } catch (error) {
@@ -271,8 +355,8 @@ export const CustomerSearchSection = ({
           id: newCustomer.customer_name || "",
           name: newCustomer.customer_name || "",
           customer_name: newCustomer.customer_name || "",
-          email: "",
-          phone: "",
+          email: newCustomer.email || "",
+          phone: newCustomer.phone || "",
           type: "individual",
           address: { street: "", city: "", state: "", zipCode: "", country: posDetails?.company?.country || "" },
           loyaltyPoints: 0,
@@ -285,7 +369,7 @@ export const CustomerSearchSection = ({
           taxId: newCustomer.taxId,
           createdAt: new Date().toISOString(),
         };
-        handleSelect(customerToSelect);
+        await handleSelect(customerToSelect);
       }
     }
     setShowAddCustomerModal(false);
@@ -407,6 +491,11 @@ export const CustomerSearchSection = ({
                           <span className="truncate max-w-[150px]">{customer.email}</span>
                         </div>
                       )}
+                      {customer.taxId && (
+                        <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                          <span className="font-mono">PIN: {customer.taxId}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -476,6 +565,11 @@ export const CustomerSearchSection = ({
                       <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                         <Mail className="w-3 h-3" />
                         <span className="truncate max-w-[200px]">{selectedCustomer.email}</span>
+                      </div>
+                    )}
+                    {selectedCustomer.taxId && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                        <span className="font-mono">PIN: {selectedCustomer.taxId}</span>
                       </div>
                     )}
                   </div>

@@ -32,7 +32,6 @@ export default function MenuGrid({ onRefreshStock, onScanBarcode }: MenuGridProp
     setCategory,
     searchProducts,
     defaultView,
-    filteredItems,
   } = useProduct();
   
   const { posDetails } = usePOSProfileStore();

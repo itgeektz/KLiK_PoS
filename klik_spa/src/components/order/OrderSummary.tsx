@@ -33,7 +33,7 @@ export default function OrderSummary({
     selectedCustomer,
     setSelectedCustomer,
     updateUOM,
-    updatePricesForCustomer,
+    refreshCartPricing,
     updateQuantity,
     removeItem,
     clearCart,
@@ -68,9 +68,9 @@ export default function OrderSummary({
 
   useEffect(() => {
     if (selectedCustomer && cartItems.length > 0) {
-      updatePricesForCustomer(selectedCustomer.id);
+      refreshCartPricing();
     }
-  }, [selectedCustomer?.id, cartItems.length, updatePricesForCustomer]);
+  }, [selectedCustomer?.id, cartItems.length, refreshCartPricing]);
 
   useEffect(() => {
     const fetchData = async () => {

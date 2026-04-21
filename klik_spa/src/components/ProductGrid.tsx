@@ -25,7 +25,7 @@ export default function ProductGrid({
   totalCount = 0,
   isSearching = false,
 }: ProductGridProps) {
-  const { filteredItems, hideUnavailableItems, isLoading } = useProduct();
+  const { filteredItems, hideUnavailableItems } = useProduct();
   const { addToCart } = useCartStore();
 
   const loadMoreRef = useRef<HTMLDivElement>(null);

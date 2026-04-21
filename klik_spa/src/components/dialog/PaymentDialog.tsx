@@ -29,6 +29,7 @@ import DeliveryPersonnelModal from "./DeliveryPersonnelModal";
 import type { PaymentDialogProps, PaymentAmount, Calculations } from "./types";
 import DisplayPrintPreview from "../../utils/invoicePrint";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
+import { handlePrintInvoice } from "../../utils/printHandler";
 
 const getDeviceId = () => {
   let device_id = localStorage.getItem("pos_device_id");
@@ -39,30 +40,6 @@ const getDeviceId = () => {
   return device_id;
 };
 
-const handlePrintInvoice = (invoice: any) => {
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Invoice</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            @media print {
-              body { margin: 0; padding: 0; }
-            }
-          </style>
-        </head>
-        <body>
-          <pre>${JSON.stringify(invoice, null, 2)}</pre>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-    printWindow.close();
-  }
-};
 
 export default function PaymentDialog(props: PaymentDialogProps) {
   const {

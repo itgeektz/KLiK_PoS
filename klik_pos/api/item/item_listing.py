@@ -31,7 +31,7 @@ def get_items(
     price_list = _get_priority_price_list(customer, pos_doc, price_list)
 
     try:
-        select_fields = "i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom, i.has_batch_no, i.has_serial_no"
+        select_fields = "i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom, i.sales_uom, i.has_batch_no, i.has_serial_no"
         params_list = []
         count_params = []
 
@@ -157,14 +157,10 @@ def get_items(
             if row.parent not in barcode_map:
                 barcode_map[row.parent] = row.barcode
 
-        uom_map = {
-            item["name"]: item.get("stock_uom", "Nos") for item in items
-        }
-
         stock_map = _fetch_batch_stock(item_codes, warehouse)
-        price_map = _fetch_batch_prices(item_codes, price_list, uom_map)
-
+        
         enriched_items = []
+        current_date = frappe.utils.today()
 
         for item in items:
             item_code = item["name"]
@@ -173,10 +169,40 @@ def get_items(
             if hide_unavailable and balance <= 0:
                 continue
 
-            price_info = price_map.get(
-                item_code,
-                {"price": 0, "currency": "SAR", "currency_symbol": "SAR"},
-            )
+            item_prices = _fetch_item_prices_sql(item_code, price_list, current_date)
+            
+            stock_uom_price = next((d for d in item_prices if d.get("uom") == item.stock_uom), {})
+            item_uom = item.stock_uom
+            item_uom_price = stock_uom_price
+            
+            if item.sales_uom and item.sales_uom != item.stock_uom:
+                item_uom = item.sales_uom
+                sales_uom_price = next((d for d in item_prices if d.get("uom") == item.sales_uom), {})
+                if sales_uom_price:
+                    item_uom_price = sales_uom_price
+            
+            if item_prices and not item_uom_price:
+                item_uom = item_prices[0].get("uom")
+                item_uom_price = item_prices[0]
+            
+            conversion_factor = _get_conversion_factor_sql(item_code, item_uom)
+            
+            if item.stock_uom != item_uom and conversion_factor:
+                balance = balance // conversion_factor
+            
+            price = 0
+            currency = "KES"
+            batch_no = None
+            
+            if item_uom_price:
+                price = flt(item_uom_price.get("price_list_rate", 0))
+                currency = item_uom_price.get("currency") or "KES"
+                batch_no = item_uom_price.get("batch_no")
+                
+                if item_uom and item_uom != item_uom_price.get("uom") and conversion_factor:
+                    price = price * conversion_factor
+            
+            currency_symbol = frappe.db.get_value("Currency", currency, "symbol") if currency else "KES"
 
             enriched_items.append(
                 {
@@ -184,14 +210,14 @@ def get_items(
                     "name": item.item_name or item_code,
                     "description": item.description or "",
                     "category": item.item_group or "General",
-                    "price": price_info["price"],
-                    "currency": price_info["currency"],
-                    "currency_symbol": price_info["currency_symbol"],
+                    "price": price,
+                    "currency": currency,
+                    "currency_symbol": currency_symbol,
                     "available": balance,
                     "image": item.image,
                     "sold": 0,
                     "preparationTime": 10,
-                    "uom": item.stock_uom or "Nos",
+                    "uom": item_uom,
                     "barcode": barcode_map.get(item_code),
                     "has_batch_no": item.has_batch_no,
                     "has_serial_no": item.has_serial_no,
@@ -213,6 +239,54 @@ def get_items(
             "Get Combined Item Data Error",
         )
         frappe.throw(_("Something went wrong while fetching item data."))
+
+
+def _fetch_item_prices_sql(item_code, price_list, current_date):
+    if not price_list:
+        return []
+    
+    try:
+        query = """
+            SELECT price_list_rate, currency, uom, batch_no, valid_from, valid_upto
+            FROM `tabItem Price`
+            WHERE price_list = %s
+            AND item_code = %s
+            AND selling = 1
+            AND (valid_from <= %s OR valid_from IS NULL)
+            AND (valid_upto >= %s OR valid_upto IS NULL)
+            ORDER BY valid_from DESC
+        """
+        
+        query = apply_sql_permissions(query)
+        
+        results = frappe.db.sql(
+            query,
+            (price_list, item_code, current_date, current_date),
+            as_dict=True,
+        )
+        
+        return results
+    except Exception:
+        return []
+
+
+def _get_conversion_factor_sql(item_code, uom):
+    try:
+        query = """
+            SELECT conversion_factor
+            FROM `tabUOM Conversion Detail`
+            WHERE parent = %s AND uom = %s
+            LIMIT 1
+        """
+        
+        result = frappe.db.sql(query, (item_code, uom), as_dict=True)
+        
+        if result:
+            return flt(result[0].get("conversion_factor", 1))
+        
+        return 1
+    except Exception:
+        return 1
 
 
 def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_term=None, selected_category=None):
@@ -403,67 +477,3 @@ def _fetch_batch_stock(item_codes, warehouse):
             stock_map[code] = fetch_item_balance(code, warehouse)
 
     return stock_map
-
-
-def _fetch_batch_prices(item_codes, price_list, uom_map):
-    if not item_codes:
-        return {}
-
-    price_map = {}
-    placeholders = ", ".join(["%s"] * len(item_codes))
-
-    query = f"""
-        SELECT item_code, price_list_rate, currency
-        FROM `tabItem Price`
-        WHERE item_code IN ({placeholders}) AND selling = 1
-    """
-
-    params = list(item_codes)
-
-    if price_list:
-        query += " AND price_list = %s"
-        params.append(price_list)
-
-    try:
-        query = apply_sql_permissions(query)
-
-        results = frappe.db.sql(
-            query,
-            tuple(params),
-            as_dict=True,
-        )
-
-        for row in results:
-            price_map[row["item_code"]] = {
-                "price": flt(row["price_list_rate"]),
-                "currency": row["currency"],
-                "currency_symbol": row["currency"],
-            }
-
-        for code in item_codes:
-            if code not in price_map:
-                p_info = fetch_item_price(
-                    code,
-                    price_list=price_list,
-                    uom=uom_map.get(code),
-                )
-                price_map[code] = {
-                    "price": flt(p_info.get("price", 0)),
-                    "currency": p_info.get("currency", "SAR"),
-                    "currency_symbol": p_info.get("currency", "SAR"),
-                }
-
-    except Exception:
-        for code in item_codes:
-            p_info = fetch_item_price(
-                code,
-                price_list=price_list,
-                uom=uom_map.get(code),
-            )
-            price_map[code] = {
-                "price": flt(p_info.get("price", 0)),
-                "currency": p_info.get("currency", "SAR"),
-                "currency_symbol": p_info.get("currency", "SAR"),
-            }
-
-    return price_map

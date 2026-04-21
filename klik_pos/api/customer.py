@@ -2,6 +2,7 @@ import json
 
 import frappe
 from erpnext.setup.utils import get_exchange_rate
+from erpnext.accounts.party import get_party_details
 from frappe import _
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
@@ -327,7 +328,8 @@ def get_customer_info(customer_name: str):
         import urllib.parse
 
         customer_name = urllib.parse.unquote(customer_name)
-        print("CUSTOMER WETU", customer_name)
+        pos_profile = get_current_pos_profile()
+        party_details = get_party_details(party=customer_name, party_type="Customer", pos_profile=pos_profile.name)  # This will raise if customer doesn't exist
         # First try to find by customer_name
         customers = frappe.get_all(
             "Customer", filters={"customer_name": customer_name}, fields=["name"]
@@ -391,6 +393,7 @@ def get_customer_info(customer_name: str):
             "address_data": address_data,
             "is_walkin": getattr(customer, "custom_is_walkin", 0),
             "tax_id": customer.tax_id,
+            **party_details,
         }
 
         # Add ZATCA details for company customers

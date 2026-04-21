@@ -5,6 +5,8 @@ import { useProduct } from "../providers/ProductProvider";
 import ProductCard from "./ProductCard";
 import ProductLineView from "./ProductLineView";
 import { useCartStore } from "../stores/cartStore";
+import { usePOSProfileStore } from "../stores/posProfileStore";
+
 
 interface ProductGridProps {
   scannerOnly?: boolean;
@@ -18,7 +20,7 @@ interface ProductGridProps {
 
 export default function ProductGrid({
   scannerOnly = false,
-  viewMode = "grid",
+  viewMode: propViewMode,
   hasMore = false,
   isLoadingMore = false,
   onLoadMore,
@@ -27,6 +29,10 @@ export default function ProductGrid({
 }: ProductGridProps) {
   const { filteredItems, hideUnavailableItems } = useProduct();
   const { addToCart } = useCartStore();
+  const { posDetails } = usePOSProfileStore();
+
+  const defaultView = posDetails?.custom_default_view || "Grid View";
+  const viewMode = propViewMode || (defaultView === "List View" ? "list" : "grid");
 
   const loadMoreRef = useRef<HTMLDivElement>(null);
 

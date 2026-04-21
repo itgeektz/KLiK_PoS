@@ -191,18 +191,16 @@ def get_items(
                 balance = balance // conversion_factor
             
             price = 0
-            currency = "KES"
-            batch_no = None
+            currency = frappe.db.get_value("Company", pos_doc.company, "default_currency") or frappe.defaults.get_global_default("currency")
             
             if item_uom_price:
                 price = flt(item_uom_price.get("price_list_rate", 0))
-                currency = item_uom_price.get("currency") or "KES"
-                batch_no = item_uom_price.get("batch_no")
+                currency = item_uom_price.get("currency") or currency
                 
                 if item_uom and item_uom != item_uom_price.get("uom") and conversion_factor:
                     price = price * conversion_factor
             
-            currency_symbol = frappe.db.get_value("Currency", currency, "symbol") if currency else "KES"
+            currency_symbol = frappe.db.get_value("Currency", currency, "symbol") if currency else currency
 
             enriched_items.append(
                 {

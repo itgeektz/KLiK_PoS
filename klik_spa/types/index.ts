@@ -92,6 +92,7 @@ export interface ItemGroup {
   is_active?: boolean
   created_at?: string
   updated_at?: string
+  total_count?: number
 }
 
 export interface ItemGroupWithChildren extends ItemGroup {

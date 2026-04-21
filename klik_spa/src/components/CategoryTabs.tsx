@@ -14,7 +14,6 @@ export default function CategoryTabs({
   isMobile = false,
 }: CategoryTabsProps) {
   const itemGroups = useProductStore((state) => state.itemGroups);
-  const totalCount = useProductStore((state) => state.totalCount);
   const isLoading = useProductStore((state) => state.isLoading);
   const isSearching = useProductStore((state) => state.isSearching);
   const searchProducts = useProductStore((state) => state.searchProducts);
@@ -35,16 +34,18 @@ export default function CategoryTabs({
     );
   }
 
+  const allItemsCount = itemGroups.reduce((sum, group) => sum + (group.total_count || group.count || 0), 0);
+
   const categories = [
     {
       id: "all",
       name: "All Items",
-      count: totalCount,
+      count: allItemsCount,
     },
-    ...itemGroups.filter((group) => (group.count ?? 0) > 0).map((group) => ({
+    ...itemGroups.map((group) => ({
       id: group.id,
       name: group.name,
-      count: group.count ?? 0,
+      count: group.total_count || group.count || 0,
     })),
   ];
 

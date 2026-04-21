@@ -36,27 +36,42 @@ export default function RetailPOSLayout() {
 
   const { 
     fetchPOSDetails, 
-    isLoading: isPOSLoading,
-    isInitialized: isProfileInitialized,
+    posDetails,
+    clearCache,
   } = usePOSProfileStore();
-
-  const { posDetails } = usePOSProfileStore();
 
   const { clearCart } = useCartStore();
 
   useEffect(() => {
+    const handleBeforeUnload = () => {
+      clearCache();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [clearCache]);
+
+  useEffect(() => {
     const init = async () => {
-      if (!isProfileInitialized && !isPOSLoading) {
-        await fetchPOSDetails(true);
-      }
-      if (posDetails && !isProductsLoading) {
-        await fetchProducts(true);
-      }
+      await fetchPOSDetails(true);
       setIsInitializing(false);
     };
 
     init();
-  }, [posDetails,]);
+  }, []);
+
+  useEffect(() => {
+    const loadProducts = async () => {
+      if (posDetails && !isProductsLoading && !isInitializing) {
+        await fetchProducts(true);
+      }
+    };
+
+    loadProducts();
+  }, [posDetails, isInitializing]);
 
   const handleSearchInput = useCallback((query: string) => {
     searchProducts(query);
@@ -78,7 +93,7 @@ export default function RetailPOSLayout() {
     return () => window.removeEventListener("focus", handleFocus);
   }, [refreshStockOnly]);
 
-  if (isInitializing && (!isProfileInitialized)) {
+  if (isInitializing && !posDetails) {
     return <LoadingSpinner message="Loading POS configuration..." />;
   }
 

@@ -14,8 +14,8 @@ def get_item_price_for_customer(item_code, customer=None, uom=None):
             return {
                 "success": False,
                 "price": 0,
-                "currency": "SAR",
-                "currency_symbol": "SAR",
+                "currency": "KES",
+                "currency_symbol": "KES",
             }
 
         price_info = fetch_item_price(
@@ -39,8 +39,8 @@ def get_item_price_for_customer(item_code, customer=None, uom=None):
         return {
             "success": False,
             "price": 0,
-            "currency": "SAR",
-            "currency_symbol": "SAR",
+            "currency": "KES",
+            "currency_symbol": "KES",
             "error": str(e),
         }
 
@@ -152,7 +152,7 @@ def fetch_item_price(
                     currency_res[0][0] if currency_res else None
                 )
 
-            default_currency = default_currency or "SAR"
+            default_currency = default_currency or "KES"
 
             symbol_sql = """
                 SELECT symbol FROM `tabCurrency` WHERE name = %s
@@ -279,7 +279,7 @@ def fetch_item_price(
                 currency_res[0][0] if currency_res else None
             )
 
-        default_currency = default_currency or "SAR"
+        default_currency = default_currency or "KES"
 
         symbol_sql = """
             SELECT symbol FROM `tabCurrency` WHERE name = %s
@@ -317,8 +317,8 @@ def fetch_item_price(
         )
         return {
             "price": 0,
-            "currency": "SAR",
-            "currency_symbol": "SAR",
+            "currency": "KES",
+            "currency_symbol": "KES",
         }
 
 

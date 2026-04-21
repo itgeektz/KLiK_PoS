@@ -21,39 +21,48 @@ export const UOMSelectField = ({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
 
+  const fetchUOMs = async (itemCode: string) => {
+    try {
+      const customerParam = selectedCustomer?.id
+        ? `&customer=${encodeURIComponent(selectedCustomer.id)}`
+        : "";
+      const response = await fetch(
+        `/api/method/frappe.desk.search.search_link?txt=&doctype=UOM&ignore_user_permissions=0&reference_doctype=&page_length=10&link_fieldname=uom&query=erpnext.controllers.queries.get_item_uom_query&filters=${encodeURIComponent(JSON.stringify({ item_code: itemCode }))}${customerParam}&_=${Date.now()}`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.message) {
+          let uoms: string[] = [];
+          if (Array.isArray(data.message)) {
+            uoms = data.message.map((uom: any) => uom.value || uom.uom || uom);
+          } else if (data.message?.uoms && Array.isArray(data.message.uoms)) {
+            uoms = data.message.uoms.map((uom: any) => uom.uom || uom);
+          }
+          if (uoms.length > 0) {
+            setAvailableUOMs(uoms);
+            return;
+          }
+        }
+      }
+      setAvailableUOMs(["Nos"]);
+    } catch (error) {
+      console.error("Error loading item-specific UOMs:", error);
+      setAvailableUOMs(["Nos"]);
+    }
+  };
+
   useEffect(() => {
     const loadItemSpecificUOMs = async () => {
-      try {
-        const itemCode = item.item_code || item.id;
-        if (itemCode) {
-          const customerParam = selectedCustomer?.id
-            ? `&customer=${selectedCustomer.id}`
-            : "";
-          const response = await fetch(
-            `/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`,
-            {
-              method: "GET",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-            }
-          );
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data?.message?.uoms) {
-              const uoms = data.message.uoms.map((uom: any) => uom.uom);
-              setAvailableUOMs(uoms);
-            } else {
-              setAvailableUOMs(["Nos"]);
-            }
-          } else {
-            setAvailableUOMs(["Nos"]);
-          }
-        } else {
-          setAvailableUOMs(["Nos"]);
-        }
-      } catch (error) {
-        console.error("❌ Error loading item-specific UOMs:", error);
+      const itemCode = item.item_code || item.id;
+      if (itemCode) {
+        await fetchUOMs(itemCode);
+      } else {
         setAvailableUOMs(["Nos"]);
       }
     };
@@ -69,76 +78,11 @@ export const UOMSelectField = ({
     uom.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleUOMSelect = async (newUOM: string) => {
+  const handleUOMSelect = (newUOM: string) => {
     setSelectedUOM(newUOM);
     setIsDropdownOpen(false);
     setSearchQuery("");
-
-    try {
-      const itemCode = item.item_code || item.id;
-      if (itemCode) {
-        const customerParam = selectedCustomer?.id
-          ? `&customer=${selectedCustomer.id}`
-          : "";
-        const response = await fetch(
-          `/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${itemCode}${customerParam}`,
-          {
-            method: "GET",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-
-          if (data?.message?.uoms) {
-            const selectedUOMData = data.message.uoms.find(
-              (uom: any) => uom.uom === newUOM
-            );
-            if (selectedUOMData && selectedUOMData.price !== undefined) {
-              console.log(`✅ Found UOM data for ${newUOM}:`, selectedUOMData);
-              onUOMChange(item.id, newUOM, selectedUOMData.price);
-            } else {
-              console.warn(
-                `⚠️ UOM data not found for ${newUOM}. Available UOMs:`,
-                data.message.uoms.map((u: any) => u.uom)
-              );
-              try {
-                const priceResponse = await fetch(
-                  `/api/method/klik_pos.api.item.item_price.get_item_price_for_customer?item_code=${itemCode}&uom=${encodeURIComponent(newUOM)}${customerParam}`,
-                  {
-                    method: "GET",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                  }
-                );
-                if (priceResponse.ok) {
-                  const priceData = await priceResponse.json();
-                  if (
-                    priceData?.message?.success &&
-                    priceData.message.price > 0
-                  ) {
-                    console.log(
-                      `✅ Got price from fallback API for ${newUOM}:`,
-                      priceData.message.price
-                    );
-                    onUOMChange(item.id, newUOM, priceData.message.price);
-                  }
-                }
-              } catch (fallbackError) {
-                console.error(
-                  `❌ Error in fallback price fetch for ${newUOM}:`,
-                  fallbackError
-                );
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error("❌ Error fetching UOM pricing:", error);
-    }
+    onUOMChange(item.id, newUOM, item.price);
   };
 
   return (

@@ -543,7 +543,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const clearOrderState = () => {
     clearDraftInvoiceCache();
     clearCart();
-    window.location.reload();
   };
 
   const getActionButtonText = () => {

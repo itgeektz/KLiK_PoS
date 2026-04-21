@@ -44,7 +44,7 @@ export default function OrderSummary({
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   const { posDetails } = usePOSProfileStore();
-  const { refreshStockOnly, updateBatchQuantitiesForItems } = useProductStore();
+  const { refreshStockOnly } = useProductStore();
 
   const [itemDiscounts, setItemDiscounts] = useState<Record<string, any>>(() => {
     const saved: Record<string, any> = {};
@@ -242,7 +242,7 @@ export default function OrderSummary({
       await refreshStockOnly();
       const cartItemCodes = cartItems.map((item) => item.item_code || item.id);
       if (cartItemCodes.length > 0) {
-        await updateBatchQuantitiesForItems(cartItemCodes);
+        // await updateBatchQuantitiesForItems(cartItemCodes);
       }
     } catch (error: any) {
       console.error("OrderSummary: Failed to refresh stock:", error);

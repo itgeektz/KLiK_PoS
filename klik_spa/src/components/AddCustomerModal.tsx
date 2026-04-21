@@ -19,10 +19,10 @@ type ExtendedCustomer = Customer & {
 };
 import { useCustomerActions } from "../services/customerService";
 import { toast } from "react-toastify";
-import { usePOSDetails } from "../hooks/usePOSProfile";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import countryList from "react-select-country-list";
+import { usePOSProfileStore } from "../stores/posProfileStore";
 type CountryOption = { value: string; label: string };
 interface AddCustomerModalProps {
   customer?: Customer | null;
@@ -45,7 +45,7 @@ export default function AddCustomerModal({
   const isEditing = !!customer;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const { posDetails } = usePOSDetails();
+  const { posDetails } = usePOSProfileStore();
 
   const countryOptions: CountryOption[] = countryList().getData();
 

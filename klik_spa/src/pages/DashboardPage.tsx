@@ -23,7 +23,7 @@ import type { SalesInvoice } from "../../types"
 
 import BottomNavigation from "../components/BottomNavigation"
 import { useMediaQuery } from "../hooks/useMediaQuery"
-import { usePOSDetails } from "../hooks/usePOSProfile"
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import { useAllPaymentModes } from "../hooks/usePaymentModes"
 import { useSalesInvoices } from "../hooks/useSalesInvoices"
 import { useUserInfo } from "../hooks/useUserInfo"
@@ -31,7 +31,7 @@ import { useUserInfo } from "../hooks/useUserInfo"
 export default function DashboardPage() {
   const navigate = useNavigate()
   const isMobile = useMediaQuery("(max-width: 1024px)")
-  const { posDetails } = usePOSDetails()
+  const { posDetails } = usePOSProfileStore()
 
   // Only fetch submitted invoices for dashboard (exclude Draft and Cancelled)
   const { invoices, isLoading: invoicesLoading } = useSalesInvoices("", false, undefined, true)

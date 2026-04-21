@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import type { MenuItem } from "../../types"
-import { usePOSDetails } from "../hooks/usePOSProfile"
+import { usePOSProfileStore } from "../stores/posProfileStore"
 
 interface Batch {
   batch_id: string
@@ -193,7 +193,7 @@ export default function ProductDetailsModal({ item, onClose }: ProductDetailsMod
   const [data, setData] = useState<ItemFullData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"pricing" | "stock" | "details">("pricing")
-  const { posDetails, loading } = usePOSDetails()
+  const { posDetails, loading } = usePOSProfileStore()
 
   const warehouse = useMemo(() => {
     if (loading) return null

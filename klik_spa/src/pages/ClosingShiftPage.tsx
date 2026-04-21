@@ -18,7 +18,7 @@ import { toast } from "react-toastify";
 import { createSalesReturn } from "../services/salesInvoice";
 import { useAllPaymentModes } from "../hooks/usePaymentModes";
 
-import { usePOSDetails } from "../hooks/usePOSProfile";
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import { useCreatePOSClosingEntry } from "../services/closingEntry";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -55,7 +55,7 @@ export default function ClosingShiftPage() {
 
   const { invoices, isLoading,  error,  } = useSalesInvoices();
   const { modes, isLoading: modesLoading, error: modesError } = useAllPaymentModes()
-  const { posDetails } = usePOSDetails();
+  const { posDetails } = usePOSProfileStore();
 
 
   const hideExpectedAmount = posDetails?.custom_hide_expected_amount || false;

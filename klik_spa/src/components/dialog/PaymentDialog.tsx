@@ -7,7 +7,6 @@ import { Calculator, ChevronDown, Eye, Loader2, MailPlus, MessageCirclePlus, Mes
 import { useCartStore } from "../../stores/cartStore";
 import { usePaymentModes } from "../../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../../hooks/useSalesTaxCharges";
-import { usePOSDetails } from "../../hooks/usePOSProfile";
 import { useDeliveryPersonnel } from "../../hooks/useDeliveryPersonnel";
 import { createSalesInvoice } from "../../services/salesInvoice";
 import { clearDraftInvoiceCache, getOriginalDraftInvoiceId } from "../../utils/draftInvoiceCache";
@@ -29,6 +28,8 @@ import SharingInterface from "./SharingInterface";
 import DeliveryPersonnelModal from "./DeliveryPersonnelModal";
 import type { PaymentDialogProps, PaymentAmount, Calculations } from "./types";
 import DisplayPrintPreview from "../../utils/invoicePrint";
+import { usePOSProfileStore } from "../../stores/posProfileStore";
+import { handlePrintInvoice } from "../../utils/printHandler";
 
 const getDeviceId = () => {
   let device_id = localStorage.getItem("pos_device_id");
@@ -39,30 +40,6 @@ const getDeviceId = () => {
   return device_id;
 };
 
-const handlePrintInvoice = (invoice: any) => {
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Invoice</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            @media print {
-              body { margin: 0; padding: 0; }
-            }
-          </style>
-        </head>
-        <body>
-          <pre>${JSON.stringify(invoice, null, 2)}</pre>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-    printWindow.close();
-  }
-};
 
 export default function PaymentDialog(props: PaymentDialogProps) {
   const {
@@ -123,7 +100,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   });
   const [taxPin, setTaxPin] = useState("");
 
-  const { posDetails, loading: posLoading } = usePOSDetails();
+  const { posDetails, loading: posLoading } = usePOSProfileStore();
   const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === "string" ? posDetails.name : "");
   const { salesTaxCharges, defaultTax } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
@@ -566,7 +543,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const clearOrderState = () => {
     clearDraftInvoiceCache();
     clearCart();
-    window.location.reload();
   };
 
   const getActionButtonText = () => {

@@ -25,8 +25,6 @@ export default function LoginPage() {
       const result = await login(username, password)
 
       if (result.success) {
-        // Redirect to the intended route or default to /pos
-        //eslint-disable-next-line @typescript-eslint/no-explicit-any
         const from = (location.state as any)?.from?.pathname || "/pos"
         navigate(from, { replace: true })
       } else if (result.requires_otp && result.tmp_id) {
@@ -34,7 +32,6 @@ export default function LoginPage() {
         setVerificationPrompt(result.verification?.prompt || "Enter the verification code to continue.")
         setIsOtpStep(true)
       } else {
-        // Show user-friendly error messages
         setError(getUserFriendlyErrorMessage(result.message))
       }
     } catch (err) {
@@ -54,11 +51,9 @@ export default function LoginPage() {
       const result = await login(username, password, otp, tmpId)
 
       if (result.success) {
-        //eslint-disable-next-line @typescript-eslint/no-explicit-any
         const from = (location.state as any)?.from?.pathname || "/pos"
         navigate(from, { replace: true })
       } else if (result.requires_otp && result.tmp_id) {
-        // keep challenge alive if backend rotates tmp_id
         setTmpId(result.tmp_id)
         setVerificationPrompt(result.verification?.prompt || verificationPrompt)
         setError(getUserFriendlyErrorMessage(result.message))
@@ -74,7 +69,6 @@ export default function LoginPage() {
   }
 
   const getUserFriendlyErrorMessage = (message: string): string => {
-    // Handle common HTTP error codes and convert to user-friendly messages
     if (message.includes('HTTP 401') || message.includes('401')) {
       return "Invalid username or password. Please check your credentials and try again."
     }
@@ -106,24 +100,19 @@ export default function LoginPage() {
       return "Too many login attempts. Please wait a few minutes before trying again."
     }
 
-    // If it's already a user-friendly message, return as is
     if (message && !message.includes('HTTP') && !message.includes('Error:')) {
       return message
     }
 
-    // Default fallback
     return "Login failed. Please check your credentials and try again."
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-beveren-50 to-beveren-100 flex items-center justify-center p-4">
-      {/* Background Pattern */}
       <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
 
       <div className="relative z-10 w-full max-w-sm">
-        {/* Login Card */}
         <div className="bg-white/95 rounded-2xl shadow-2xl p-6 backdrop-blur-sm">
-          {/* Logo Section */}
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
               <img src="/assets/klik_pos/klik_spa/bev_logo.jpeg" alt="KLiK PoS" className="w-16 h-16 rounded-full shadow-lg" />
@@ -155,7 +144,7 @@ export default function LoginPage() {
                         />
                       </svg>
                     </div>
-                </div>
+                  </div>
 
                   <div className="relative">
                     <input

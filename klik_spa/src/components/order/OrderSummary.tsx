@@ -2,21 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useCartStore } from "../../stores/cartStore";
-import { useCustomers } from "../../hooks/useCustomers";
-import { usePOSDetails } from "../../hooks/usePOSProfile";
-import { useCustomerStatistics } from "../../hooks/useCustomerStatistics";
-import { useCustomerPermission } from "../../hooks/useCustomerPermission";
-import { useProducts } from "../../hooks/useProducts";
+import { useProductStore } from "../../stores/productStore";
 import { toast } from "react-toastify";
 import { extractErrorFromException } from "../../utils/errorExtraction";
 import { getBatches } from "../../utils/batch";
 import { getSerials } from "../../utils/serial";
-import countryList from "react-select-country-list";
-import { parsePhoneNumber } from "react-phone-number-input";
-import type { CartItem, GiftCoupon } from "../../../types";
+import type { CartItem } from "../../../types";
 import type { Customer } from "../../types/customer";
 import PaymentDialog from "../dialog/PaymentDialog";
-import AddCustomerModal from "../AddCustomerModal";
 import {
   createDraftSalesInvoice,
   validateCheckoutInvoice,
@@ -24,56 +17,34 @@ import {
 import { CustomerSearchSection } from "./CustomerSearchSection";
 import { CartItemRow } from "./CartItemRow";
 import { OrderSummaryFooter } from "./OrderSummaryFooter";
+import { usePOSProfileStore } from "../../stores/posProfileStore";
 
 interface OrderSummaryProps {
-  cartItems: CartItem[];
-  onUpdateQuantity: (id: string, quantity: number) => void;
-  onRemoveItem?: (id: string) => void;
   onClearCart?: () => void;
-  onDuplicateItem?: (item: CartItem) => void;
-  appliedCoupons: GiftCoupon[];
-  onApplyCoupon: (coupon: GiftCoupon) => void;
-  onRemoveCoupon: (couponCode: string) => void;
   isMobile?: boolean;
 }
 
 export default function OrderSummary({
-  cartItems,
-  onUpdateQuantity,
-  onRemoveItem,
   onClearCart,
-  onDuplicateItem,
-  appliedCoupons,
-  onRemoveCoupon,
   isMobile = false,
 }: OrderSummaryProps) {
   const {
+    cartItems,
     selectedCustomer,
     setSelectedCustomer,
     updateUOM,
-    updatePricesForCustomer,
+    refreshCartPricing,
+    updateQuantity,
+    removeItem,
+    clearCart,
   } = useCartStore();
 
-  const [userRemovedDefaultCustomer, setUserRemovedDefaultCustomer] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
-  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
-  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [isValidatingCheckout, setIsValidatingCheckout] = useState(false);
-  const [prefilledCustomerName, setPrefilledCustomerName] = useState("");
-  const [prefilledData, setPrefilledData] = useState<{
-    name?: string;
-    email?: string;
-    phone?: string;
-  }>({});
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
-  const { customers, isLoading, refetch: refetchCustomers } = useCustomers(customerSearchQuery);
-  const { posDetails, loading: _posLoading } = usePOSDetails();
-  const { checkCustomerPermission } = useCustomerPermission();
-  const { statistics: customerStats } = useCustomerStatistics(selectedCustomer?.id || null);
-  const { refreshStockOnly, updateBatchQuantitiesForItems } = useProducts();
+  const { posDetails } = usePOSProfileStore();
+  const { refreshStockOnly } = useProductStore();
 
   const [itemDiscounts, setItemDiscounts] = useState<Record<string, any>>(() => {
     const saved: Record<string, any> = {};
@@ -93,18 +64,13 @@ export default function OrderSummary({
   const [itemSerials, setItemSerials] = useState<Record<string, string[]>>({});
 
   const currency_symbol = posDetails?.currency_symbol;
-  const autoFetchBatch = posDetails?.custom_autofetch_batchserial_ === 1;
+  const autoFetchBatch = (posDetails as any)?.custom_autofetch_batchserial_ === 1;
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsInitialLoad(false), 2000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    if (!isInitialLoad && selectedCustomer && cartItems.length > 0) {
-      updatePricesForCustomer(selectedCustomer.id);
+    if (selectedCustomer && cartItems.length > 0) {
+      refreshCartPricing();
     }
-  }, [selectedCustomer?.id, cartItems.length, isInitialLoad, updatePricesForCustomer]);
+  }, [selectedCustomer?.id, cartItems.length, refreshCartPricing]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -147,8 +113,20 @@ export default function OrderSummary({
     const discounted = getDiscountedPrice(item) * item.quantity;
     return sum + (original - discounted);
   }, 0);
-  const couponDiscount = appliedCoupons.reduce((sum, c) => sum + c.value, 0);
+  const couponDiscount = 0;
   const total = Math.max(0, subtotal - couponDiscount);
+
+  const handleUpdateQuantity = (id: string, quantity: number) => {
+    if (quantity <= 0) {
+      removeItem(id);
+    } else {
+      updateQuantity(id, quantity);
+    }
+  };
+
+  const handleRemoveItem = (id: string) => {
+    removeItem(id);
+  };
 
   const handleUOMChange = useCallback((itemId: string, uom: string, price: number) => {
     updateUOM(itemId, uom, price);
@@ -178,66 +156,22 @@ export default function OrderSummary({
     updateItemDiscount(itemId, "bundle_entries", JSON.stringify(entries));
   };
 
-  const filteredCustomers =
-    customerSearchQuery.trim() === ""
-      ? customers
-      : customers.filter(
-          (customer) =>
-            customer.name.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
-            customer.email.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
-            customer.phone.includes(customerSearchQuery) ||
-            customer.tags.some((tag) => tag.toLowerCase().includes(customerSearchQuery.toLowerCase()))
-        );
+  const handleDuplicateItem = (item: CartItem) => {
+    const newItem = {
+      ...item,
+      id: `${item.item_code || item.id}-${Date.now()}`,
+      item_code: item.item_code || item.id,
+      quantity: 1,
+    };
+    useCartStore.getState().addToCart(newItem);
+  };
 
   const handleCustomerSelect = (customer: Customer) => {
     setSelectedCustomer(customer);
-    setCustomerSearchQuery(customer.name);
-    setShowCustomerDropdown(false);
-    setUserRemovedDefaultCustomer(false);
   };
 
-  const handleCustomerSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (
-      e.key === "Enter" &&
-      customerSearchQuery.trim() !== "" &&
-      posDetails &&
-      posDetails?.can_create_and_edit_customers === 1
-    ) {
-      if (filteredCustomers.length === 0) {
-        const trimmedValue = customerSearchQuery.trim();
-        let prefilledData = {};
-
-        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedValue)) {
-          prefilledData = { email: trimmedValue };
-        } else if (
-          /^[\d\s+()-]+$/.test(trimmedValue) &&
-          trimmedValue.replace(/[\s+()-]/g, "").length >= 7
-        ) {
-          const companyCountryCode = (
-            countryList().getData() as { value: string; label: string }[]
-          ).find((c) => c.label === (posDetails?.company?.country || ""))?.value || "";
-
-          let formattedPhone = trimmedValue;
-          try {
-            const parsed = parsePhoneNumber(trimmedValue, companyCountryCode as any);
-            if (parsed) {
-              formattedPhone = parsed.format("E.164");
-            }
-          } catch {
-          }
-          prefilledData = { phone: formattedPhone };
-        } else {
-          prefilledData = { name: trimmedValue };
-        }
-
-        setPrefilledData(prefilledData);
-        setPrefilledCustomerName(trimmedValue);
-        setShowAddCustomerModal(true);
-        setShowCustomerDropdown(false);
-      } else if (filteredCustomers.length === 1 && !userRemovedDefaultCustomer && filteredCustomers[0]) {
-        handleCustomerSelect(filteredCustomers[0]);
-      }
-    }
+  const handleCustomerClear = () => {
+    setSelectedCustomer(null);
   };
 
   const validateCustomer = () => {
@@ -275,12 +209,9 @@ export default function OrderSummary({
 
   const handleClearCart = () => {
     if (cartItems.length === 0) return;
-    onClearCart?.();
-    cartItems.forEach(item => onRemoveItem?.(item.id));
-    appliedCoupons.forEach(coupon => onRemoveCoupon(coupon.code));
+    clearCart();
     setItemDiscounts({});
-    setSelectedCustomer(null);
-    setCustomerSearchQuery("");
+    onClearCart?.();
   };
 
   const handleHoldOrder = async (orderData: any) => {
@@ -308,146 +239,16 @@ export default function OrderSummary({
     if (paymentCompleted) handleClearCart();
 
     try {
-      const success = await refreshStockOnly();
-      if (!success) console.log("OrderSummary: No stock updates needed");
+      await refreshStockOnly();
       const cartItemCodes = cartItems.map((item) => item.item_code || item.id);
       if (cartItemCodes.length > 0) {
-        await updateBatchQuantitiesForItems(cartItemCodes);
+        // await updateBatchQuantitiesForItems(cartItemCodes);
       }
     } catch (error: any) {
       console.error("OrderSummary: Failed to refresh stock:", error);
       toast.error(`Failed to update stock: ${error.message || "Unknown error"}`);
     }
   };
-
-  const handleSaveCustomer = async (newCustomer: Partial<Customer> & { customer_name?: string }) => {
-    if (newCustomer && newCustomer.customer_name) {
-      try {
-        const response = await fetch(
-          `/api/method/klik_pos.api.customer.get_customer_info?customer_name=${encodeURIComponent(newCustomer.customer_name)}`
-        );
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const resData = await response.json();
-        if (resData.message) {
-          const erpCustomer = resData.message;
-          const customerToSelect: Customer = {
-            id: erpCustomer.name,
-            name: erpCustomer.customer_name || erpCustomer.name,
-            customer_name: erpCustomer.customer_name || erpCustomer.name,
-            email: erpCustomer.email_id || "",
-            phone: erpCustomer.mobile_no || "",
-            type: erpCustomer.customer_type === "Company" ? "company" : "individual",
-            address: {
-              street: "",
-              city: "",
-              state: "",
-              zipCode: "",
-              country: erpCustomer.address_data?.country || posDetails?.company?.country || "",
-            },
-            loyaltyPoints: erpCustomer.custom_loyalty_points || 0,
-            totalSpent: erpCustomer.custom_total_spent || 0,
-            totalOrders: erpCustomer.custom_total_orders || 0,
-            preferredPaymentMethod: "Cash",
-            tags: erpCustomer.custom_tags?.split(",").filter(Boolean) || [],
-            status: erpCustomer.custom_status || "active",
-            is_walkin: erpCustomer.is_walkin,
-            taxId: erpCustomer.tax_id || "",
-            createdAt: erpCustomer.creation || new Date().toISOString(),
-          };
-          setSelectedCustomer(customerToSelect);
-          setCustomerSearchQuery("");
-          refetchCustomers?.();
-        }
-      } catch (error) {
-        console.error("Error fetching customer details:", error);
-        const customerToSelect: Customer = {
-          id: newCustomer.customer_name || "",
-          name: newCustomer.customer_name || "",
-          email: "",
-          phone: "",
-          type: "individual",
-          address: { street: "", city: "", state: "", zipCode: "", country: posDetails?.company?.country || "" },
-          loyaltyPoints: 0,
-          totalSpent: 0,
-          totalOrders: 0,
-          preferredPaymentMethod: "Cash",
-          tags: [],
-          status: "active",
-          is_walkin: 0,
-          taxId: newCustomer.taxId,
-          createdAt: new Date().toISOString(),
-        };
-        setSelectedCustomer(customerToSelect);
-        setCustomerSearchQuery("");
-      }
-    }
-    setShowAddCustomerModal(false);
-    setPrefilledCustomerName("");
-    setPrefilledData({});
-  };
-
-  useEffect(() => {
-    if (customers.length === 1 && !selectedCustomer && !isLoading) {
-      const singleCustomer = customers[0];
-      if (singleCustomer) {
-        setSelectedCustomer(singleCustomer);
-        setCustomerSearchQuery(singleCustomer.name);
-      }
-      setShowCustomerDropdown(false);
-    }
-  }, [customers, selectedCustomer, isLoading]);
-
-  useEffect(() => {
-    if (posDetails?.default_customer && !selectedCustomer && !_posLoading && !userRemovedDefaultCustomer) {
-      const defaultCustomer = posDetails.default_customer as any;
-      checkCustomerPermission(defaultCustomer.id).then((result) => {
-        if (result.success && result.has_permission) {
-          const transformedCustomer: Customer = {
-            id: defaultCustomer.id,
-            name: defaultCustomer.name,
-            email: defaultCustomer.email || "",
-            phone: defaultCustomer.phone || "",
-            type: (defaultCustomer.customer_type === "Company" ? "company" : "individual") as "individual" | "company",
-            address: { street: "", city: "", state: "", zipCode: "", country: posDetails.company?.country || "" },
-            loyaltyPoints: 0,
-            totalSpent: 0,
-            totalOrders: 0,
-            preferredPaymentMethod: "Cash" as const,
-            notes: "",
-            tags: [],
-            status: "active",
-            is_walkin: defaultCustomer.is_walkin,
-            taxId: defaultCustomer.tax_id,
-            createdAt: new Date().toISOString(),
-            defaultCurrency: defaultCustomer.default_currency || undefined,
-          };
-          setSelectedCustomer(transformedCustomer);
-          setCustomerSearchQuery(transformedCustomer.name);
-          setShowCustomerDropdown(false);
-        }
-      });
-    }
-  }, [posDetails, selectedCustomer, _posLoading, userRemovedDefaultCustomer, checkCustomerPermission]);
-
-  useEffect(() => {
-    const handleBatchUpdate = (event: CustomEvent) => {
-      const { updatedItems } = event.detail;
-      setItemBatches((prevBatches) => {
-        const newBatches = { ...prevBatches };
-        updatedItems.forEach(({ itemCode, batches }: { itemCode: string; batches: any[] }) => {
-          if (itemCode && itemCode !== "undefined") {
-            newBatches[itemCode] = batches;
-          }
-        });
-        return newBatches;
-      });
-    };
-
-    window.addEventListener("batchQuantitiesUpdated", handleBatchUpdate as EventListener);
-    return () => {
-      window.removeEventListener("batchQuantitiesUpdated", handleBatchUpdate as EventListener);
-    };
-  }, []);
 
   const toggleItemExpansion = (itemId: string) => {
     const newExpanded = new Set(expandedItems);
@@ -466,22 +267,10 @@ export default function OrderSummary({
     >
       <div className={!isMobile ? "px-6 py-4 border-b border-gray-100 dark:border-gray-700" : ""}>
         <CustomerSearchSection
-          customerSearchQuery={customerSearchQuery}
-          setCustomerSearchQuery={setCustomerSearchQuery}
-          showCustomerDropdown={showCustomerDropdown}
-          setShowCustomerDropdown={setShowCustomerDropdown}
-          filteredCustomers={filteredCustomers}
           selectedCustomer={selectedCustomer}
           onCustomerSelect={handleCustomerSelect}
-          onRemoveCustomer={() => {
-            setSelectedCustomer(null);
-            setCustomerSearchQuery("");
-            setUserRemovedDefaultCustomer(true);
-          }}
-          onAddCustomer={() => setShowAddCustomerModal(true)}
-          canCreateCustomer={posDetails?.can_create_and_edit_customers === 1}
+          onCustomerClear={handleCustomerClear}
           isMobile={isMobile}
-          onKeyDown={handleCustomerSearchKeyDown}
         />
       </div>
 
@@ -520,12 +309,12 @@ export default function OrderSummary({
                   isExpanded={expandedItems.has(item.id)}
                   onToggleExpand={() => toggleItemExpansion(item.id)}
                   itemDiscount={itemDiscount}
-                  onUpdateQuantity={onUpdateQuantity}
-                  onRemoveItem={onRemoveItem}
+                  onUpdateQuantity={handleUpdateQuantity}
+                  onRemoveItem={handleRemoveItem}
                   onUOMChange={handleUOMChange}
                   onDiscountChange={updateItemDiscount}
                   onCustomRateChange={handleCustomRateChange}
-                  onDuplicateItem={onDuplicateItem || (() => {})}
+                  onDuplicateItem={handleDuplicateItem}
                   onBundleUpdate={handleBundleUpdate}
                   selectedCustomer={selectedCustomer}
                   posDetails={posDetails}
@@ -551,17 +340,16 @@ export default function OrderSummary({
           onClearCart={handleClearCart}
           onHoldOrder={() => {
             if (!validateCustomer()) return;
-            const sc = selectedCustomer;
-            if (!sc) return;
+            if (!selectedCustomer) return;
             handleHoldOrder({
               items: cartItems.map((item) => ({
                 ...item,
                 price: getDiscountedPrice(item),
               })),
-              customer: { id: sc.id },
+              customer: { id: selectedCustomer.id },
               subtotal,
               total,
-              appliedCoupons,
+              appliedCoupons: [],
               itemDiscounts,
               totalItemDiscount,
               totalSavings: totalItemDiscount + couponDiscount,
@@ -571,20 +359,6 @@ export default function OrderSummary({
           isValidating={isValidatingCheckout}
           isMobile={isMobile}
           currency_symbol={currency_symbol}
-        />
-      )}
-
-      {showAddCustomerModal && (
-        <AddCustomerModal
-          customer={null}
-          onClose={() => {
-            setShowAddCustomerModal(false);
-            setPrefilledCustomerName("");
-            setPrefilledData({});
-          }}
-          onSave={handleSaveCustomer}
-          prefilledName={prefilledCustomerName}
-          prefilledData={prefilledData}
         />
       )}
 
@@ -599,7 +373,7 @@ export default function OrderSummary({
             originalPrice: item.price,
             finalAmount: getDiscountedPrice(item) * item.quantity,
           }))}
-          appliedCoupons={appliedCoupons}
+          appliedCoupons={[]}
           selectedCustomer={selectedCustomer}
           onCompletePayment={handleCompletePayment}
           onHoldOrder={handleHoldOrder}

@@ -32,7 +32,7 @@ import type { SalesInvoice } from "../../types";
 import { useSalesInvoices } from "../hooks/useSalesInvoices";
 import { useCustomers } from "../hooks/useCustomers";
 import { useUserInfo } from "../hooks/useUserInfo";
-import { usePOSDetails } from "../hooks/usePOSProfile";
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import { toast } from "react-toastify";
 import { extractErrorFromException } from "../utils/errorExtraction";
 import { createSalesReturn, deleteDraftInvoice, submitDraftInvoice, retryQueuedInvoice } from "../services/salesInvoice";
@@ -80,7 +80,7 @@ export default function InvoiceHistoryPage() {
   const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore } = useSalesInvoices(searchTerm, true, cashierFilter);
   const { modes } = useAllPaymentModes();
   const { customers } = useCustomers();
-  const { posDetails } = usePOSDetails();
+  const { posDetails } = usePOSProfileStore();
   const { userInfo, isLoading: userInfoLoading } = useUserInfo();
 
   // Role-based filtering

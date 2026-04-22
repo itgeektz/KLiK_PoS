@@ -1,14 +1,14 @@
 import { Receipt, Grid3X3, BarChart3, Users, MonitorX } from "lucide-react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useUserInfo } from "../hooks/useUserInfo"
-import { usePOSDetails } from "../hooks/usePOSProfile"
+import { usePOSProfileStore } from "../stores/posProfileStore";
 
 // Inside your component
 export default function RetailSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
   const { userInfo } = useUserInfo()
-  const {posDetails} = usePOSDetails()
+  const {posDetails} = usePOSProfileStore()
 
   const canAccessSalesDashboard = userInfo?.is_admin_user ?? false
 

@@ -18,7 +18,7 @@ import type { Customer } from "../types/customer"
 
 import BottomNavigation from "./BottomNavigation"
 import { useMediaQuery } from "../hooks/useMediaQuery"
-import { usePOSDetails } from "../hooks/usePOSProfile"
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import { formatCurrencyWithSymbol } from "../utils/currency"
 
 export default function CustomersPage() {
@@ -30,7 +30,7 @@ export default function CustomersPage() {
   const [prefilledData, setPrefilledData] = useState<{name?: string, email?: string, phone?: string}>({})
   const [globalTotals, setGlobalTotals] = useState<{ total_customers: number; total_invoices: number } | null>(null)
   const [canManageCustomers, setCanManageCustomers] = useState(false)
-  const { posDetails } = usePOSDetails()
+  const { posDetails } = usePOSProfileStore()
 
   useEffect(() => {
     if (posDetails && posDetails?.can_create_and_edit_customers !== 1) {

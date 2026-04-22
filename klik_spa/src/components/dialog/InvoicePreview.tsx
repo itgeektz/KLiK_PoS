@@ -1,7 +1,7 @@
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import type { Calculations, PaymentAmount } from "./types";
 import type { CartItem } from "../../../types";
-import PrintPreview from "../../utils/posPreview";
+import DisplayPrintPreview from "../../utils/invoicePrint";
 
 interface InvoicePreviewProps {
   invoiceSubmitted: boolean;
@@ -18,18 +18,6 @@ interface InvoicePreviewProps {
   isB2C: boolean;
   currentDate: string;
 }
-
-const DisplayPrintPreview = ({ invoice }: { invoice: any }) => {
-  const invoiceWithRequiredFields = {
-    pos_profile: (typeof invoice.pos_profile === 'string' ? invoice.pos_profile : '') || '',
-    name: (typeof invoice.name === 'string' ? invoice.name : invoice.id) || '',
-    ...invoice
-  };
-
-  return (
-      <PrintPreview invoice={invoiceWithRequiredFields} />
-  );
-};
 
 export default function InvoicePreview({
   invoiceSubmitted,
@@ -48,7 +36,7 @@ export default function InvoicePreview({
 }: InvoicePreviewProps) {
   if (invoiceSubmitted && invoiceData) {
     return (
-      <div className="mb-4">
+      <div className="mb-4"> 
         <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 text-center">Print Format Preview:</h5>
         <div className="border border-gray-300 dark:border-gray-600 rounded p-2 bg-gray-50 dark:bg-gray-700">
           <DisplayPrintPreview invoice={invoiceData} />

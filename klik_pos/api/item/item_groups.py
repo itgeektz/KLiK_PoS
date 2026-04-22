@@ -52,16 +52,11 @@ def get_item_groups_for_pos():
                     "id": group["name"],
                     "name": group.get("item_group_name") or group["name"],
                     "parent": group.get("parent_item_group") or None,
-                    "icon": "📦",
                     "count": item_count,
                 }
             )
 
-        total_item_count = sum(group["count"] for group in formatted_groups)
-        return {
-            "groups": formatted_groups,
-            "total_items": total_item_count,
-        }
+        return formatted_groups
 
     except Exception as e:
         frappe.log_error(

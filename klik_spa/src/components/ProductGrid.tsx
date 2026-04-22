@@ -1,51 +1,56 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useProduct } from "../providers/ProductProvider";
 import ProductCard from "./ProductCard";
 import ProductLineView from "./ProductLineView";
-import type { MenuItem } from "../../types";
-import { usePOSDetails } from "../hooks/usePOSProfile";
+import { useCartStore } from "../stores/cartStore";
+import { usePOSProfileStore } from "../stores/posProfileStore";
+
 
 interface ProductGridProps {
-  items: MenuItem[];
-  onAddToCart: (item: MenuItem) => void;
-  isMobile?: boolean;
   scannerOnly?: boolean;
   viewMode?: "grid" | "list";
-  // Infinite scroll props
   hasMore?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
   totalCount?: number;
+  isSearching?: boolean;
 }
 
 export default function ProductGrid({
-  items,
-  onAddToCart,
-  isMobile = false,
   scannerOnly = false,
-  viewMode = "grid",
+  viewMode: propViewMode,
   hasMore = false,
   isLoadingMore = false,
   onLoadMore,
   totalCount = 0,
+  isSearching = false,
 }: ProductGridProps) {
-  const { posDetails, loading } = usePOSDetails();
+  const { filteredItems, hideUnavailableItems } = useProduct();
+  const { addToCart } = useCartStore();
+  const { posDetails } = usePOSProfileStore();
 
-  const hideUnavailable = useMemo(() => {
-    if (loading) return null;
-    return posDetails?.hide_unavailable ?? false;
-  }, [posDetails, loading]);
+  const defaultView = posDetails?.custom_default_view || "Grid View";
+  const viewMode = propViewMode || (defaultView === "List View" ? "list" : "grid");
 
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const inStockItems = useMemo(
-    () =>
-      hideUnavailable ? items.filter((item) => item.available > 0) : items,
-    [items, hideUnavailable],
+    () => (hideUnavailableItems ? filteredItems.filter((item) => item.available > 0) : filteredItems),
+    [filteredItems, hideUnavailableItems],
   );
 
-  // Intersection Observer for infinite scroll
+  const handleAddToCart = useCallback((item: any) => {
+    if (item.available <= 0) return;
+    if (scannerOnly) return;
+    
+    addToCart({
+      ...item,
+      item_code: item.id,
+    });
+  }, [addToCart, scannerOnly]);
+
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
       const target = entries[0];
@@ -60,7 +65,7 @@ export default function ProductGrid({
   useEffect(() => {
     const option = {
       root: null,
-      rootMargin: "200px", // Load more before reaching the bottom
+      rootMargin: "200px",
       threshold: 0,
     };
 
@@ -77,18 +82,20 @@ export default function ProductGrid({
     };
   }, [handleObserver]);
 
-  // If viewMode is 'list', render the line view
   if (viewMode === "list") {
     return (
-      <div className="flex flex-col">
+      <div className="flex flex-col relative">
+        {isSearching && (
+          <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 z-10 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-beveren-600"></div>
+          </div>
+        )}
         <ProductLineView
           items={inStockItems}
-          onAddToCart={onAddToCart}
-          isMobile={isMobile}
+          onAddToCart={handleAddToCart}
           scannerOnly={scannerOnly}
         />
 
-        {/* Load more trigger and indicator */}
         {onLoadMore && (
           <div ref={loadMoreRef} className="py-4 flex justify-center">
             {isLoadingMore && (
@@ -115,8 +122,7 @@ export default function ProductGrid({
     );
   }
 
-  // Default grid view
-  if (inStockItems.length === 0) {
+  if (inStockItems.length === 0 && !isSearching) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -133,26 +139,23 @@ export default function ProductGrid({
   }
 
   return (
-    <div className={`${isMobile ? "p-4" : "p-6"} bg-gray-50 dark:bg-gray-900`}>
-      <div
-        className={`grid gap-4 ${
-          isMobile
-            ? "grid-cols-2 sm:grid-cols-3"
-            : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4"
-        }`}
-      >
+    <div className="p-6 bg-gray-50 dark:bg-gray-900 relative">
+      {isSearching && (
+        <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 z-10 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-beveren-600"></div>
+        </div>
+      )}
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4">
         {inStockItems.map((item) => (
           <ProductCard
             key={item.id}
             item={item}
-            onAddToCart={onAddToCart}
-            isMobile={isMobile}
+            onAddToCart={handleAddToCart}
             scannerOnly={scannerOnly}
           />
         ))}
       </div>
 
-      {/* Load more trigger and indicator */}
       {onLoadMore && (
         <div ref={loadMoreRef} className="py-6 flex justify-center">
           {isLoadingMore && (
@@ -165,8 +168,7 @@ export default function ProductGrid({
           )}
           {!isLoadingMore && hasMore && (
             <span className="text-gray-400 dark:text-gray-500 text-sm">
-              Showing {inStockItems.length} of {totalCount} items • Scroll for
-              more
+              Showing {inStockItems.length} of {totalCount} items • Scroll for more
             </span>
           )}
           {!hasMore && inStockItems.length > 0 && totalCount > 0 && (

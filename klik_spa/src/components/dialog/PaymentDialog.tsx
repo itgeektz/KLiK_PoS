@@ -193,6 +193,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
   const paymentMethods = useMemo(() => {
     const sortedModes = [...modes].sort((a, b) => {
+      if (a.idx !== undefined && b.idx !== undefined) {
+        return a.idx - b.idx;
+      }
       if (a.default === 1 && b.default !== 1) return -1;
       if (a.default !== 1 && b.default === 1) return 1;
       return 0;
@@ -386,6 +389,22 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (!selectedCustomer || !selectedCustomer.name) {
       toast.error("Kindly select a customer");
       return;
+    }
+    if (!isCreditSale) {
+      const totalPaid = calculateTotalPayments(Object.values(paymentAmounts));
+      const orderTotal = calculations.grandTotal;
+      
+      if (totalPaid < orderTotal) {
+        const remainingAmount = orderTotal - totalPaid;
+        toast.error(`Insufficient payment. Total: ${formatCurrencyWithSymbol(orderTotal, displayCurrencySymbol)}, Paid: ${formatCurrencyWithSymbol(totalPaid, displayCurrencySymbol)}, Remaining: ${formatCurrencyWithSymbol(remainingAmount, displayCurrencySymbol)}`);
+        return;
+      }
+      
+      if (totalPaid > orderTotal && !posDetails?.allow_overpayment) {
+        const overpayAmount = totalPaid - orderTotal;
+        toast.error(`Overpayment not allowed. Please adjust payment amounts. Overpayment: ${formatCurrencyWithSymbol(overpayAmount, displayCurrencySymbol)}`);
+        return;
+      }
     }
     if (isCreditSale && !dueDate) {
       toast.error("Please select a due date for this credit sale");

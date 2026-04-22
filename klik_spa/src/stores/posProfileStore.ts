@@ -27,7 +27,7 @@ export interface POSDetails {
   write_off_account?: string;
   write_off_cost_center?: string;
   custom_delivery_required?: number;
-  can_create_and_edit_customers?: number;
+  custom_allow_to_create_and_edit_customers?: number;
   custom_default_view?: "Grid View" | "List View";
   custom_scale_barcodes_start_with?: string;
   warehouse?: string;

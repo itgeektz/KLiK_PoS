@@ -33,7 +33,7 @@ import { useCustomerDetails } from "../hooks/useCustomers";
 import EditDraftInvoiceDialog from "../components/EditDraftInvoiceDialog";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
-import AddCustomerModal from "../components/AddCustomerModal";
+import AddCustomerModal from "../components/customer/AddCustomerModal";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 
@@ -358,7 +358,7 @@ export default function CustomerDetailsPage() {
                   </p>
                 </div>
               </div>
-              {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
+              {posDetails && posDetails?.custom_allow_to_create_and_edit_customers === 1 && (
                 <button
                   onClick={() => {
                     console.log('Customer data being passed to modal:', customer);
@@ -705,7 +705,7 @@ export default function CustomerDetailsPage() {
                   </p>
                 </div>
               </div>
-              {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
+              {posDetails && posDetails?.custom_allow_to_create_and_edit_customers === 1 && (
                 <button
                   onClick={() => {
                     console.log('Customer data being passed to modal:', customer);

@@ -66,7 +66,7 @@ export default function RetailSidebar() {
       <div className="flex-1 flex flex-col items-center py-6 space-y-4">
         {menuItems.map((item, index) => {
           const disabled = item.requiresSalesDashboard && !canAccessSalesDashboard
-          if (item.requiresEditCreatePermission && posDetails?.can_create_and_edit_customers !== 1) {
+          if (item.requiresEditCreatePermission && posDetails?.custom_allow_to_create_and_edit_customers !== 1) {
             return null; // Don't render this menu item if the user doesn't have permission
            }
            

@@ -417,7 +417,7 @@ export const CartItemRow = ({
               {item.category}
             </p>
             <div className={`${isMobile ? "text-base" : "text-sm"}`}>
-              {discountedPrice < item.price ? (
+              {discountedPrice !== item.price ? (
                 <div className="flex items-center space-x-2">
                   <span className="text-gray-400 line-through text-xs">
                     {formatCurrencyWithSymbol(item.price, currency_symbol)}
@@ -467,7 +467,7 @@ export const CartItemRow = ({
           </div>
 
           <div className="flex-shrink-0 text-right min-w-[80px] px-2">
-            {discountedTotal < originalTotal ? (
+            {discountedTotal !== originalTotal ? (
               <div>
                 <p className="text-gray-400 line-through text-xs">
                   {formatCurrencyWithSymbol(originalTotal, currency_symbol)}

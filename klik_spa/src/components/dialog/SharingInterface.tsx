@@ -103,6 +103,7 @@ export default function SharingInterface({
           setSharingMode(null);
         }
       };
+      
       getEmailOutgoingAccounts();
     } else if (sharingMode === "sms") {
       const getSmsSettings = async () => {
@@ -125,6 +126,26 @@ export default function SharingInterface({
       };
 
       getSmsSettings();
+    } else if (sharingMode === "whatsapp") {
+      const checkWhatsAppSetup = async () => {
+        const { getWhatsAppSetup } = await import("../../services/useSharing");
+        try {
+          const setup = await getWhatsAppSetup();
+          if (!setup?.is_configured) {
+            toast.error(
+              "WhatsApp is not configured. Please set up WhatsApp Business API in ERPNext to use this feature."
+            );
+            setModeEnabled(false);
+          } else {
+            setModeEnabled(true);
+          }
+        } catch (error) {
+          toast.error("Failed to load WhatsApp setup. Please try again.");
+          setSharingMode(null);
+        }
+      };
+
+      checkWhatsAppSetup();
     }
   }, [sharingMode]);
 
@@ -323,9 +344,15 @@ export default function SharingInterface({
               <div className="text-sm text-gray-900 whitespace-pre-wrap">{getProcessedMessage()}</div>
             </div>
           </div>
-          <button onClick={sendWhatsApp} disabled={!sharingData.phone || isSendingWhatsapp} className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300">
+          <button onClick={sendWhatsApp} disabled={!sharingData.phone || isSendingWhatsapp || !modeEnabled} className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300">
             {isSendingWhatsapp ? "Sending..." : "Send WhatsApp Message"}
           </button>
+          {!modeEnabled && (
+            <div className="mt-2 text-sm text-red-600">
+              WhatsApp integration is not configured. Please set up WhatsApp
+              Business API in ERPNext to use this feature.
+            </div>
+          )}
         </div>
       </div>
     );

@@ -289,15 +289,12 @@ def _get_conversion_factor_sql(item_code, uom):
 
 def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_term=None, selected_category=None):
     try:
-        item_groups = []
+        item_groups = [] 
         
         allowed_groups = []
         
         if getattr(pos_doc, "item_groups", None):
             allowed_groups = [d.item_group for d in pos_doc.item_groups if d.item_group]
-        
-        if not allowed_groups:
-            allowed_groups = frappe.get_all("Item Group", filters={"show_in_pos": 1}, pluck="name")
         
         if not allowed_groups:
             allowed_groups = frappe.get_all("Item Group", pluck="name")
@@ -348,7 +345,6 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
                         "is_group": group_doc.is_group,
                         "image": group_doc.image,
                         "count": item_count,
-                        "show_in_pos": group_doc.show_in_pos,
                         "custom_icon": group_doc.get("custom_icon"),
                         "custom_color": group_doc.get("custom_color"),
                         "custom_order": group_doc.get("custom_order", 0),

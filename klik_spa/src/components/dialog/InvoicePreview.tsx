@@ -1,6 +1,7 @@
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import type { Calculations, PaymentAmount } from "./types";
 import type { CartItem } from "../../../types";
+import PrintPreview from "../../utils/posPreview";
 
 interface InvoicePreviewProps {
   invoiceSubmitted: boolean;
@@ -19,10 +20,14 @@ interface InvoicePreviewProps {
 }
 
 const DisplayPrintPreview = ({ invoice }: { invoice: any }) => {
+  const invoiceWithRequiredFields = {
+    pos_profile: (typeof invoice.pos_profile === 'string' ? invoice.pos_profile : '') || '',
+    name: (typeof invoice.name === 'string' ? invoice.name : invoice.id) || '',
+    ...invoice
+  };
+
   return (
-    <div className="text-xs">
-      <pre>{JSON.stringify(invoice, null, 2)}</pre>
-    </div>
+      <PrintPreview invoice={invoiceWithRequiredFields} />
   );
 };
 

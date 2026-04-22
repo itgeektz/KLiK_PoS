@@ -55,13 +55,15 @@ export const CustomerSearchSection = ({
   const buttonRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isSelectingRef = useRef(false);
+  const shouldPreventSearchRef = useRef(false);
 
   const { customers, isLoading: isLoadingCustomers, refetch: refetchCustomers } = useCustomers(search);
   const { posDetails } = usePOSProfileStore();
   const { checkCustomerPermission } = useCustomerPermission();
   const { fetchProducts, setSelectedCustomer: setProductCustomer } = useProductStore();
 
-  const canCreateCustomer = posDetails?.can_create_and_edit_customers === 1;
+  const canCreateCustomer = posDetails?.custom_allow_to_create_and_edit_customers === 1;
 
   const fetchCustomerInfo = async (customerName: string): Promise<Customer | null> => {
     try {
@@ -179,14 +181,14 @@ export const CustomerSearchSection = ({
   }, []);
 
   useEffect(() => {
-    if (isOpen && inputRef.current) {
+    if (isOpen && inputRef.current && !isSelectingRef.current) {
       inputRef.current.focus();
       calculateDropdownPosition();
     }
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && search.length >= 2) {
+    if (isOpen && search.length >= 2 && !isSelectingRef.current && !shouldPreventSearchRef.current) {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
@@ -224,6 +226,14 @@ export const CustomerSearchSection = ({
   };
 
   const handleSelect = async (customer: Customer) => {
+    // Immediately close dropdown and prevent any further search
+    setIsOpen(false);
+    setSearch("");
+    setHighlightedIndex(-1);
+    
+    isSelectingRef.current = true;
+    shouldPreventSearchRef.current = true;
+    
     setIsLoading(true);
     try {
       const fullCustomer = await fetchCustomerInfo(customer.name);
@@ -243,15 +253,18 @@ export const CustomerSearchSection = ({
       await fetchProducts(true);
     } finally {
       setIsLoading(false);
-      setIsOpen(false);
-      setSearch("");
-      setHighlightedIndex(-1);
       setUserRemovedDefaultCustomer(false);
+      setTimeout(() => {
+        isSelectingRef.current = false;
+        shouldPreventSearchRef.current = false;
+      }, 300);
     }
   };
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
+    isSelectingRef.current = true;
+    shouldPreventSearchRef.current = true;
     onCustomerClear();
     setProductCustomer(null);
     fetchProducts(true);
@@ -259,12 +272,20 @@ export const CustomerSearchSection = ({
     setSearch("");
     setIsOpen(false);
     setHighlightedIndex(-1);
+    setTimeout(() => {
+      isSelectingRef.current = false;
+      shouldPreventSearchRef.current = false;
+    }, 300);
   };
 
   const handleOpenDropdown = () => {
-    setIsOpen(true);
-    setSearch("");
-    setHighlightedIndex(-1);
+    if (!isSelectingRef.current && !shouldPreventSearchRef.current) {
+      setIsOpen(!isOpen);
+      if (!isOpen) {
+        setSearch("");
+        setHighlightedIndex(-1);
+      }
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -285,7 +306,12 @@ export const CustomerSearchSection = ({
         break;
       case "ArrowUp":
         e.preventDefault();
-        setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : -1));
+        if (highlightedIndex === 0) {
+          setIsOpen(false);
+          setHighlightedIndex(-1);
+        } else {
+          setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : -1));
+        }
         break;
       case "Enter":
         e.preventDefault();
@@ -449,7 +475,11 @@ export const CustomerSearchSection = ({
             return (
               <div
                 key={customer.id}
-                onClick={() => handleSelect(customer)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelect(customer);
+                }}
                 onMouseEnter={() => setHighlightedIndex(idx)}
                 className={`
                   px-4 py-3 cursor-pointer transition-all

@@ -136,6 +136,34 @@ export async function sendTemplateWhatsApp(mobile: string, templateName: string,
   return result.message;
 }
 
+// Check if SMS gateway is configured
+export async function getSMSGateway() {
+  const csrfToken = window.csrf_token;
+
+  const response = await fetch(
+    "/api/method/klik_pos.api.sms.get_sms_gateway_settings",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Frappe-CSRF-Token": csrfToken,
+      },
+      credentials: "include",
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || !result.message || result.message.status !== "success") {
+    const serverMsg = result._server_messages
+      ? JSON.parse(result._server_messages)[0]
+      : "Failed to get SMS gateway settings";
+    throw new Error(serverMsg);
+  }
+
+  return result.message;
+}
+
 // Function for sending SMS message
 export async function sendSMSMessage(data: { mobile_no: string; message: string; customer_name?: string }) {
   const csrfToken = window.csrf_token;

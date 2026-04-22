@@ -104,6 +104,27 @@ export default function SharingInterface({
         }
       };
       getEmailOutgoingAccounts();
+    } else if (sharingMode === "sms") {
+      const getSmsSettings = async () => {
+        const { getSMSGateway } = await import("../../services/useSharing");
+        try {
+          await getSMSGateway().then((settings: any) => {
+            if (!settings || !settings.enabled) {
+              toast.error(
+                "SMS gateway is not configured. Please set up SMS gateway in ERPNext to use this feature."
+              );
+              setModeEnabled(false);
+            } else {
+              setModeEnabled(true);
+            }
+          });
+        } catch (error) {
+          toast.error("Failed to load SMS settings. Please try again.");
+          setSharingMode(null);
+        }
+      };
+
+      getSmsSettings();
     }
   }, [sharingMode]);
 
@@ -339,9 +360,15 @@ export default function SharingInterface({
               </div>
             </div>
           </div>
-          <button onClick={sendSMS} disabled={!sharingData.phone} className="w-full py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 disabled:bg-gray-300">
+          <button onClick={sendSMS} disabled={!sharingData.phone || !modeEnabled} className="w-full py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 disabled:bg-gray-300">
             Send SMS
           </button>
+          {!modeEnabled && (
+            <div className="mt-2 text-sm text-red-600">
+              SMS gateway is not configured. Please set up SMS gateway in
+              ERPNext to use this feature.
+            </div>
+          )}
         </div>
       </div>
     );

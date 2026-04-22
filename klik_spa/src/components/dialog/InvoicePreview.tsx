@@ -19,7 +19,6 @@ interface InvoicePreviewProps {
   currentDate: string;
 }
 
-
 export default function InvoicePreview({
   invoiceSubmitted,
   invoiceData,

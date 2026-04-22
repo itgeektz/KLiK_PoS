@@ -187,6 +187,23 @@ def deliver_invoice_via_whatsapp_doc(invoice_name, mobile_no=None, message=None)
 
 
 @frappe.whitelist()
+def get_whatsapp_setup():
+	"""
+	Return WhatsApp Setup configuration status.
+	"""
+	try:
+		setup = frappe.get_single("WhatsApp Setup")
+		return {
+			"status": "success",
+			"enabled": bool(setup.enabled),
+			"is_configured": bool(setup.enabled and setup.token and setup.url and setup.version and setup.phone_id),
+		}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Get WhatsApp Setup Failed")
+		frappe.throw(f"Failed to get WhatsApp setup: {e!s}")
+
+
+@frappe.whitelist()
 def get_whatsapp_templates():
 	"""
 	Get all WhatsApp message templates

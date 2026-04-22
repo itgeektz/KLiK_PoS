@@ -1,5 +1,7 @@
 import { X, Loader2, Pencil, Check } from "lucide-react";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
+import { useEffect, useState } from "react";
+import { toast } from "react-toastify";
 
 interface SharingInterfaceProps {
   sharingMode: string | null;
@@ -70,6 +72,83 @@ export default function SharingInterface({
   handleTemplateChange,
   handleEmailTemplateChange,
 }: SharingInterfaceProps) {
+  const [modeEnabled, setModeEnabled] = useState(false);
+  const [outgoingAccounts, setOutgoingAccounts] = useState<any[]>([]);
+  const [selectedSender, setSelectedSender] = useState<string>("");
+
+  useEffect(() => {
+    if (sharingMode === "email") {
+      const getEmailOutgoingAccounts = async () => {
+        const { getAvailableOutgoingAccounts } =
+          await import("../../services/useSharing");
+        try {
+          await getAvailableOutgoingAccounts().then((result: any) => {
+            const accounts = result?.accounts ?? [];
+            if (!accounts || accounts.length === 0) {
+              toast.error(
+                "No available outgoing email accounts found. Please configure email accounts in ERPNext to use this feature."
+              );
+              setModeEnabled(false);
+            } else {
+              setOutgoingAccounts(accounts);
+              const defaultAccount =
+                accounts.find((a: any) => a.source === "default_outgoing") ??
+                accounts[0];
+              setSelectedSender(defaultAccount?.name ?? "");
+              setModeEnabled(true);
+            }
+          });
+        } catch (error) {
+          toast.error("Failed to load email accounts. Please try again.");
+          setSharingMode(null);
+        }
+      };
+      
+      getEmailOutgoingAccounts();
+    } else if (sharingMode === "sms") {
+      const getSmsSettings = async () => {
+        const { getSMSGateway } = await import("../../services/useSharing");
+        try {
+          await getSMSGateway().then((settings: any) => {
+            if (!settings || !settings.enabled) {
+              toast.error(
+                "SMS gateway is not configured. Please set up SMS gateway in ERPNext to use this feature."
+              );
+              setModeEnabled(false);
+            } else {
+              setModeEnabled(true);
+            }
+          });
+        } catch (error) {
+          toast.error("Failed to load SMS settings. Please try again.");
+          setSharingMode(null);
+        }
+      };
+
+      getSmsSettings();
+    } else if (sharingMode === "whatsapp") {
+      const checkWhatsAppSetup = async () => {
+        const { getWhatsAppSetup } = await import("../../services/useSharing");
+        try {
+          const setup = await getWhatsAppSetup();
+          if (!setup?.is_configured) {
+            toast.error(
+              "WhatsApp is not configured. Please set up WhatsApp Business API in ERPNext to use this feature."
+            );
+            setModeEnabled(false);
+          } else {
+            setModeEnabled(true);
+          }
+        } catch (error) {
+          toast.error("Failed to load WhatsApp setup. Please try again.");
+          setSharingMode(null);
+        }
+      };
+
+      checkWhatsAppSetup();
+    }
+  }, [sharingMode]);
+
   const sendEmail = async () => {
     setIsSendingEmail(true);
     try {
@@ -79,11 +158,12 @@ export default function SharingInterface({
         customer_name: sharingData.name,
         invoice_data: invoiceData?.name || "",
         message: getProcessedEmailMessage(),
+        sender: selectedSender || undefined,
       });
-      alert("Email sent successfully!");
+      toast.success("Email sent successfully!");
       setSharingMode(null);
     } catch (error: any) {
-      alert(error.message);
+      toast.error(error.message);
     } finally {
       setIsSendingEmail(false);
     }
@@ -141,6 +221,24 @@ export default function SharingInterface({
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email Address</label>
             <input type="email" value={sharingData.email} onChange={(e) => setSharingData((prev: any) => ({ ...prev, email: e.target.value }))} className="w-full px-3 py-2 border rounded-lg" placeholder="customer@email.com" />
           </div>
+          {outgoingAccounts.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Send From
+              </label>
+              <select
+                value={selectedSender}
+                onChange={(e) => setSelectedSender(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                {outgoingAccounts.map((account) => (
+                  <option key={account.name} value={account.name}>
+                    {account.default_sender}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email Message Preview</label>
@@ -178,9 +276,15 @@ export default function SharingInterface({
               <div className="text-sm text-gray-900 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: getProcessedEmailMessage() }} />
             </div>
           </div>
-          <button onClick={sendEmail} disabled={!sharingData.email || isSendingEmail} className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300">
+          <button onClick={sendEmail} disabled={!sharingData.email || isSendingEmail || !modeEnabled} className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300">
             {isSendingEmail ? "Sending..." : "Send Email"}
           </button>
+          {!modeEnabled && (
+            <div className="mt-2 text-sm text-red-600">
+              Email server is not configured. Please set up email server in
+              ERPNext to use this feature.
+            </div>
+          )}
         </div>
       </div>
     );
@@ -240,9 +344,15 @@ export default function SharingInterface({
               <div className="text-sm text-gray-900 whitespace-pre-wrap">{getProcessedMessage()}</div>
             </div>
           </div>
-          <button onClick={sendWhatsApp} disabled={!sharingData.phone || isSendingWhatsapp} className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300">
+          <button onClick={sendWhatsApp} disabled={!sharingData.phone || isSendingWhatsapp || !modeEnabled} className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300">
             {isSendingWhatsapp ? "Sending..." : "Send WhatsApp Message"}
           </button>
+          {!modeEnabled && (
+            <div className="mt-2 text-sm text-red-600">
+              WhatsApp integration is not configured. Please set up WhatsApp
+              Business API in ERPNext to use this feature.
+            </div>
+          )}
         </div>
       </div>
     );
@@ -277,9 +387,15 @@ export default function SharingInterface({
               </div>
             </div>
           </div>
-          <button onClick={sendSMS} disabled={!sharingData.phone} className="w-full py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 disabled:bg-gray-300">
+          <button onClick={sendSMS} disabled={!sharingData.phone || !modeEnabled} className="w-full py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 disabled:bg-gray-300">
             Send SMS
           </button>
+          {!modeEnabled && (
+            <div className="mt-2 text-sm text-red-600">
+              SMS gateway is not configured. Please set up SMS gateway in
+              ERPNext to use this feature.
+            </div>
+          )}
         </div>
       </div>
     );

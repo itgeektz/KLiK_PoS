@@ -40,7 +40,6 @@ const getDeviceId = () => {
   return device_id;
 };
 
-
 export default function PaymentDialog(props: PaymentDialogProps) {
   const {
     isOpen,

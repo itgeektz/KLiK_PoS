@@ -359,6 +359,7 @@ export default function OrderSummary({
           isValidating={isValidatingCheckout}
           isMobile={isMobile}
           currency_symbol={currency_symbol}
+          allow_holding_invoices={posDetails?.allow_holding_invoices === 1}
         />
       )}
 

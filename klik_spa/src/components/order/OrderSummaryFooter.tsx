@@ -13,6 +13,7 @@ interface OrderSummaryFooterProps {
   isValidating: boolean;
   isMobile?: boolean;
   currency_symbol?: string;
+  allow_holding_invoices?: boolean;
 }
 
 export const OrderSummaryFooter = ({
@@ -26,6 +27,7 @@ export const OrderSummaryFooter = ({
   isValidating,
   isMobile,
   currency_symbol,
+  allow_holding_invoices,
 }: OrderSummaryFooterProps) => {
   return (
     <div
@@ -36,13 +38,19 @@ export const OrderSummaryFooter = ({
       } space-y-3`}
     >
       {/* Action Buttons */}
-      <div className={`grid grid-cols-2 gap-3 ${isMobile ? "mb-3" : ""}`}>
-        <button
-          onClick={onHoldOrder}
-          className="px-3 py-2 border border-beveren-600 text-beveren-600 dark:text-beveren-400 rounded-lg font-medium hover:bg-beveren-600 hover:text-white transition-colors text-sm"
-        >
-          Hold
-        </button>
+      <div
+        className={`grid ${
+          allow_holding_invoices ? "grid-cols-2" : "grid-cols-1"
+        } gap-3 ${isMobile ? "mb-3" : ""}`}
+      >
+        {allow_holding_invoices && (
+          <button
+            onClick={onHoldOrder}
+            className="px-3 py-2 border border-beveren-600 text-beveren-600 dark:text-beveren-400 rounded-lg font-medium hover:bg-beveren-600 hover:text-white transition-colors text-sm"
+          >
+            Hold
+          </button>
+        )}
         <button
           onClick={onClearCart}
           className="px-3 py-2 border border-red-500 text-red-600 dark:text-red-400 rounded-lg font-medium hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm"

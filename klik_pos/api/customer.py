@@ -439,6 +439,14 @@ def get_or_create_customer(name, email, phone, country, tax_id, name_arabic="", 
         )
         territory = data.get("territory", country) if data else country
 
+        handled_fields = [
+            'name', 'email', 'phone', 'customer_type', 'type', 'address', 
+            'taxId', 'name_arabic', 'contactName', 'vatNumber', 
+            'registrationScheme', 'registrationNumber', 'customer_group', 
+            'territory', 'preferredPaymentMethod', 'status', 'contact_name',
+            'customer_name', 'mobile_no', 'email_id', 'tax_id'
+        ]
+
         existing = frappe.get_all(
             "Customer", filters={"customer_name": name}, fields=["name"]
         )
@@ -458,6 +466,16 @@ def get_or_create_customer(name, email, phone, country, tax_id, name_arabic="", 
                 doc.custom_payment_method = data.get("preferredPaymentMethod")
                 doc.custom_registration_scheme = data.get("registrationScheme")
                 doc.custom_registration_number = data.get("registrationNumber")
+
+            if data:
+                for key, value in data.items():
+                    if key not in handled_fields:
+                        if hasattr(doc, key):
+                            setattr(doc, key, value)
+                        elif hasattr(doc, f"custom_{key}"):
+                            setattr(doc, f"custom_{key}", value)
+                        elif key.startswith('custom_') and hasattr(doc, key):
+                            setattr(doc, key, value)
 
             doc.save()
         else:
@@ -495,6 +513,15 @@ def get_or_create_customer(name, email, phone, country, tax_id, name_arabic="", 
                     ),
                 }
             )
+            if data:
+                for key, value in data.items():
+                    if key not in handled_fields:
+                        if hasattr(doc, key):
+                            setattr(doc, key, value)
+                        elif hasattr(doc, f"custom_{key}"):
+                            setattr(doc, f"custom_{key}", value)
+                        elif key.startswith('custom_') and hasattr(doc, key):
+                            setattr(doc, key, value)
             doc.insert()
         return doc
     except Exception as e:
@@ -901,3 +928,25 @@ def check_customer_permission(customer_name):
     except Exception as e:
         frappe.logger().error(f"Error checking customer permission: {e!s}")
         return {"success": False, "error": str(e), "has_permission": False}
+
+
+@frappe.whitelist()
+def get_required_customer_fields():
+    """
+    Retrieves the Customer Doctype meta and returns a list of fields 
+    where 'reqd' (mandatory) is set to True.
+    """
+    meta = frappe.get_meta("Customer")
+    
+    required_fields = [
+        {
+            "fieldname": f.fieldname,
+            "label": f.label,
+            "fieldtype": f.fieldtype,
+            "options": f.options
+        }
+        for f in meta.fields 
+        if f.reqd and f.fieldtype not in ["Section Break", "Column Break", "Tab Break"]
+    ]
+    
+    return required_fields

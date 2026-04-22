@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-toastify";
 import { formatCurrencyWithSymbol, getCurrencySymbol } from "../utils/currency";
-import { usePOSDetails } from "../hooks/usePOSProfile";
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import { usePaymentModes } from "../hooks/usePaymentModes";
 import { createPartialReturn, getReturnedQty, type ReturnItem } from "../services/returnService";
 import { getInvoiceDetails } from "../services/salesInvoice";
@@ -37,7 +37,7 @@ export default function SingleInvoiceReturn({
   const [originalInvoicePaidAmount, setOriginalInvoicePaidAmount] = useState<number>(0);
 
   // Currency from invoice or POS profile
-  const { posDetails } = usePOSDetails();
+  const { posDetails } = usePOSProfileStore();
   const currency = (invoice && (invoice.currency || invoice.company_currency)) || posDetails?.currency || 'USD';
   const currencySymbol = getCurrencySymbol(currency);
 

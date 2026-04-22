@@ -1,10 +1,11 @@
 import { AlertCircle, Banknote, CheckCircle2, CreditCard, Wallet, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { usePaymentModes } from "../hooks/usePaymentModes";
-import { usePOSDetails, usePOSProfiles } from '../hooks/usePOSProfile';
 import { useCreatePOSOpeningEntry } from '../services/opeiningEntry';
 import { clearAllCache } from '../utils/clearCache';
 import { formatCurrencyWithSymbol } from '../utils/currency';
+import { usePOSProfiles } from '../hooks/usePOSProfile';
+import { usePOSProfileStore } from '../stores/posProfileStore';
 
 interface PaymentMethod {
   mode_of_payment: string;
@@ -46,7 +47,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { profiles: posProfiles, loading: profilesLoading, error: _profilesError } = usePOSProfiles();
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { posDetails, loading: _posDetailsLoading } = usePOSDetails();
+  const { posDetails, loading: _posDetailsLoading } = usePOSProfileStore();
 
   // Get the active POS profile from the opening entry
   const activeProfileName = posDetails?.name as string | undefined;

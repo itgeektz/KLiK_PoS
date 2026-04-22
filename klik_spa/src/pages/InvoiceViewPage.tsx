@@ -31,7 +31,7 @@ import {
 import PaymentDialog from "../components/dialog/PaymentDialog";
 import { useInvoiceDetails } from "../hooks/useInvoiceDetails";
 import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
-import { usePOSDetails } from "../hooks/usePOSProfile";
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import { deleteDraftInvoice } from "../services/salesInvoice";
 import { toast } from "react-toastify";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
@@ -49,7 +49,7 @@ export default function InvoiceViewPage() {
 
   const { invoice, isLoading, error } = useInvoiceDetails(invoiceId);
   const { statistics: customerStats, isLoading: statsLoading } = useCustomerStatistics(invoice?.customer || null);
-  const { posDetails } = usePOSDetails();
+  const { posDetails } = usePOSProfileStore();
   const navigate = useNavigate()
 
   // PaymentDialog state for sharing

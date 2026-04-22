@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { formatCurrencyWithSymbol } from "../utils/currency";
-import { usePOSDetails } from "../hooks/usePOSProfile";
+import { usePOSProfileStore } from "../stores/posProfileStore";
 import {
   FileText,
   DollarSign,
@@ -63,7 +63,7 @@ export default function CustomerDetailsPage() {
   // @ts-expect-error just ignore
   const { customer, isLoadingC, errorC } = useCustomerDetails(customerId);
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.name || "");
-  const { posDetails } = usePOSDetails();
+  const { posDetails } = usePOSProfileStore();
 
 
   const filterInvoiceByDate = (invoiceDateStr: string) => {

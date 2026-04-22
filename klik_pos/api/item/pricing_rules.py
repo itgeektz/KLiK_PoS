@@ -57,7 +57,7 @@ def _build_pricing_context(customer=None):
         "company": company,
         "warehouse": pos_profile.warehouse if pos_profile else None,
         "price_list": resolved_price_list,
-        "currency": frappe.get_cached_value("Company", company, "default_currency") or "SAR",
+        "currency": frappe.get_cached_value("Company", company, "default_currency") or "KES",
         "customer": customer,
         "customer_group": None,
         "territory": None,

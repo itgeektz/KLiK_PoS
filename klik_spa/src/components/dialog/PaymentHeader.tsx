@@ -1,5 +1,5 @@
 import { X, Printer, MailPlus, MessageCirclePlus, MessageSquarePlus, Eye, Loader2 } from "lucide-react";
-
+import { handlePrintInvoice } from "../../utils/printHandler";
 interface PaymentHeaderProps {
   invoiceSubmitted: boolean;
   isAutoPrinting: boolean;
@@ -15,30 +15,7 @@ interface PaymentHeaderProps {
   posDetails: any;
 }
 
-const handlePrintInvoice = (invoice: any) => {
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Invoice</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            @media print {
-              body { margin: 0; padding: 0; }
-            }
-          </style>
-        </head>
-        <body>
-          <pre>${JSON.stringify(invoice, null, 2)}</pre>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-    printWindow.close();
-  }
-};
+
 
 export default function PaymentHeader({
   invoiceSubmitted,

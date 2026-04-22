@@ -26,6 +26,32 @@ export async function sendEmails(data: any) {
   return result.message;
 }
 
+export async function getAvailableOutgoingAccounts() {
+  const csrfToken = window.csrf_token;
+
+  const response = await fetch(
+    "/api/method/klik_pos.api.email.get_available_outgoing_accounts",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Frappe-CSRF-Token": csrfToken,
+      },
+      credentials: "include",
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || !result.message || result.message.status !== "success") {
+    const serverMsg = result._server_messages
+      ? JSON.parse(result._server_messages)[0]
+      : "Failed to get available outgoing accounts";
+    throw new Error(serverMsg);
+  }
+
+  return result.message;
+}
 
 // Extend Window interface to include csrf_token
 declare global {

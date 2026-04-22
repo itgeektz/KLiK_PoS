@@ -40,7 +40,7 @@ import { handlePrintInvoice } from "../utils/printHandler";
 import SingleInvoiceReturn from "../components/SingleInvoiceReturn";
 import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
 import { formatCurrencyWithSymbol } from "../utils/currency";
-import AddCustomerModal from "../components/AddCustomerModal";
+import AddCustomerModal from "../components/customer/AddCustomerModal";
 
 export default function InvoiceViewPage() {
 

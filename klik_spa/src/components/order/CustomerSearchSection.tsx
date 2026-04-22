@@ -21,7 +21,7 @@ import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { useProductStore } from "../../stores/productStore";
 import countryList from "react-select-country-list";
 import { parsePhoneNumber } from "react-phone-number-input";
-import AddCustomerModal from "../AddCustomerModal";
+import AddCustomerModal from "../customer/AddCustomerModal";
 
 interface CustomerSearchSectionProps {
   selectedCustomer: Customer | null;

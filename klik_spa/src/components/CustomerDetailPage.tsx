@@ -21,7 +21,7 @@ import {
   Briefcase
 } from "lucide-react"
 import { useCustomerDetails } from "../hooks/useCustomers"
-import AddCustomerModal from "./AddCustomerModal"
+import AddCustomerModal from "./customer/AddCustomerModal"
 import type { Customer } from "../types/customer"
 import { formatCurrencyWithSymbol } from "../utils/currency"
 

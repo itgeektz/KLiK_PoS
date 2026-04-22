@@ -33,7 +33,7 @@ import { useCustomerDetails } from "../hooks/useCustomers";
 import EditDraftInvoiceDialog from "../components/EditDraftInvoiceDialog";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
-import AddCustomerModal from "../components/AddCustomerModal";
+import AddCustomerModal from "../components/customer/AddCustomerModal";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 

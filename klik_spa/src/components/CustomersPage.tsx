@@ -13,7 +13,7 @@ import {
 
 } from "lucide-react"
 import { useCustomers } from "../hooks/useCustomers" // Import the hook
-import AddCustomerModal from "./AddCustomerModal"
+import AddCustomerModal from "./customer/AddCustomerModal"
 import type { Customer } from "../types/customer"
 
 import BottomNavigation from "./BottomNavigation"

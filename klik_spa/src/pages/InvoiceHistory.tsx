@@ -44,6 +44,18 @@ import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import { exportInvoicesToCSV, getExportFilename, type ExportableInvoice } from "../utils/exportUtils";
 // import InvoiceViewPage from "./InvoiceViewPage";
 
+const INVOICE_HISTORY_VIEW_MODE_KEY = "invoice-history-view-mode";
+
+const getInitialViewMode = (): "cards" | "list" => {
+  if (typeof window === "undefined") {
+    return "list";
+  }
+
+  return window.localStorage.getItem(INVOICE_HISTORY_VIEW_MODE_KEY) === "cards"
+    ? "cards"
+    : "list";
+};
+
 export default function InvoiceHistoryPage() {
   const navigate = useNavigate();
   const isMobile = useMediaQuery("(max-width: 1024px)");
@@ -52,7 +64,7 @@ export default function InvoiceHistoryPage() {
   const [dateFilter, setDateFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
   const [cashierFilter, setCashierFilter] = useState("all");
-  const [viewMode, setViewMode] = useState<"cards" | "list">("list");
+  const [viewMode, setViewMode] = useState<"cards" | "list">(getInitialViewMode);
   const [selectedInvoice] = useState<SalesInvoice | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
@@ -93,6 +105,10 @@ export default function InvoiceHistoryPage() {
       setCashierFilter(currentUserCashier);
     }
   }, [isAdminUser, currentUserCashier, cashierFilter]);
+
+  useEffect(() => {
+    window.localStorage.setItem(INVOICE_HISTORY_VIEW_MODE_KEY, viewMode);
+  }, [viewMode]);
 
   // Keyboard event handler for Escape key
   useEffect(() => {
@@ -687,14 +703,6 @@ const getStatusBadge = (status: string) => {
                     className="flex-1 text-xs px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
                   >
                     Delete
-                  </button>
-                )}
-                  {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && hasReturnableItems(invoice) && (
-                  <button
-                    onClick={() => handleSingleReturnClick(invoice)}
-                    className="flex-1 text-xs px-3 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors"
-                  >
-                    Return
                   </button>
                 )}
               </div>

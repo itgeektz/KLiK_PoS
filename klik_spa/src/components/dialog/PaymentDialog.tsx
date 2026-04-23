@@ -761,7 +761,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (invoiceSubmitted && invoiceData && print_receipt_on_order_complete) {
       setIsAutoPrinting(true);
       setTimeout(() => {
-        handlePrintInvoice(invoiceData);
+        handlePrintInvoice(invoiceData, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting) });
         setIsAutoPrinting(false);
       }, 500);
     }
@@ -895,7 +895,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                       <span className="text-sm">Printing...</span>
                     </div>
                   )}
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" onClick={() => { handlePrintInvoice(invoiceData); clearOrderState(); }}>
+                  <button className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" onClick={() => { handlePrintInvoice(invoiceData, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting) }); clearOrderState(); }}>
                     <Printer size={18} />
                     <span>Print</span>
                   </button>

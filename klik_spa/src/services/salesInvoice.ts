@@ -206,6 +206,28 @@ export async function getDraftInvoiceItems(invoiceId: string) {
   }
 }
 
+export async function markInvoiceAsPrinted(invoiceName: string) {
+  const csrfToken = window.csrf_token;
+
+  const response = await fetch('/api/method/klik_pos.api.sales_invoice.mark_invoice_as_printed', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({ invoice_name: invoiceName }),
+    credentials: 'include',
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || !result.message || result.message.success === false) {
+    throw new Error(result.message?.error || 'Failed to mark invoice as printed');
+  }
+
+  return result.message;
+}
+
 export async function submitDraftInvoice(invoiceId: string) {
   const csrfToken = window.csrf_token;
 

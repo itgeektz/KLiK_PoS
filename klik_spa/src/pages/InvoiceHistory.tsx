@@ -642,6 +642,10 @@ const getStatusBadge = (status: string) => {
                   <span className="text-gray-600 dark:text-gray-400">Cashier:</span>
                   <span className="text-gray-900 dark:text-white">{invoice.cashier}</span>
                 </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600 dark:text-gray-400">POS Profile:</span>
+                  <span className="text-gray-900 dark:text-white">{invoice.posProfile}</span>
+                </div>
               </div>
               <div className="mt-4 flex space-x-2">
                 <button

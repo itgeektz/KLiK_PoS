@@ -8,7 +8,9 @@ from frappe.exceptions import ValidationError
 from frappe.utils import flt
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
+
 from .item.item_price import get_price_list_with_customer_priority
+from .sql_builder import apply_sql_permissions
 
 # Performance optimization: Cache frequently accessed data
 _cached_company_data = {}
@@ -452,44 +454,92 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		submitted_only: If True, only return submitted invoices (docstatus=1). Use for Sales Dashboard; excludes Draft and Cancelled.
 	"""
 	try:
-		# Convert string to boolean if needed (Frappe passes query params as strings)
 		if isinstance(skip_opening_entry_filter, str):
 			skip_opening_entry_filter = skip_opening_entry_filter.lower() in ("true", "1", "yes")
 		if isinstance(submitted_only, str):
 			submitted_only = submitted_only.lower() in ("true", "1", "yes")
 
-		# Get user IDs for cashier filter if cashier_name is provided
+		limit = int(limit) if limit else 100
+		start = int(start) if start else 0
+
 		cashier_user_ids = None
 		if cashier_name and cashier_name != "all":
 			cashier_user_ids = _get_user_ids_by_full_name(cashier_name)
 			if not cashier_user_ids:
-				# No users found with this name, return empty result
 				return {"success": True, "data": [], "total_count": 0}
 
-		filters, fields = _build_filters_and_fields(
-			skip_opening_entry_filter=skip_opening_entry_filter, cashier_user_ids=cashier_user_ids, submitted_only=submitted_only
+		try:
+			pos_doc = get_current_pos_profile()
+			current_pos_profile = getattr(pos_doc, "name", None)
+		except Exception:
+			current_pos_profile = None
+
+		current_opening_entry = get_current_pos_opening_entry()
+		user_roles = frappe.get_roles()
+		is_admin_user = "Administrator" in user_roles or "System Manager" in user_roles
+
+		sales_invoice_meta = frappe.get_meta("Sales Invoice")
+		has_zatca_status = any(df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields)
+
+		select_fields = """name, posting_date, posting_time, owner, customer, customer_name,
+			base_grand_total, base_rounded_total, status, discount_amount,
+			total_taxes_and_charges, custom_pos_opening_entry, queue_status,
+			queue_error, queue_attempts, queue_last_attempt_at, pos_profile, currency"""
+		if has_zatca_status:
+			select_fields += ", custom_zatca_submit_status"
+
+		conditions = []
+		params = []
+
+		if not skip_opening_entry_filter:
+			if is_admin_user:
+				conditions.append("custom_pos_opening_entry != ''")
+			elif current_opening_entry:
+				conditions.append("custom_pos_opening_entry = %s")
+				params.append(current_opening_entry)
+			else:
+				conditions.append("custom_pos_opening_entry != ''")
+
+		if submitted_only:
+			conditions.append("docstatus = 1")
+
+		if cashier_user_ids:
+			if len(cashier_user_ids) == 1:
+				conditions.append("owner = %s")
+				params.append(cashier_user_ids[0])
+			else:
+				placeholders = ", ".join(["%s"] * len(cashier_user_ids))
+				conditions.append(f"owner IN ({placeholders})")
+				params.extend(cashier_user_ids)
+
+		if current_pos_profile and not is_admin_user:
+			conditions.append("pos_profile = %s")
+			params.append(current_pos_profile)
+
+		if search and search.strip():
+			search_term = f"%{search.strip()}%"
+			conditions.append("(name LIKE %s OR customer_name LIKE %s OR customer LIKE %s)")
+			params.extend([search_term, search_term, search_term])
+
+		where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+		count_sql = apply_sql_permissions(
+			f"SELECT COUNT(*) as total FROM `tabSales Invoice` {where_clause}"
 		)
+		count_result = frappe.db.sql(count_sql, tuple(params), as_dict=True)
+		total_count = count_result[0]["total"] if count_result else 0
 
-		# Build search filters
-		or_filters = _build_search_filters(search)
+		main_sql = apply_sql_permissions(f"""
+			SELECT {select_fields}
+			FROM `tabSales Invoice`
+			{where_clause}
+			ORDER BY modified DESC
+			LIMIT %s OFFSET %s
+		""")
+		invoices = frappe.db.sql(main_sql, (*params, limit, start), as_dict=True)
 
-		invoices = frappe.get_all(
-			"Sales Invoice",
-			filters=filters,
-			or_filters=or_filters,
-			fields=fields,
-			order_by="modified desc",
-			limit=limit,
-			start=start,
-		)
-
-		total_count = len(frappe.get_all(
-			"Sales Invoice",
-			filters=filters,
-			or_filters=or_filters,
-			pluck="name"
-		))
-		if not invoices:return {"success": True, "data": [], "total_count": total_count}
+		if not invoices:
+			return {"success": True, "data": [], "total_count": total_count}
 
 		invoice_names = [inv.name for inv in invoices]
 		user_ids = list(set([inv.owner for inv in invoices]))
@@ -518,96 +568,6 @@ def _get_user_ids_by_full_name(full_name):
 	except Exception as e:
 		frappe.logger().error(f"Error getting user IDs by full name '{full_name}': {e}")
 		return []
-
-
-def _build_filters_and_fields(skip_opening_entry_filter=False, cashier_user_ids=None, submitted_only=False):
-	"""Build filters and fields list based on user role and metadata.
-
-	Args:
-		skip_opening_entry_filter: If True, skip filtering by opening entry (show all invoices)
-		cashier_user_ids: List of user IDs to filter by. If provided, only returns invoices for these users.
-		submitted_only: If True, only return submitted invoices (docstatus=1); excludes Draft and Cancelled.
-	"""
-	current_opening_entry = get_current_pos_opening_entry()
-
-	# Check if user is admin
-	user_roles = frappe.get_roles()
-	is_admin_user = "Administrator" in user_roles or "System Manager" in user_roles
-
-	# Base filters: opening entry (and optionally submitted only)
-	filters = {}
-
-	# Skip opening entry filter if requested (for Invoice History page - show all invoices for cashier)
-	if skip_opening_entry_filter:
-		frappe.logger().info(
-			f"Skipping opening entry filter - showing all invoices for user {frappe.session.user}"
-		)
-	elif is_admin_user:
-		frappe.logger().info(
-			f"Admin user {frappe.session.user} with roles {user_roles} - showing all POS invoices"
-		)
-		filters["custom_pos_opening_entry"] = ["!=", ""]
-	elif current_opening_entry:
-		filters["custom_pos_opening_entry"] = current_opening_entry
-	else:
-		frappe.logger().info("No active POS opening entry found, showing all POS invoices")
-		filters["custom_pos_opening_entry"] = ["!=", ""]
-
-	# Only submitted invoices (for Sales Dashboard): docstatus 1 = Submitted; 0 = Draft, 2 = Cancelled
-	if submitted_only:
-		filters["docstatus"] = 1
-
-	# Check if ZATCA status field exists
-	sales_invoice_meta = frappe.get_meta("Sales Invoice")
-	has_zatca_status = any(df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields)
-
-	# Build fields list
-	fields = [
-		"name",
-		"posting_date",
-		"posting_time",
-		"owner",
-		"customer",
-		"customer_name",
-		"base_grand_total",
-		"base_rounded_total",
-		"status",
-		"discount_amount",
-		"total_taxes_and_charges",
-		"custom_pos_opening_entry",
-		"queue_status",
-		"queue_error",
-		"queue_attempts",
-		"queue_last_attempt_at",
-		"pos_profile",
-		"currency",
-	]
-
-	if has_zatca_status:
-		fields.append("custom_zatca_submit_status")
-
-	# Add cashier filter if provided
-	if cashier_user_ids:
-		if len(cashier_user_ids) == 1:
-			filters["owner"] = cashier_user_ids[0]
-		else:
-			filters["owner"] = ["in", cashier_user_ids]
-		frappe.logger().info(f"Filtering by cashier user IDs: {cashier_user_ids}")
-
-	return filters, fields
-
-
-def _build_search_filters(search):
-	"""Build OR filters for search functionality."""
-	if not search or not search.strip():
-		return None
-
-	search_term = search.strip()
-	return [
-		["name", "like", f"%{search_term}%"],
-		["customer_name", "like", f"%{search_term}%"],
-		["customer", "like", f"%{search_term}%"],
-	]
 
 
 def _batch_fetch_cashier_names(user_ids):
@@ -3020,7 +2980,7 @@ def delete_draft_invoices_for_opening_entry(opening_entry_name):
 		if deleted:
 			frappe.logger().info(f"Cleared {deleted} draft invoice(s) for opening entry {opening_entry_name}")
 		return deleted
-	except Exception as e:
+	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Clear draft invoices on POS close")
 		# Do not raise - closing entry already succeeded
 		return 0

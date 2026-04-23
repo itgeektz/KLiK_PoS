@@ -114,6 +114,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const allowPartialPayments = Boolean(posDetails?.allow_partial_payment);
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const allow_holding_invoices = Boolean(posDetails?.allow_holding_invoices);
+  const autoAllocateRemainingPayment =
+    posDetails?.custom_auto_allocate_remaining_payment === 1 ||
+    posDetails?.custom_auto_allocate_remaining_payment === "1" ||
+    posDetails?.custom_auto_allocate_remaining_payment === true;
 
   const [enableBackgroundSubmission, setEnableBackgroundSubmission] = useState(
     posDetails?.enable_background_invoice_submission
@@ -213,6 +217,58 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     });
   }, [modes, paymentAmounts]);
 
+  const orderedPaymentMethodIds = useMemo(() => {
+    const sortedModes = [...modes].sort((a, b) => {
+      if (a.idx !== undefined && b.idx !== undefined) {
+        return a.idx - b.idx;
+      }
+      if (a.default === 1 && b.default !== 1) return -1;
+      if (a.default !== 1 && b.default === 1) return 1;
+      return 0;
+    });
+
+    return sortedModes.map((mode) => mode.mode_of_payment);
+  }, [modes]);
+
+  const autoAllocateRemainingToNextMethod = (
+    methodId: string,
+    baseAmounts: PaymentAmount,
+  ): PaymentAmount => {
+    if (!autoAllocateRemainingPayment) {
+      return baseAmounts;
+    }
+
+    const methodIndex = orderedPaymentMethodIds.indexOf(methodId);
+    if (methodIndex === -1) {
+      return baseAmounts;
+    }
+
+    const nextMethodIds = orderedPaymentMethodIds.slice(methodIndex + 1);
+    if (nextMethodIds.length === 0) {
+      return baseAmounts;
+    }
+
+    const updatedAmounts: PaymentAmount = { ...baseAmounts };
+
+    // Reset trailing payment modes so the remainder can be re-apportioned cleanly.
+    nextMethodIds.forEach((id) => {
+      updatedAmounts[id] = 0;
+    });
+
+    const remaining = roundCurrency(
+      calculations.grandTotal - calculateTotalPayments(Object.values(updatedAmounts)),
+    );
+
+    if (remaining > 0) {
+      const nextMethodId = nextMethodIds[0];
+      if (nextMethodId) {
+        updatedAmounts[nextMethodId] = remaining;
+      }
+    }
+
+    return updatedAmounts;
+  };
+
   const getRoundTargetMethodId = (): string | null => {
     if (activeMethodId && activeMethodId in paymentAmounts) return activeMethodId;
     if (lastModifiedMethodId && lastModifiedMethodId in paymentAmounts) return lastModifiedMethodId;
@@ -228,7 +284,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (invoiceSubmitted || isProcessingPayment) return;
     const numericAmount = roundCurrency(parseFloat(amount) || 0);
     setLastModifiedMethodId(methodId);
-    setPaymentAmounts((prev) => ({ ...prev, [methodId]: numericAmount }));
+    setPaymentAmounts((prev) => {
+      const baseAmounts = { ...prev, [methodId]: numericAmount };
+      return autoAllocateRemainingToNextMethod(methodId, baseAmounts);
+    });
   };
 
   const handleAutoFillPayment = (methodId: string) => {
@@ -245,7 +304,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (invoiceSubmitted || isProcessingPayment) return;
     const numericAmount = roundCurrency(parseFloat(amount) || 0);
     setLastModifiedMethodId(methodId);
-    setPaymentAmounts((prev) => ({ ...prev, [methodId]: numericAmount }));
+    setPaymentAmounts((prev) => {
+      const baseAmounts = { ...prev, [methodId]: numericAmount };
+      return autoAllocateRemainingToNextMethod(methodId, baseAmounts);
+    });
   };
 
   const handleRoundOff = () => {

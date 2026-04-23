@@ -89,7 +89,7 @@ export default function InvoiceHistoryPage() {
 
   // Skip opening entry filter for Invoice History - show all invoices for cashier regardless of opening entry
   // Pass cashier filter to API so it filters on server side (more efficient)
-  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore } = useSalesInvoices(searchTerm, true, cashierFilter);
+  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore, refetch } = useSalesInvoices(searchTerm, true, cashierFilter);
   const { modes } = useAllPaymentModes();
   const { customers } = useCustomers();
   const { posDetails } = usePOSProfileStore();
@@ -908,8 +908,7 @@ const getStatusBadge = (status: string) => {
     const handleSingleReturnSuccess = () => {
       setShowSingleReturn(false);
       setSelectedInvoiceForReturn(null);
-      // Refresh the invoices list
-      window.location.reload();
+      refetch();
     };
 
 

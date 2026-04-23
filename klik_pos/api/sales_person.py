@@ -1,29 +1,72 @@
 import frappe
 from frappe import _
+from frappe.query_builder import Table
 from frappe.utils import now
 
 
+def _get_active_salespeople():
+    SalesPerson = Table("tabSales Person")
+    Auth = Table("__Auth")
+
+    rows = (
+        frappe.qb.from_(SalesPerson)
+        .left_join(Auth)
+        .on(
+            (Auth.name == SalesPerson.name)
+            & (Auth.doctype == "Sales Person")
+            & (Auth.fieldname == "pos_pin")
+        )
+        .select(
+            SalesPerson.name,
+            SalesPerson.sales_person_name,
+            Auth.name.as_("has_pin_auth"),
+        )
+        .where(SalesPerson.enabled == 1)
+        .where(SalesPerson.name != "Sales Team")
+        .orderby(SalesPerson.sales_person_name)
+    ).run(as_dict=True)
+
+    return [
+        {
+            "salesperson": row.name,
+            "salesperson_name": row.sales_person_name,
+            "has_pin": bool(row.has_pin_auth),
+        }
+        for row in rows
+    ]
+
+
 @frappe.whitelist()
-def verify_pin(pin, device_id):
+def list_salespeople():
+    """Return active salespeople for POS selector UI."""
+    try:
+        return {"success": True, "salespeople": _get_active_salespeople()}
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), _("List Salespeople Error"))
+        return {
+            "success": False,
+            "message": _("An error occurred while loading salespeople. Please try again."),
+        }
+
+
+@frappe.whitelist()
+def verify_pin(pin, device_id, salesperson=None):
     """
     Verify PIN against all Sales Persons and return matching salesperson
     """
     try:
-        sales_persons = frappe.get_all(
-            "Sales Person",
-            filters={
-                "enabled": 1,
-                "name": ["!=", "Sales Team"],
-            },
-            fields=["name", "sales_person_name"],
-        )
+        sales_persons = _get_active_salespeople()
+        if salesperson:
+            sales_persons = [sp for sp in sales_persons if sp.get("salesperson") == salesperson]
         if not sales_persons:
             return {"success": False, "message": _("No active sales persons found")}
 
         matched_salesperson = None
         for sp in sales_persons:
+            if not sp.get("has_pin"):
+                continue
             try:
-                sales_person_doc = frappe.get_doc("Sales Person", sp.name)
+                sales_person_doc = frappe.get_doc("Sales Person", sp.get("salesperson"))
                 has_pin = sales_person_doc.pos_pin is not None
                 if not has_pin:
                     continue
@@ -42,14 +85,16 @@ def verify_pin(pin, device_id):
 
             # Set cache values (expire in 30 days = 2592000 seconds)
             frappe.cache().set_value(
-                cache_key_sp, matched_salesperson.name, expires_in_sec=2592000
+                cache_key_sp,
+                matched_salesperson.get("salesperson"),
+                expires_in_sec=2592000,
             )
             frappe.cache().set_value(cache_key_ts, now(), expires_in_sec=2592000)
 
             return {
                 "success": True,
-                "salesperson": matched_salesperson.name,
-                "salesperson_name": matched_salesperson.sales_person_name,
+                "salesperson": matched_salesperson.get("salesperson"),
+                "salesperson_name": matched_salesperson.get("salesperson_name"),
             }
         else:
             return {"success": False, "message": _("Invalid PIN. Please try again.")}

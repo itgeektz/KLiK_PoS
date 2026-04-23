@@ -5,7 +5,7 @@ import frappe
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from frappe import _
 from frappe.exceptions import ValidationError
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
@@ -23,6 +23,36 @@ QUEUE_STATUSES = {
 	"failed": "Failed",
 	"submitted": "Submitted",
 }
+
+
+def validate_required_salesperson(doc):
+	"""Enforce salesperson presence for POS flows when the POS profile requires it."""
+	if not doc or not getattr(doc, "is_pos", 0):
+		return
+
+	pos_profile_name = getattr(doc, "pos_profile", None)
+	if not pos_profile_name:
+		return
+
+	require_sales_person = frappe.db.get_value(
+		"POS Profile",
+		pos_profile_name,
+		"custom_sales_person_pin_required",
+	)
+	if not cint(require_sales_person):
+		return
+
+	sales_team = getattr(doc, "sales_team", None) or []
+	has_salesperson = any(
+		(row.get("sales_person") if isinstance(row, dict) else getattr(row, "sales_person", None))
+		for row in sales_team
+	)
+	if has_salesperson:
+		return
+
+	frappe.throw(
+		_("Sales person is mandatory to complete this sale. Please enter a valid salesperson PIN before continuing.")
+	)
 
 def _coerce_queue_status(status):
 	if not status:
@@ -807,6 +837,8 @@ def validate_checkout_invoice(data):
 			enable_background_submission=enable_background_submission,
 		)
 
+		validate_required_salesperson(preview_doc)
+
 		_validate_reserved_stock_for_items(preview_doc)
 
 		tax_breakdown = []
@@ -1014,6 +1046,8 @@ def queue_sales_invoice(data):
 			tax_id=tax_id,
 			enable_background_submission=enable_background_submission,
 		)
+
+		validate_required_salesperson(doc)
 
 		doc.base_paid_amount = amount_paid
 		doc.paid_amount = amount_paid
@@ -1244,6 +1278,8 @@ def create_draft_invoice(data):
 			tax_id=tax_id,
 			enable_background_submission=enable_background_submission,
 		)
+
+		validate_required_salesperson(doc)
 		doc.insert(ignore_permissions=True)
 
 		if tax_id:
@@ -3095,6 +3131,8 @@ def submit_draft_invoice(invoice_id):
 				"success": False,
 				"error": f"Cannot submit invoice {invoice_id}. Only Draft invoices can be submitted. Current status: {invoice_doc.status}",
 			}
+
+		validate_required_salesperson(invoice_doc)
 
 		invoice_doc.submit()
 		try:

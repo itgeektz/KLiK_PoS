@@ -1,7 +1,7 @@
 import { Calculator } from "lucide-react";
 import { formatCurrencyWithSymbol } from "../../utils/currency";
 import { subtractCurrency } from "../../utils/currencyMath";
-import type { Calculations } from "./types";
+import type { BackendTaxPreview, Calculations } from "./types";
 
 interface TotalsSectionProps {
   calculations: Calculations;
@@ -15,6 +15,8 @@ interface TotalsSectionProps {
   displayCurrencySymbol: string;
   isB2B: boolean;
   isB2C: boolean;
+  backendTaxPreview: BackendTaxPreview | null;
+  taxPreviewError: string | null;
   onRoundOffChange: (value: string) => void;
   onRoundOff: () => void;
 }
@@ -31,9 +33,21 @@ export default function TotalsSection({
   displayCurrencySymbol,
   isB2B,
   isB2C,
+  backendTaxPreview,
+  taxPreviewError,
   onRoundOffChange,
   onRoundOff,
 }: TotalsSectionProps) {
+  const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
+  const hasBackendTaxPreview = backendTaxPreview !== null;
+  const hasBackendTaxBreakdown = backendTaxLines.length > 0;
+  const displayTaxIsIncluded = hasBackendTaxBreakdown
+    ? backendTaxLines.some((line) => Number(line.included_in_print_rate) === 1)
+    : calculations.isInclusive;
+  const displayTaxTotal = hasBackendTaxPreview
+    ? backendTaxPreview?.total_taxes_and_charges || 0
+    : calculations.taxAmount;
+
   return (
     <div>
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -79,14 +93,31 @@ export default function TotalsSection({
           )}
           <div className="flex justify-between">
             <span className="text-gray-600 dark:text-gray-400">
-              Tax ({calculations.selectedTax?.rate}% {calculations.isInclusive ? "Incl." : "Excl."})
+              Tax ({calculations.selectedTax?.rate}% {displayTaxIsIncluded ? "Incl." : "Excl."})
             </span>
-            <span className={`font-medium ${calculations.isInclusive ? "text-blue-600 dark:text-blue-400" : "text-gray-900 dark:text-white"}`}>
-              {calculations.isInclusive
-                ? `(${formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)})`
-                : formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)}
+            <span className={`font-medium ${displayTaxIsIncluded ? "text-blue-600 dark:text-blue-400" : "text-gray-900 dark:text-white"}`}>
+              {displayTaxIsIncluded
+                ? `(${formatCurrencyWithSymbol(displayTaxTotal, displayCurrencySymbol)})`
+                : formatCurrencyWithSymbol(displayTaxTotal, displayCurrencySymbol)}
             </span>
           </div>
+          {hasBackendTaxBreakdown && (
+            <div className="rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-2 space-y-1 text-xs">
+              {backendTaxLines.map((line, index) => (
+                <div key={`${line.account_head || line.description || "tax"}-${index}`} className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">{line.description || line.account_head || "Tax"}</span>
+                  <span className="text-gray-900 dark:text-white">
+                    {Number(line.included_in_print_rate) === 1
+                      ? `(${formatCurrencyWithSymbol(Number(line.tax_amount) || 0, displayCurrencySymbol)})`
+                      : formatCurrencyWithSymbol(Number(line.tax_amount) || 0, displayCurrencySymbol)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {!hasBackendTaxPreview && taxPreviewError && (
+            <div className="text-xs text-amber-700 dark:text-amber-400">{taxPreviewError}</div>
+          )}
           {roundOffAmount !== 0 && (
             <div className="flex justify-between">
               <span className="text-gray-600 dark:text-gray-400">Round Off</span>

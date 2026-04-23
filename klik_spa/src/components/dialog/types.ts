@@ -39,3 +39,22 @@ export interface Calculations {
   selectedTax: any;
   isInclusive: boolean;
 }
+
+export interface BackendTaxBreakdownLine {
+  description?: string;
+  account_head?: string;
+  charge_type?: string;
+  rate?: number;
+  tax_amount?: number;
+  total?: number;
+  included_in_print_rate?: number;
+}
+
+export interface BackendTaxPreview {
+  tax_breakdown: BackendTaxBreakdownLine[];
+  net_total: number;
+  total_taxes_and_charges: number;
+  grand_total: number;
+  rounded_total: number;
+  disable_rounded_total: number;
+}

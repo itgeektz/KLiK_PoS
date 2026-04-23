@@ -1,5 +1,5 @@
 import { formatCurrencyWithSymbol } from "../../utils/currency";
-import type { Calculations, PaymentAmount } from "./types";
+import type { BackendTaxPreview, Calculations, PaymentAmount } from "./types";
 import type { CartItem } from "../../../types";
 import DisplayPrintPreview from "../../utils/invoicePrint";
 
@@ -17,6 +17,7 @@ interface InvoicePreviewProps {
   isB2B: boolean;
   isB2C: boolean;
   currentDate: string;
+  backendTaxPreview: BackendTaxPreview | null;
 }
 
 export default function InvoicePreview({
@@ -33,7 +34,17 @@ export default function InvoicePreview({
   isB2B,
   isB2C,
   currentDate,
+  backendTaxPreview,
 }: InvoicePreviewProps) {
+  const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
+  const hasBackendTaxBreakdown = backendTaxLines.length > 0;
+  const displayTaxIsIncluded = hasBackendTaxBreakdown
+    ? backendTaxLines.some((line) => Number(line.included_in_print_rate) === 1)
+    : calculations.isInclusive;
+  const displayTaxTotal = backendTaxPreview
+    ? backendTaxPreview.total_taxes_and_charges || 0
+    : calculations.taxAmount;
+
   if (invoiceSubmitted && invoiceData) {
     return (
       <div className="mb-4"> 
@@ -117,11 +128,11 @@ export default function InvoicePreview({
           </div>
         )}
         <div className="flex justify-between">
-          <span className="text-gray-600 dark:text-gray-400">Tax ({calculations.selectedTax?.rate}% {calculations.isInclusive ? "Incl." : "Excl."})</span>
-          <span className={`${calculations.isInclusive ? "text-blue-600 dark:text-blue-400" : "text-gray-900 dark:text-white"}`}>
-            {calculations.isInclusive
-              ? `(${formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)})`
-              : formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)}
+          <span className="text-gray-600 dark:text-gray-400">Tax ({calculations.selectedTax?.rate}% {displayTaxIsIncluded ? "Incl." : "Excl."})</span>
+          <span className={`${displayTaxIsIncluded ? "text-blue-600 dark:text-blue-400" : "text-gray-900 dark:text-white"}`}>
+            {displayTaxIsIncluded
+              ? `(${formatCurrencyWithSymbol(displayTaxTotal, displayCurrencySymbol)})`
+              : formatCurrencyWithSymbol(displayTaxTotal, displayCurrencySymbol)}
           </span>
         </div>
         {roundOffAmount !== 0 && (

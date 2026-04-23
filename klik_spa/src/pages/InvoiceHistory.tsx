@@ -35,14 +35,25 @@ import { useUserInfo } from "../hooks/useUserInfo";
 import { usePOSProfileStore } from "../stores/posProfileStore";
 import { toast } from "react-toastify";
 import { extractErrorFromException } from "../utils/errorExtraction";
-import { createSalesReturn, deleteDraftInvoice, submitDraftInvoice, retryQueuedInvoice } from "../services/salesInvoice";
+import { createSalesReturn, submitDraftInvoice, retryQueuedInvoice } from "../services/salesInvoice";
 import { useAllPaymentModes } from "../hooks/usePaymentModes";
 
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import { exportInvoicesToCSV, getExportFilename, type ExportableInvoice } from "../utils/exportUtils";
 // import InvoiceViewPage from "./InvoiceViewPage";
+
+const INVOICE_HISTORY_VIEW_MODE_KEY = "invoice-history-view-mode";
+
+const getInitialViewMode = (): "cards" | "list" => {
+  if (typeof window === "undefined") {
+    return "list";
+  }
+
+  return window.localStorage.getItem(INVOICE_HISTORY_VIEW_MODE_KEY) === "cards"
+    ? "cards"
+    : "list";
+};
 
 export default function InvoiceHistoryPage() {
   const navigate = useNavigate();
@@ -52,7 +63,7 @@ export default function InvoiceHistoryPage() {
   const [dateFilter, setDateFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
   const [cashierFilter, setCashierFilter] = useState("all");
-  const [viewMode, setViewMode] = useState<"cards" | "list">("list");
+  const [viewMode, setViewMode] = useState<"cards" | "list">(getInitialViewMode);
   const [selectedInvoice] = useState<SalesInvoice | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
@@ -66,18 +77,13 @@ export default function InvoiceHistoryPage() {
   // Single Invoice Return states
   const [showSingleReturn, setShowSingleReturn] = useState(false);
   const [selectedInvoiceForReturn, setSelectedInvoiceForReturn] = useState<SalesInvoice | null>(null);
-
-  // Delete confirmation states
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
-
   // Original edit options states
   const [showEditOptions, setShowEditOptions] = useState(false);
   const [selectedDraftInvoice, setSelectedDraftInvoice] = useState<SalesInvoice | null>(null);
 
   // Skip opening entry filter for Invoice History - show all invoices for cashier regardless of opening entry
   // Pass cashier filter to API so it filters on server side (more efficient)
-  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore } = useSalesInvoices(searchTerm, true, cashierFilter);
+  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore, refetch } = useSalesInvoices(searchTerm, true, cashierFilter);
   const { modes } = useAllPaymentModes();
   const { customers } = useCustomers();
   const { posDetails } = usePOSProfileStore();
@@ -93,6 +99,10 @@ export default function InvoiceHistoryPage() {
       setCashierFilter(currentUserCashier);
     }
   }, [isAdminUser, currentUserCashier, cashierFilter]);
+
+  useEffect(() => {
+    window.localStorage.setItem(INVOICE_HISTORY_VIEW_MODE_KEY, viewMode);
+  }, [viewMode]);
 
   // Keyboard event handler for Escape key
   useEffect(() => {
@@ -598,15 +608,6 @@ const getStatusBadge = (status: string) => {
                         </button>
                       )}
 
-                      {invoice.status === "Draft" && (
-                        <button
-                          onClick={() => handleDeleteClick(invoice)}
-                          className="text-red-600 hover:text-red-900 flex items-center space-x-1"
-                        >
-                          <FileMinus className="w-4 h-4" />
-                          <span>Delete</span>
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -681,22 +682,6 @@ const getStatusBadge = (status: string) => {
                     <span>Retry</span>
                   </button>
                 )}
-                {invoice.status === "Draft" && (
-                  <button
-                    onClick={() => handleDeleteClick(invoice)}
-                    className="flex-1 text-xs px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                  >
-                    Delete
-                  </button>
-                )}
-                  {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && hasReturnableItems(invoice) && (
-                  <button
-                    onClick={() => handleSingleReturnClick(invoice)}
-                    className="flex-1 text-xs px-3 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors"
-                  >
-                    Return
-                  </button>
-                )}
               </div>
             </div>
           ))}
@@ -769,39 +754,6 @@ const getStatusBadge = (status: string) => {
     });
 
     return hasReturnable;
-  };
-
-
-
-  // Delete invoice handlers
-  const handleDeleteClick = (invoice: SalesInvoice) => {
-    if (invoice.status !== "Draft") {
-      toast.error("Only draft invoices can be deleted");
-      return;
-    }
-    setInvoiceToDelete(invoice);
-    setShowDeleteConfirm(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!invoiceToDelete) return;
-
-    try {
-      await deleteDraftInvoice(invoiceToDelete.id);
-      toast.success(`Draft invoice ${invoiceToDelete.id} deleted successfully`);
-      setShowDeleteConfirm(false);
-      setInvoiceToDelete(null);
-      // Refresh the invoices list
-      window.location.reload();
-      //eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      toast.error(error.message || "Failed to delete invoice");
-    }
-  };
-
-  const handleDeleteCancel = () => {
-    setShowDeleteConfirm(false);
-    setInvoiceToDelete(null);
   };
 
   // Edit draft invoice handlers
@@ -900,8 +852,7 @@ const getStatusBadge = (status: string) => {
     const handleSingleReturnSuccess = () => {
       setShowSingleReturn(false);
       setSelectedInvoiceForReturn(null);
-      // Refresh the invoices list
-      window.location.reload();
+      refetch();
     };
 
 
@@ -1312,19 +1263,6 @@ const getStatusBadge = (status: string) => {
           onClose={() => setShowSingleReturn(false)}
           onSuccess={handleSingleReturnSuccess}
         />
-
-        {/* Delete Confirmation Dialog */}
-        <ConfirmDialog
-          isOpen={showDeleteConfirm}
-          onClose={handleDeleteCancel}
-          onConfirm={handleDeleteConfirm}
-          title="Delete Draft Invoice"
-          message={`Are you sure you want to delete draft invoice ${invoiceToDelete?.id}? This action cannot be undone.`}
-          confirmText="Delete"
-          cancelText="Cancel"
-          confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
-        />
-
         {/* Original Draft Invoice Edit Options Modal */}
         {showEditOptions && selectedDraftInvoice && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">

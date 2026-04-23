@@ -1,17 +1,30 @@
 import { toast } from "react-toastify";
+import { markInvoiceAsPrinted } from "../services/salesInvoice";
 
 interface Invoice {
   name?: string;
   id?: string;
   pos_profile: string;
+  custom_is_printed?: boolean | number;
   [key: string]: unknown;
 }
 
-export function handlePrintInvoice(invoiceData: Invoice | null) {
+interface PrintOptions {
+  preventReprint?: boolean;
+  onAfterMark?: () => void;
+}
+
+export function handlePrintInvoice(invoiceData: Invoice | null, options: PrintOptions = {}) {
   console.log('Print function called with:', invoiceData);
 
   if (!invoiceData) {
     toast.error("No invoice data available for printing");
+    return;
+  }
+
+  const isAlreadyPrinted = Boolean(invoiceData.custom_is_printed);
+  if (isAlreadyPrinted && options.preventReprint) {
+    toast.error("Reprinting is not allowed for this invoice");
     return;
   }
 
@@ -134,13 +147,31 @@ export function handlePrintInvoice(invoiceData: Invoice | null) {
     console.log('Page restored successfully');
   };
 
+  let restored = false;
+  const restoreOnce = () => {
+    if (!restored) {
+      restored = true;
+      restorePage();
+    }
+  };
+
   const handleAfterPrint = () => {
     console.log('After print event fired');
-    restorePage();
+    restoreOnce();
     window.removeEventListener('afterprint', handleAfterPrint);
   };
 
   window.addEventListener('afterprint', handleAfterPrint);
+
+  // Mark invoice as printed before triggering the dialog
+  if (invoiceData.name) {
+    markInvoiceAsPrinted(invoiceData.name)
+      .then(() => options.onAfterMark?.())
+      .catch((err) => {
+        console.error("Error marking invoice as printed:", err);
+        toast.error("Failed to mark invoice as printed");
+      });
+  }
 
   console.log('Triggering print...');
   // Trigger print
@@ -149,7 +180,7 @@ export function handlePrintInvoice(invoiceData: Invoice | null) {
   // Fallback: restore after a delay if afterprint event doesn't fire
   setTimeout(() => {
     console.log('Fallback timeout triggered');
-    restorePage();
+    restoreOnce();
     window.removeEventListener('afterprint', handleAfterPrint);
   }, 2000);
 }

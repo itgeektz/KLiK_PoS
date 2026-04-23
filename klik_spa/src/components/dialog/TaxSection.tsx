@@ -1,5 +1,5 @@
 import { formatCurrencyWithSymbol } from "../../utils/currency";
-import type { Calculations } from "./types";
+import type { BackendTaxPreview, Calculations } from "./types";
 
 interface TaxSectionProps {
   selectedCustomer: any;
@@ -12,6 +12,9 @@ interface TaxSectionProps {
   salesTaxCharges: any[];
   calculations: Calculations;
   displayCurrencySymbol: string;
+  backendTaxPreview: BackendTaxPreview | null;
+  isTaxPreviewLoading: boolean;
+  taxPreviewError: string | null;
 }
 
 export default function TaxSection({
@@ -25,9 +28,22 @@ export default function TaxSection({
   salesTaxCharges,
   calculations,
   displayCurrencySymbol,
+  backendTaxPreview,
+  isTaxPreviewLoading,
 }: TaxSectionProps) {
+  const hasBackendPreview = backendTaxPreview !== null;
+  const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
+  const hasBackendBreakdown = backendTaxLines.length > 0;
+  const isIncluded = hasBackendBreakdown
+    ? backendTaxLines.some((line) => Number(line.included_in_print_rate) === 1)
+    : calculations.isInclusive;
+  const taxTotal = hasBackendPreview
+    ? backendTaxPreview?.total_taxes_and_charges || 0
+    : calculations.taxAmount;
+
   return (
     <div>
+      <div>
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Tax Configuration</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="md:col-span-2">
@@ -48,7 +64,7 @@ export default function TaxSection({
             </div>
           )}
         </div>
-        <div>
+        {/* <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sales & Tax Charges</label>
           <select
             value={selectedSalesTaxCharges}
@@ -62,19 +78,21 @@ export default function TaxSection({
               </option>
             ))}
           </select>
-        </div>
-        <div>
+        </div> */}
+        {/* <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Tax Amount {calculations.isInclusive && "(Included)"}
+            Tax Amount {isIncluded && "(Included)"}
           </label>
           <div
-            className={`px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg font-medium ${calculations.isInclusive ? "text-blue-600 dark:text-blue-400" : "text-gray-900 dark:text-white"}`}
+            className={`px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg font-medium ${isIncluded ? "text-blue-600 dark:text-blue-400" : "text-gray-900 dark:text-white"}`}
           >
-            {calculations.isInclusive
-              ? `(${formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)})`
-              : formatCurrencyWithSymbol(calculations.taxAmount, displayCurrencySymbol)}
+            {isIncluded
+              ? `(${formatCurrencyWithSymbol(taxTotal, displayCurrencySymbol)})`
+              : formatCurrencyWithSymbol(taxTotal, displayCurrencySymbol)}
           </div>
-        </div>
+          
+        </div> */}
+      </div>
       </div>
     </div>
   );

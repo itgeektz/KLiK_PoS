@@ -27,6 +27,8 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
         user_permitted = frappe.permissions.get_user_permissions(frappe.session.user)
         permitted_customer_names = []
         has_customer_permissions = False
+        permitted_customer_group_names = []
+        has_customer_group_permissions = False
 
         if user_permitted and "Customer" in user_permitted:
             permitted_customer_names = [
@@ -34,7 +36,18 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
             ]
             has_customer_permissions = True
 
+        if user_permitted and "Customer Group" in user_permitted:
+            permitted_customer_group_names = [
+                perm.get("doc")
+                for perm in user_permitted["Customer Group"]
+                if perm.get("doc")
+            ]
+            has_customer_group_permissions = True
+
         if has_customer_permissions and not permitted_customer_names:
+            return {"success": True, "data": [], "total_count": 0}
+
+        if has_customer_group_permissions and not permitted_customer_group_names:
             return {"success": True, "data": [], "total_count": 0}
 
         try:
@@ -62,6 +75,11 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
             placeholders = ",".join(["%s"] * len(permitted_customer_names))
             where_conditions.append(f"c.name IN ({placeholders})")
             params.extend(permitted_customer_names)
+
+        if permitted_customer_group_names:
+            placeholders = ",".join(["%s"] * len(permitted_customer_group_names))
+            where_conditions.append(f"c.customer_group IN ({placeholders})")
+            params.extend(permitted_customer_group_names)
         
         if search:
             search_term = f"%{search}%"

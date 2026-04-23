@@ -45,7 +45,7 @@ export default function PaymentHeader({
             className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg"
             title="Print"
             onClick={() => {
-              handlePrintInvoice(invoiceData);
+              handlePrintInvoice(invoiceData, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting) });
               clearOrderState();
               navigate("/");
             }}

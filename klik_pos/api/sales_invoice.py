@@ -484,7 +484,7 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		select_fields = """name, posting_date, posting_time, owner, customer, customer_name,
 			base_grand_total, base_rounded_total, status, discount_amount,
 			total_taxes_and_charges, custom_pos_opening_entry, queue_status,
-			queue_error, queue_attempts, queue_last_attempt_at, pos_profile, currency"""
+			queue_error, queue_attempts, queue_last_attempt_at, pos_profile, currency, custom_is_printed"""
 		if has_zatca_status:
 			select_fields += ", custom_zatca_submit_status"
 
@@ -752,6 +752,16 @@ def get_invoice_details(invoice_id):
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), f"Error fetching invoice {invoice_id}")
+		return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def mark_invoice_as_printed(invoice_name):
+	try:
+		frappe.db.set_value("Sales Invoice", invoice_name, "custom_is_printed", 1, update_modified=False)
+		return {"success": True}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), f"Error marking invoice {invoice_name} as printed")
 		return {"success": False, "error": str(e)}
 
 

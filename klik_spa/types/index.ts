@@ -178,6 +178,7 @@ export interface SalesInvoice {
   changeGiven: number
   status: "Draft" | "Completed" | "Pending" | "Cancelled" | "Refunded" | "Paid" | "Unpaid" | "Overdue" | "Return"
   custom_zatca_submit_status?: string
+  custom_is_printed?: boolean | number
   refundAmount: number
   notes: string
   currency: string
@@ -322,6 +323,7 @@ export interface POSProfile {
   hide_unavailable_items?: boolean
   custom_default_view?: 'Grid View' | 'List View'
   custom_scale_barcodes_start_with?: string
+  custom_prevent_invoice_reprinting?: boolean | number
   // Add other fields as needed
 }
 

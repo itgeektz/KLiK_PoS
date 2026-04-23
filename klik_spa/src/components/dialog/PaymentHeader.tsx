@@ -1,5 +1,6 @@
 import { X, Printer, MailPlus, MessageCirclePlus, MessageSquarePlus, Eye, Loader2 } from "lucide-react";
 import { handlePrintInvoice } from "../../utils/printHandler";
+
 interface PaymentHeaderProps {
   invoiceSubmitted: boolean;
   isAutoPrinting: boolean;
@@ -14,8 +15,6 @@ interface PaymentHeaderProps {
   navigate: (path: string) => void;
   posDetails: any;
 }
-
-
 
 export default function PaymentHeader({
   invoiceSubmitted,

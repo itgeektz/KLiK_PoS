@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Search, Check, X, Loader2 } from "lucide-react";
 
@@ -30,10 +30,11 @@ interface AutoCompleteProps {
   debounceDelay?: number;
   renderOption?: (option: AutoCompleteOption, isSelected: boolean) => React.ReactNode;
   onClear?: () => void;
+  onBlur?: () => void;
 }
 
 export const AutoComplete = ({
-  options,
+  options: externalOptions,
   value,
   onChange,
   onSearch,
@@ -48,10 +49,11 @@ export const AutoComplete = ({
   debounceDelay = 300,
   renderOption,
   onClear,
+  onBlur,
 }: AutoCompleteProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [internalOptions, setInternalOptions] = useState<AutoCompleteOption[]>(options);
+  const [internalOptions, setInternalOptions] = useState<AutoCompleteOption[]>(externalOptions);
   const [internalLoading, setInternalLoading] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<"top" | "bottom">("bottom");
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -61,15 +63,20 @@ export const AutoComplete = ({
   const buttonRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const selectedOption = [...options, ...internalOptions].find((opt) => opt.value === value);
-  const isLoading = externalLoading || internalLoading;
+  const prevOptionsRef = useRef<AutoCompleteOption[]>(externalOptions);
+  const isSelectingRef = useRef(false);
+  const selectedValueRef = useRef(value);
 
   useEffect(() => {
-    if (options.length > 0) {
-      setInternalOptions(options);
+    selectedValueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    if (JSON.stringify(prevOptionsRef.current) !== JSON.stringify(externalOptions)) {
+      prevOptionsRef.current = externalOptions;
+      setInternalOptions(externalOptions);
     }
-  }, [options]);
+  }, [externalOptions]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -87,33 +94,11 @@ export const AutoComplete = ({
   }, []);
 
   useEffect(() => {
-    if (isOpen && inputRef.current) {
+    if (isOpen && inputRef.current && !isSelectingRef.current) {
       inputRef.current.focus();
       calculateDropdownPosition();
     }
   }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen && onSearch && search.length >= minSearchLength) {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-
-      setInternalLoading(true);
-      searchTimeoutRef.current = setTimeout(async () => {
-        try {
-          const results = await onSearch(search);
-          setInternalOptions(results);
-        } catch (error) {
-          console.error("Search failed:", error);
-        } finally {
-          setInternalLoading(false);
-        }
-      }, debounceDelay);
-    } else if (search.length === 0 && !onSearch) {
-      setInternalOptions(options);
-    }
-  }, [search, onSearch, minSearchLength, debounceDelay, isOpen, options]);
 
   const calculateDropdownPosition = () => {
     if (!buttonRef.current) return;
@@ -131,15 +116,45 @@ export const AutoComplete = ({
     }
   };
 
-  const filterOptions = (searchTerm: string): AutoCompleteOption[] => {
+  const handleSearch = useCallback(async (searchTerm: string) => {
+    if (!onSearch) return;
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    setInternalLoading(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const results = await onSearch(searchTerm);
+        if (!isSelectingRef.current) {
+          setInternalOptions(results);
+        }
+      } catch (error) {
+        console.error("Search failed:", error);
+      } finally {
+        setInternalLoading(false);
+      }
+    }, debounceDelay);
+  }, [onSearch, debounceDelay]);
+
+  useEffect(() => {
+    if (isOpen && onSearch && search.length >= minSearchLength && !isSelectingRef.current) {
+      handleSearch(search);
+    } else if (search.length === 0 && !onSearch && !isSelectingRef.current) {
+      setInternalOptions(externalOptions);
+    }
+  }, [search, isOpen, onSearch, minSearchLength, handleSearch, externalOptions]);
+
+  const filterOptions = useCallback((searchTerm: string): AutoCompleteOption[] => {
     if (!searchTerm) return internalOptions;
     
     const lowerSearch = searchTerm.toLowerCase();
     return internalOptions.filter((opt) => {
       return searchFields.some((field) => {
-        const value = opt[field as keyof AutoCompleteOption];
-        if (typeof value === "string") {
-          return value.toLowerCase().includes(lowerSearch);
+        const val = opt[field as keyof AutoCompleteOption];
+        if (typeof val === "string") {
+          return val.toLowerCase().includes(lowerSearch);
         }
         if (field === "metadata" && opt.metadata) {
           return Object.values(opt.metadata).some((v) =>
@@ -149,25 +164,35 @@ export const AutoComplete = ({
         return false;
       });
     });
-  };
+  }, [internalOptions, searchFields]);
 
   const filteredOptions = onSearch ? internalOptions : filterOptions(search);
 
-  const handleSelect = (opt: AutoCompleteOption) => {
+  const handleSelect = useCallback((opt: AutoCompleteOption) => {
+    
+    isSelectingRef.current = true;
     onChange(opt.value, opt.extra, opt);
     setIsOpen(false);
     setSearch("");
     setHighlightedIndex(-1);
-  };
+    
+    setTimeout(() => {
+      isSelectingRef.current = false;
+    }, 200);
+  }, [onChange, value]);
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
+    isSelectingRef.current = true;
     onChange("", undefined, undefined);
     setSearch("");
     if (onClear) onClear();
     setIsOpen(false);
-  };
+    setTimeout(() => {
+      isSelectingRef.current = false;
+    }, 200);
+  }, [onChange, onClear, value]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!isOpen) {
       if (e.key === "ArrowDown" || e.key === "Enter") {
         e.preventDefault();
@@ -199,9 +224,15 @@ export const AutoComplete = ({
         setHighlightedIndex(-1);
         break;
     }
+  }, [isOpen, filteredOptions, highlightedIndex, handleSelect]);
+
+  const handleContainerBlur = (e: React.FocusEvent) => {
+    if (!containerRef.current?.contains(e.relatedTarget as Node) && !isSelectingRef.current) {
+      onBlur?.();
+    }
   };
 
-  const defaultRenderOption = (opt: AutoCompleteOption, isSelected: boolean) => (
+  const defaultRenderOption = useCallback((opt: AutoCompleteOption, isSelected: boolean) => (
     <div className="flex items-center gap-3">
       {showAvatar && opt.avatar && (
         <img src={opt.avatar} alt={opt.label} className="w-8 h-8 rounded-full object-cover" />
@@ -228,7 +259,16 @@ export const AutoComplete = ({
       </div>
       {isSelected && <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />}
     </div>
-  );
+  ), [showAvatar]);
+
+  const isLoading = externalLoading || internalLoading;
+
+  const getSelectedOption = () => {
+    if (!value) return null;
+    return [...externalOptions, ...internalOptions].find((opt) => opt.value === value);
+  };
+
+  const selectedOption = getSelectedOption();
 
   const dropdown = isOpen && !disabled ? (
     <div
@@ -280,7 +320,16 @@ export const AutoComplete = ({
           filteredOptions.map((opt, idx) => (
             <div
               key={`${opt.value}-${idx}`}
-              onClick={() => handleSelect(opt)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSelect(opt);
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSelect(opt);
+              }}
               onMouseEnter={() => setHighlightedIndex(idx)}
               className={`
                 px-3 py-2 cursor-pointer text-sm transition-colors
@@ -305,10 +354,14 @@ export const AutoComplete = ({
   ) : null;
 
   return (
-    <div ref={containerRef} className={`relative w-full ${className}`}>
+    <div ref={containerRef} onBlur={handleContainerBlur} className={`relative w-full ${className}`}>
       <div
         ref={buttonRef}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={() => {
+          if (!disabled && !isSelectingRef.current) {
+            setIsOpen(!isOpen);
+          }
+        }}
         className={`
           flex items-center justify-between w-full h-11 px-4 gap-2
           border border-gray-200 dark:border-gray-800 rounded-xl cursor-pointer 

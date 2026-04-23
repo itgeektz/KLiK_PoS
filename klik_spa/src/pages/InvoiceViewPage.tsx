@@ -40,7 +40,7 @@ import { handlePrintInvoice } from "../utils/printHandler";
 import SingleInvoiceReturn from "../components/SingleInvoiceReturn";
 import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
 import { formatCurrencyWithSymbol } from "../utils/currency";
-import AddCustomerModal from "../components/AddCustomerModal";
+import AddCustomerModal from "../components/customer/AddCustomerModal";
 
 export default function InvoiceViewPage() {
 
@@ -693,7 +693,7 @@ export default function InvoiceViewPage() {
                         <User size={20} />
                         <span>Customer Details</span>
                       </h3>
-                      {posDetails && posDetails?.can_create_and_edit_customers === 1 && (
+                      {posDetails && posDetails?.custom_allow_to_create_and_edit_customers === 1 && (
                         <button
                           onClick={handleEditCustomer}
                           disabled={isLoadingCustomer}

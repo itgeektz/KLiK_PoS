@@ -11,6 +11,7 @@ interface ActionButtonsProps {
   onEditOrder?: () => void;
   onNewOrder?: () => void;
   isB2B: boolean;
+  allow_holding_invoices: boolean;
 }
 
 export default function ActionButtons({
@@ -24,6 +25,7 @@ export default function ActionButtons({
   onEditOrder,
   onNewOrder,
   isB2B,
+  allow_holding_invoices,
 }: ActionButtonsProps) {
   if (invoiceSubmitted) {
     return (
@@ -47,25 +49,27 @@ export default function ActionButtons({
         className={`px-6 py-2 border border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors flex items-center space-x-2 ${isProcessingPayment || isHoldingOrder ? "cursor-not-allowed opacity-50" : ""}`}
       >
         <Pencil size={16} />
-        <span>Edit Order</span>
+        <span>Edit</span>
       </button>
-      <button
-        onClick={onHoldOrder}
-        disabled={isProcessingPayment || isHoldingOrder}
-        className={`px-6 py-2 border border-orange-500 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-lg font-medium hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors flex items-center space-x-2 ${isProcessingPayment || isHoldingOrder ? "cursor-not-allowed opacity-50" : ""}`}
-      >
-        {isHoldingOrder ? (
-          <>
-            <Loader2 size={16} className="animate-spin" />
-            <span>Holding...</span>
-          </>
-        ) : (
-          <>
-            <ShoppingBag size={16} />
-            <span>Hold Order</span>
-          </>
-        )}
-      </button>
+       {allow_holding_invoices && (
+          <button
+            onClick={onHoldOrder}
+            disabled={isProcessingPayment || isHoldingOrder}
+            className={`px-6 py-2 border border-orange-500 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-lg font-medium hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors flex items-center space-x-2 ${isProcessingPayment || isHoldingOrder ? "cursor-not-allowed opacity-50" : ""}`}
+          >
+            {isHoldingOrder ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>Holding...</span>
+              </>
+            ) : (
+              <>
+                <ShoppingBag size={16} />
+                <span>Hold</span>
+              </>
+            )}
+          </button>
+       )}
       <button
         onClick={onCompletePayment}
         disabled={isActionButtonDisabled()}

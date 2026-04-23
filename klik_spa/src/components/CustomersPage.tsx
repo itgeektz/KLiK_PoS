@@ -13,7 +13,7 @@ import {
 
 } from "lucide-react"
 import { useCustomers } from "../hooks/useCustomers" // Import the hook
-import AddCustomerModal from "./AddCustomerModal"
+import AddCustomerModal from "./customer/AddCustomerModal"
 import type { Customer } from "../types/customer"
 
 import BottomNavigation from "./BottomNavigation"
@@ -33,12 +33,12 @@ export default function CustomersPage() {
   const { posDetails } = usePOSProfileStore()
 
   useEffect(() => {
-    if (posDetails && posDetails?.can_create_and_edit_customers !== 1) {
+    if (posDetails && posDetails?.custom_allow_to_create_and_edit_customers !== 1) {
       console.warn("User does not have permission to create or edit customers. Hiding add/edit functionality.");
       navigate("/pos"); // Redirect to POS page if user tries to access customers without permission
       return;
     }
-    setCanManageCustomers(posDetails?.can_create_and_edit_customers === 1)
+    setCanManageCustomers(posDetails?.custom_allow_to_create_and_edit_customers === 1)
   }, [posDetails])
 
 

@@ -40,7 +40,6 @@ const getDeviceId = () => {
   return device_id;
 };
 
-
 export default function PaymentDialog(props: PaymentDialogProps) {
   const {
     isOpen,
@@ -114,6 +113,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const isDeliveryRequired = deliveryRequiredValue === 1 || deliveryRequiredValue === true || deliveryRequiredValue === "1";
   const allowPartialPayments = Boolean(posDetails?.allow_partial_payment);
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
+  const allow_holding_invoices = Boolean(posDetails?.allow_holding_invoices);
 
   const [enableBackgroundSubmission, setEnableBackgroundSubmission] = useState(
     posDetails?.enable_background_invoice_submission
@@ -193,6 +193,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
   const paymentMethods = useMemo(() => {
     const sortedModes = [...modes].sort((a, b) => {
+      if (a.idx !== undefined && b.idx !== undefined) {
+        return a.idx - b.idx;
+      }
       if (a.default === 1 && b.default !== 1) return -1;
       if (a.default !== 1 && b.default === 1) return 1;
       return 0;
@@ -387,6 +390,22 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       toast.error("Kindly select a customer");
       return;
     }
+    if (!isCreditSale) {
+      const totalPaid = calculateTotalPayments(Object.values(paymentAmounts));
+      const orderTotal = calculations.grandTotal;
+      
+      if (totalPaid < orderTotal) {
+        const remainingAmount = orderTotal - totalPaid;
+        toast.error(`Insufficient payment. Total: ${formatCurrencyWithSymbol(orderTotal, displayCurrencySymbol)}, Paid: ${formatCurrencyWithSymbol(totalPaid, displayCurrencySymbol)}, Remaining: ${formatCurrencyWithSymbol(remainingAmount, displayCurrencySymbol)}`);
+        return;
+      }
+      
+      if (totalPaid > orderTotal && !posDetails?.allow_overpayment) {
+        const overpayAmount = totalPaid - orderTotal;
+        toast.error(`Overpayment not allowed. Please adjust payment amounts. Overpayment: ${formatCurrencyWithSymbol(overpayAmount, displayCurrencySymbol)}`);
+        return;
+      }
+    }
     if (isCreditSale && !dueDate) {
       toast.error("Please select a due date for this credit sale");
       return;
@@ -547,12 +566,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
   const getActionButtonText = () => {
     if (isProcessingPayment) return isB2B ? "Submitting Invoice..." : "Processing Payment...";
-    if (isB2B) {
-      if (totalPaidAmount === 0) return "Submit Invoice (Pay Later)";
-      if (outstandingAmount > 0) return "Submit Invoice (Partial Payment)";
-      return "Submit Invoice (Paid)";
-    }
-    return "Complete Payment";
+    return "Submit";
   };
 
   const isActionButtonDisabled = () => {
@@ -989,7 +1003,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                       <span>{getActionButtonText()}</span>
                     )}
                   </button>
-                  <div className="grid grid-cols-2 gap-3">
+
+                  <div className={`grid ${allow_holding_invoices ? "grid-cols-2" : "grid-cols-1"} gap-3`}>
                     <button
                       onClick={() => onClose(false)}
                       disabled={isProcessingPayment || isHoldingOrder}
@@ -997,16 +1012,18 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     >
                       <span>Cancel</span>
                     </button>
-                    <button onClick={handleHoldOrder} disabled={invoiceSubmitted || isProcessingPayment || isHoldingOrder} className={`py-3 px-4 border border-orange-500 text-orange-600 dark:text-orange-400 rounded-lg font-medium hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex items-center justify-center space-x-2 ${invoiceSubmitted || isProcessingPayment || isHoldingOrder ? "cursor-not-allowed opacity-50" : ""}`}>
-                      {isHoldingOrder ? (
-                        <>
-                          <Loader2 size={16} className="animate-spin" />
-                          <span>Holding...</span>
-                        </>
-                      ) : (
-                        <span>Hold Order</span>
-                      )}
-                    </button>
+                    {allow_holding_invoices && (
+                      <button onClick={handleHoldOrder} disabled={invoiceSubmitted || isProcessingPayment || isHoldingOrder} className={`py-3 px-4 border border-orange-500 text-orange-600 dark:text-orange-400 rounded-lg font-medium hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex items-center justify-center space-x-2 ${invoiceSubmitted || isProcessingPayment || isHoldingOrder ? "cursor-not-allowed opacity-50" : ""}`}>
+                        {isHoldingOrder ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            <span>Holding...</span>
+                          </>
+                        ) : (
+                          <span>Hold</span>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               </>
@@ -1205,6 +1222,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   onEditOrder={handleEditOrder}
                   onNewOrder={() => { clearOrderState(); onClose(true); }}
                   isB2B={isB2B}
+                  allow_holding_invoices={allow_holding_invoices}
                 />
               </div>
             </div>

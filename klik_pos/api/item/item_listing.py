@@ -35,6 +35,11 @@ def get_items(
         params_list = []
         count_params = []
 
+        # Get allowed item groups from POS profile
+        allowed_item_groups = []
+        if getattr(pos_doc, "item_groups", None):
+            allowed_item_groups = [d.item_group for d in pos_doc.item_groups if d.item_group]
+
         if hide_unavailable:
             base_query = [
                 f"SELECT DISTINCT {select_fields}",
@@ -72,15 +77,15 @@ def get_items(
             params_list.append(warehouse)
             count_params.append(warehouse)
 
-        if getattr(pos_doc, "item_groups", None):
-            item_group_names = [d.item_group for d in pos_doc.item_groups if d.item_group]
-            if item_group_names:
-                placeholders = ", ".join(["%s"] * len(item_group_names))
-                base_query.append(f"AND i.item_group IN ({placeholders})")
-                count_query.append(f"AND i.item_group IN ({placeholders})")
-                params_list.extend(item_group_names)
-                count_params.extend(item_group_names)
+        # Apply item group filter from POS profile
+        if allowed_item_groups:
+            placeholders = ", ".join(["%s"] * len(allowed_item_groups))
+            base_query.append(f"AND i.item_group IN ({placeholders})")
+            count_query.append(f"AND i.item_group IN ({placeholders})")
+            params_list.extend(allowed_item_groups)
+            count_params.extend(allowed_item_groups)
 
+        # Apply category filter from request
         if category and category != "all":
             base_query.append("AND i.item_group = %s")
             count_query.append("AND i.item_group = %s")
@@ -237,7 +242,7 @@ def get_items(
             "Get Combined Item Data Error",
         )
         frappe.throw(_("Something went wrong while fetching item data."))
-
+ 
 
 def _fetch_item_prices_sql(item_code, price_list, current_date):
     if not price_list:
@@ -267,7 +272,7 @@ def _fetch_item_prices_sql(item_code, price_list, current_date):
     except Exception:
         return []
 
-
+   
 def _get_conversion_factor_sql(item_code, uom):
     try:
         query = """
@@ -297,10 +302,42 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
             allowed_groups = [d.item_group for d in pos_doc.item_groups if d.item_group]
         
         if not allowed_groups:
-            allowed_groups = frappe.get_all("Item Group", filters={"show_in_pos": 1}, pluck="name")
+            group_query = """
+                SELECT DISTINCT i.item_group
+                FROM `tabItem` i
+                WHERE i.disabled = 0
+                AND i.is_stock_item = 1
+                AND i.item_group IS NOT NULL
+                AND i.item_group != ''
+            """
+            
+            if hide_unavailable and warehouse:
+                group_query += " AND EXISTS (SELECT 1 FROM `tabBin` b WHERE b.item_code = i.name AND b.warehouse = %s AND b.actual_qty > 0)"
+                group_query_params = [warehouse]
+            else:
+                group_query_params = []
+            
+            if search_term:
+                group_query += """
+                    AND (
+                        i.name LIKE %s
+                        OR i.item_name LIKE %s
+                        OR i.description LIKE %s
+                        OR EXISTS (
+                            SELECT 1 FROM `tabItem Barcode` ib
+                            WHERE ib.parent = i.name AND ib.barcode LIKE %s
+                        )
+                    )
+                """
+                group_query_params.extend([search_term, search_term, search_term, search_term])
+            
+            group_query = apply_sql_permissions(group_query)
+            
+            group_results = frappe.db.sql(group_query, tuple(group_query_params) if group_query_params else None, as_dict=True)
+            allowed_groups = [row["item_group"] for row in group_results]
         
         if not allowed_groups:
-            allowed_groups = frappe.get_all("Item Group", pluck="name")
+            return []
         
         for group_name in allowed_groups:
             count_query = """
@@ -348,10 +385,8 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
                         "is_group": group_doc.is_group,
                         "image": group_doc.image,
                         "count": item_count,
-                        "show_in_pos": group_doc.show_in_pos,
                         "custom_icon": group_doc.get("custom_icon"),
                         "custom_color": group_doc.get("custom_color"),
-                        "custom_order": group_doc.get("custom_order", 0),
                     })
                 except Exception:
                     item_groups.append({
@@ -360,14 +395,12 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
                         "count": item_count,
                     })
         
-        item_groups.sort(key=lambda x: x.get("custom_order", 0))
-        
         return item_groups
         
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Item Groups With Counts Error")
         return []
-
+   
 
 def _get_pos_context():
     try:

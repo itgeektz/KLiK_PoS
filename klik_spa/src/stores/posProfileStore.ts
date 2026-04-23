@@ -12,13 +12,12 @@ export interface POSCompanyDetails {
   default_currency?: string;
 }
 
-export interface POSDetails {
-  name?: string;
-  company?: POSCompanyDetails;
+export interface POSProfile {
+  name: string;
+  company?: string;
   currency?: string;
   currency_symbol?: string;
   is_zatca_enabled?: boolean;
-  current_opening_entry?: string;
   business_type?: "B2B" | "B2C" | "B2B & B2C";
   hide_unavailable_items?: boolean;
   custom_use_scanner_fully?: boolean;
@@ -27,12 +26,17 @@ export interface POSDetails {
   write_off_account?: string;
   write_off_cost_center?: string;
   custom_delivery_required?: number;
-  can_create_and_edit_customers?: number;
+  custom_allow_to_create_and_edit_customers?: number;
   custom_default_view?: "Grid View" | "List View";
   custom_scale_barcodes_start_with?: string;
   warehouse?: string;
   restrict_cost_visibility_in_tooltip?: boolean;
+  is_default?: boolean;
   [key: string]: unknown;
+}
+
+export interface POSDetails extends POSProfile {
+  company?: POSCompanyDetails;
 }
 
 export interface UserInfo {
@@ -48,6 +52,7 @@ export interface UserInfo {
 
 interface POSDetailsState {
   posDetails: POSDetails | null;
+  posProfiles: POSProfile[];
   useScannerOnly: boolean;
   hideUnavailableItems: boolean;
   scalePrefix: string;
@@ -64,28 +69,36 @@ interface POSDetailsState {
   isLoadingUser: boolean;
   userError: string | null;
   isLoading: boolean;
+  isLoadingProfiles: boolean;
+  profilesError: string | null;
   error: string | null;
   lastFetched: number | null;
   lastUserFetch: number | null;
   lastOpeningFetch: number | null;
+  lastProfilesFetch: number | null;
   isInitialized: boolean;
+  isAuthenticated: boolean;
   fetchPOSDetails: (force?: boolean) => Promise<void>;
+  fetchPOSProfiles: (force?: boolean) => Promise<void>;
   fetchPOSOpeningStatus: (force?: boolean) => Promise<void>;
   fetchUserInfo: (force?: boolean) => Promise<void>;
   clearCache: () => void;
   updatePOSDetails: (details: Partial<POSDetails>) => void;
   resetOpeningStatus: () => void;
   refreshAll: () => Promise<void>;
+  setAuthenticated: (status: boolean) => void;
 }
 
 const CACHE_DURATION = 10 * 60 * 1000;
 const OPENING_STATUS_CACHE_DURATION = 30 * 1000;
 const USER_INFO_CACHE_DURATION = 5 * 60 * 1000;
+const PROFILES_CACHE_DURATION = 10 * 60 * 1000;
 
 export const usePOSProfileStore = create<POSDetailsState>()(
   persist(
     (set, get) => ({
       posDetails: null,
+      posProfiles: [],
       useScannerOnly: false,
       hideUnavailableItems: false,
       scalePrefix: "",
@@ -102,16 +115,76 @@ export const usePOSProfileStore = create<POSDetailsState>()(
       isLoadingUser: false,
       userError: null,
       isLoading: false,
+      isLoadingProfiles: false,
+      profilesError: null,
       error: null,
       lastFetched: null,
       lastUserFetch: null,
       lastOpeningFetch: null,
+      lastProfilesFetch: null,
       isInitialized: false,
+      isAuthenticated: false,
+
+      setAuthenticated: (status: boolean) => {
+        set({ isAuthenticated: status });
+      },
+
+      fetchPOSProfiles: async (force = false) => {
+        const { lastProfilesFetch, isLoadingProfiles, isAuthenticated } = get();
+        const isCacheValid = lastProfilesFetch && (Date.now() - lastProfilesFetch) < PROFILES_CACHE_DURATION;
+        
+        if (!isAuthenticated) {
+          set({ isLoadingProfiles: false });
+          return;
+        }
+        if (!force && isCacheValid) return;
+        if (isLoadingProfiles) return;
+        
+        set({ isLoadingProfiles: true, profilesError: null });
+        
+        try {
+          const response = await fetch("/api/method/klik_pos.api.pos_profile.get_pos_profiles_for_user", {
+            method: "GET",
+            headers: { "Accept": "application/json" },
+            credentials: "include",
+          });
+          
+          if (response.status === 401 || response.status === 403) {
+            set({ isAuthenticated: false, isLoadingProfiles: false });
+            return;
+          }
+          
+          const data = await response.json();
+          
+          if (!response.ok) {
+            throw new Error(data._server_messages || "Failed to fetch POS profiles");
+          }
+          
+          const profiles = data.message as POSProfile[];
+          
+          set({
+            posProfiles: profiles,
+            isLoadingProfiles: false,
+            profilesError: null,
+            lastProfilesFetch: Date.now(),
+          });
+          
+        } catch (err) {
+          set({
+            profilesError: err instanceof Error ? err.message : "Unknown error",
+            isLoadingProfiles: false,
+          });
+        }
+      },
 
       fetchPOSDetails: async (force = false) => {
-        const { lastFetched, isLoading, isInitialized } = get();
+        const { lastFetched, isLoading, isInitialized, isAuthenticated } = get();
         const isCacheValid = lastFetched && (Date.now() - lastFetched) < CACHE_DURATION;
         
+        if (!isAuthenticated) {
+          set({ isLoading: false });
+          return;
+        }
         if (!force && isCacheValid && isInitialized) return;
         if (isLoading) return;
         
@@ -123,6 +196,11 @@ export const usePOSProfileStore = create<POSDetailsState>()(
             headers: { "Accept": "application/json" },
             credentials: "include",
           });
+          
+          if (response.status === 401 || response.status === 403) {
+            set({ isAuthenticated: false, isLoading: false });
+            return;
+          }
           
           const data = await response.json();
           
@@ -158,11 +236,15 @@ export const usePOSProfileStore = create<POSDetailsState>()(
       },
       
       fetchPOSOpeningStatus: async (force = false) => {
-        const { hasOpenEntry, isCheckingOpening, lastOpeningFetch } = get();
+        const { hasOpenEntry, isCheckingOpening, lastOpeningFetch, isAuthenticated } = get();
         const isOpeningStatusCached = lastOpeningFetch && 
           (Date.now() - lastOpeningFetch) < OPENING_STATUS_CACHE_DURATION && 
           hasOpenEntry !== null;
         
+        if (!isAuthenticated) {
+          set({ isCheckingOpening: false });
+          return;
+        }
         if (!force && isOpeningStatusCached) return;
         if (isCheckingOpening) return;
         
@@ -174,6 +256,11 @@ export const usePOSProfileStore = create<POSDetailsState>()(
             headers: { "Accept": "application/json" },
             credentials: "include",
           });
+          
+          if (response.status === 401 || response.status === 403) {
+            set({ isAuthenticated: false, isCheckingOpening: false });
+            return;
+          }
           
           const data = await response.json();
           
@@ -200,11 +287,15 @@ export const usePOSProfileStore = create<POSDetailsState>()(
       },
 
       fetchUserInfo: async (force = false) => {
-        const { userInfo, isLoadingUser, lastUserFetch } = get();
+        const { userInfo, isLoadingUser, lastUserFetch, isAuthenticated } = get();
         const isUserInfoCached = lastUserFetch && 
           (Date.now() - lastUserFetch) < USER_INFO_CACHE_DURATION && 
           userInfo !== null;
         
+        if (!isAuthenticated) {
+          set({ isLoadingUser: false });
+          return;
+        }
         if (!force && isUserInfoCached) return;
         if (isLoadingUser) return;
         
@@ -216,6 +307,11 @@ export const usePOSProfileStore = create<POSDetailsState>()(
             headers: { "Accept": "application/json" },
             credentials: "include",
           });
+
+          if (response.status === 401 || response.status === 403) {
+            set({ isAuthenticated: false, isLoadingUser: false });
+            return;
+          }
 
           const data = await response.json();
 
@@ -238,8 +334,12 @@ export const usePOSProfileStore = create<POSDetailsState>()(
       },
       
       refreshAll: async () => {
+        const { isAuthenticated } = get();
+        if (!isAuthenticated) return;
+        
         await Promise.all([
           get().fetchPOSDetails(true),
+          get().fetchPOSProfiles(true),
           get().fetchPOSOpeningStatus(true),
           get().fetchUserInfo(true),
         ]);
@@ -248,9 +348,11 @@ export const usePOSProfileStore = create<POSDetailsState>()(
       clearCache: () => {
         set({
           posDetails: null,
+          posProfiles: [],
           isLoading: false,
           error: null,
           lastFetched: null,
+          lastProfilesFetch: null,
           isInitialized: false,
           useScannerOnly: false,
           hideUnavailableItems: false,
@@ -265,6 +367,9 @@ export const usePOSProfileStore = create<POSDetailsState>()(
           isLoadingUser: false,
           userError: null,
           lastUserFetch: null,
+          isAuthenticated: false,
+          isLoadingProfiles: false,
+          profilesError: null,
         });
         localStorage.removeItem('pos-profile-storage');
       },
@@ -300,6 +405,7 @@ export const usePOSProfileStore = create<POSDetailsState>()(
       name: 'pos-profile-storage',
       partialize: (state) => ({
         posDetails: state.posDetails,
+        posProfiles: state.posProfiles,
         useScannerOnly: state.useScannerOnly,
         hideUnavailableItems: state.hideUnavailableItems,
         scalePrefix: state.scalePrefix,
@@ -312,6 +418,7 @@ export const usePOSProfileStore = create<POSDetailsState>()(
         userInfo: state.userInfo,
         lastFetched: state.lastFetched,
         lastUserFetch: state.lastUserFetch,
+        lastProfilesFetch: state.lastProfilesFetch,
         isInitialized: state.isInitialized,
       }),
     }

@@ -30,6 +30,7 @@ export const UOMSelectField = ({
   const [availableUOMs, setAvailableUOMs] = useState<string[]>(
     item.uom ? [item.uom] : []
   );
+  const [defaultUOM, setDefaultUOM] = useState<string>(item.uom || "");
   const [selectedUOM, setSelectedUOM] = useState<string>(item.uom || "");
   const [uomPrices, setUOMPrices] = useState<Record<string, number>>({});
   const [uomConversionFactors, setUOMConversionFactors] = useState<
@@ -77,6 +78,12 @@ export const UOMSelectField = ({
             factors[uomData.base_uom] = 1;
           }
 
+          if (uomData.base_uom) {
+            setDefaultUOM(uomData.base_uom);
+          } else if (item.uom) {
+            setDefaultUOM(item.uom);
+          }
+
           setUOMPrices(prices);
           setUOMConversionFactors(factors);
 
@@ -88,10 +95,12 @@ export const UOMSelectField = ({
       }
 
       if (item.uom) {
+        setDefaultUOM(item.uom);
         setAvailableUOMs([item.uom]);
         setUOMPrices({ [item.uom]: item.price });
         setUOMConversionFactors({ [item.uom]: 1 });
       } else {
+        setDefaultUOM("");
         setAvailableUOMs([]);
         setUOMPrices({});
         setUOMConversionFactors({});
@@ -99,10 +108,12 @@ export const UOMSelectField = ({
     } catch (error) {
       console.error("Error loading item-specific UOMs:", error);
       if (item.uom) {
+        setDefaultUOM(item.uom);
         setAvailableUOMs([item.uom]);
         setUOMPrices({ [item.uom]: item.price });
         setUOMConversionFactors({ [item.uom]: 1 });
       } else {
+        setDefaultUOM("");
         setAvailableUOMs([]);
         setUOMPrices({});
         setUOMConversionFactors({});
@@ -117,10 +128,12 @@ export const UOMSelectField = ({
         await fetchUOMs(itemCode);
       } else {
         if (item.uom) {
+          setDefaultUOM(item.uom);
           setAvailableUOMs([item.uom]);
           setUOMPrices({ [item.uom]: item.price });
           setUOMConversionFactors({ [item.uom]: 1 });
         } else {
+          setDefaultUOM("");
           setAvailableUOMs([]);
           setUOMPrices({});
           setUOMConversionFactors({});
@@ -138,6 +151,12 @@ export const UOMSelectField = ({
   const filteredUOMs = availableUOMs.filter((uom) =>
     uom.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const formatConversionFactor = (value: number) =>
+    new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 4,
+    }).format(value);
 
   const handleUOMSelect = (newUOM: string) => {
     const directUOMPrice = uomPrices[newUOM];
@@ -180,6 +199,19 @@ export const UOMSelectField = ({
           />
         </svg>
       </button>
+
+      {selectedUOM && defaultUOM && selectedUOM !== defaultUOM && (
+        <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600">
+          <div className="flex items-center gap-2">
+            <label className="text-gray-600 dark:text-gray-400 font-medium text-xs">
+              Conversion Factor:
+            </label>
+            <div className="px-2 py-1 bg-white dark:bg-gray-600 rounded border border-gray-200 dark:border-gray-500 text-gray-900 dark:text-white font-mono text-xs">
+              {formatConversionFactor(uomConversionFactors[selectedUOM] || 1)}
+            </div>
+          </div>
+        </div>
+      )}
 
       {isDropdownOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-hidden">

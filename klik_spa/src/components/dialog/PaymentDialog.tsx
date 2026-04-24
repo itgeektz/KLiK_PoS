@@ -15,11 +15,11 @@ import { calculateRemainingAmount, calculateTotalPayments, roundCurrency, subtra
 import { extractErrorFromException } from "../../utils/errorExtraction";
 import { fetchWhatsAppTemplates, getDefaultWhatsAppTemplate, processTemplate, getDefaultMessageTemplate } from "../../services/whatsappTemplateService";
 import { fetchEmailTemplates, getDefaultEmailTemplate, processEmailTemplate, getDefaultEmailMessageTemplate } from "../../services/emailTemplateService";
-import { verifyPin, getRememberedSalesperson, clearRememberedSalesperson } from "../../services/salesPerson";
 import { getIconAndColor } from "./paymentIcons";
 import PaymentHeader from "./PaymentHeader";
 import PaymentMethods from "./PaymentMethods";
 import SalesPersonSection from "./SalesPersonSection";
+import SalespersonAuthModal from "./SalespersonAuthModal";
 import TaxSection from "./TaxSection";
 import TotalsSection from "./TotalsSection";
 import ActionButtons from "./ActionButtons";
@@ -30,15 +30,7 @@ import type { PaymentDialogProps, PaymentAmount, Calculations, BackendTaxPreview
 import DisplayPrintPreview from "../../utils/invoicePrint";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { handlePrintInvoice } from "../../utils/printHandler";
-
-const getDeviceId = () => {
-  let device_id = localStorage.getItem("pos_device_id");
-  if (!device_id) {
-    device_id = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem("pos_device_id", device_id);
-  }
-  return device_id;
-};
+import { useSalespersonStore } from "../../stores/salespersonStore";
 
 export default function PaymentDialog(props: PaymentDialogProps) {
   const {
@@ -88,15 +80,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [isLoadingEmailTemplates, setIsLoadingEmailTemplates] = useState(false);
   const [isEditingEmail, setIsEditingEmail] = useState(false);
   const [showDeliveryPersonnelModal, setShowDeliveryPersonnelModal] = useState(false);
+  const [showSalespersonModal, setShowSalespersonModal] = useState(false);
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
-  const [currentSalesperson, setCurrentSalesperson] = useState<{ name: string; salesperson_name: string } | null>(null);
-  const [salespersonPin, setSalespersonPin] = useState("");
-  const [salespersonPinError, setSalespersonPinError] = useState("");
-  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
-  const [rememberSalesperson, setRememberSalesperson] = useState(() => {
-    const pref = localStorage.getItem("pos_remember_salesperson");
-    return pref === null ? true : pref === "true";
-  });
   const [taxPin, setTaxPin] = useState("");
   const [backendTaxPreview, setBackendTaxPreview] = useState<BackendTaxPreview | null>(null);
   const [isTaxPreviewLoading, setIsTaxPreviewLoading] = useState(false);
@@ -105,6 +90,15 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const taxPreviewRequestIdRef = useRef(0);
 
   const { posDetails, loading: posLoading } = usePOSProfileStore();
+  const {
+    activeSalesperson: currentSalesperson,
+    rememberLocked: rememberSalesperson,
+    ensureInitialized,
+    isRestoring: isSalespersonRestoring,
+    isVerifying: isVerifyingPin,
+    clearActiveSalesperson,
+    setRememberLocked,
+  } = useSalespersonStore();
   const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === "string" ? posDetails.name : "");
   const { salesTaxCharges, defaultTax, isLoading: salesTaxLoading } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
@@ -504,62 +498,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     roundOffAmount,
   ]);
 
-  const handleVerifyPin = async () => {
-    const pin = salespersonPin.trim();
-    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-      setSalespersonPinError("Please enter a valid 4-digit PIN");
-      return;
-    }
-    setIsVerifyingPin(true);
-    setSalespersonPinError("");
-    try {
-      const result = await verifyPin(pin, getDeviceId());
-      if (result?.success) {
-        setCurrentSalesperson({ name: result.salesperson, salesperson_name: result.salesperson_name });
-        setSalespersonPin("");
-        toast.success(`Welcome, ${result.salesperson_name}!`);
-        if (!rememberSalesperson) {
-          try {
-            await clearRememberedSalesperson(getDeviceId());
-          } catch (err) {
-            console.error("Error clearing remembered salesperson:", err);
-          }
-        }
-      } else {
-        setSalespersonPinError(result?.message || "Invalid PIN. Please try again.");
-        setSalespersonPin("");
-      }
-    } catch (err: any) {
-      setSalespersonPinError(err?.message || "An error occurred. Please try again.");
-      setSalespersonPin("");
-    } finally {
-      setIsVerifyingPin(false);
-    }
-  };
-
-  const handleClearSalesperson = async () => {
-    setCurrentSalesperson(null);
-    setSalespersonPin("");
-    setSalespersonPinError("");
-    try {
-      await clearRememberedSalesperson(getDeviceId());
-    } catch (err) {
-      console.error("Error clearing remembered salesperson:", err);
-    }
-  };
-
   const handleRememberSalespersonChange = async (checked: boolean) => {
-    setRememberSalesperson(checked);
-    localStorage.setItem("pos_remember_salesperson", String(checked));
-    if (!checked) {
-      setCurrentSalesperson(null);
-      setSalespersonPin("");
-      try {
-        await clearRememberedSalesperson(getDeviceId());
-      } catch (err) {
-        console.error("Error clearing remembered salesperson:", err);
-      }
-    }
+    await setRememberLocked(checked);
   };
 
   const processPayment = async (deliveryPersonnel: string | null = null) => {
@@ -670,6 +610,15 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       setSubmittedInvoice(response);
       setInvoiceData(response.invoice);
       toast.success(enableBackgroundSubmission ? "Invoice queued for background submission!" : "Invoice submitted successfully!");
+
+      if (!rememberSalesperson) {
+        try {
+          await clearActiveSalesperson(true);
+        } catch (salespersonClearError) {
+          console.error("Failed to clear salesperson session after submit:", salespersonClearError);
+        }
+      }
+
       const originalDraftInvoiceId = getOriginalDraftInvoiceId();
       if (originalDraftInvoiceId) {
         try {
@@ -689,7 +638,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
   const handleCompletePayment = async () => {
     if (requiresSalespersonPin && !currentSalesperson) {
-      toast.error("Please verify your salesperson PIN before completing payment");
+      setShowSalespersonModal(true);
+      toast.error("Verify the salesperson before completing payment");
       return;
     }
     await processPayment(selectedDeliveryPersonnel);
@@ -698,6 +648,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const handleHoldOrder = async () => {
     if (!selectedCustomer) {
       toast.error("Kindly select a customer");
+      return;
+    }
+    if (requiresSalespersonPin && !currentSalesperson) {
+      setShowSalespersonModal(true);
+      toast.error("Verify the salesperson before holding this order");
       return;
     }
     setIsHoldingOrder(true);
@@ -808,24 +763,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   };
 
   useEffect(() => {
-    if (!isOpen || !requiresSalespersonPin) return;
-    const pref = localStorage.getItem("pos_remember_salesperson");
-    const shouldRemember = pref === null ? true : pref === "true";
-    if (!shouldRemember || currentSalesperson) return;
-    setIsVerifyingPin(true);
-    (async () => {
-      try {
-        const result = await getRememberedSalesperson(getDeviceId());
-        if (result?.success) {
-          setCurrentSalesperson({ name: result.salesperson, salesperson_name: result.salesperson_name });
-        }
-      } catch (err) {
-        console.error("Error fetching remembered salesperson:", err);
-      } finally {
-        setIsVerifyingPin(false);
-      }
-    })();
-  }, [isOpen, requiresSalespersonPin]);
+    if (isOpen && requiresSalespersonPin) {
+      void ensureInitialized();
+    }
+  }, [isOpen, requiresSalespersonPin, ensureInitialized]);
 
   useEffect(() => {
     if (isOpen && !dueDate) {
@@ -1333,14 +1274,15 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   requiresSalespersonPin={requiresSalespersonPin}
                   invoiceSubmitted={invoiceSubmitted}
                   currentSalesperson={currentSalesperson}
-                  isVerifyingPin={isVerifyingPin}
-                  salespersonPin={salespersonPin}
-                  salespersonPinError={salespersonPinError}
-                  rememberSalesperson={rememberSalesperson}
-                  onPinChange={setSalespersonPin}
-                  onVerifyPin={handleVerifyPin}
-                  onClearSalesperson={handleClearSalesperson}
-                  onRememberChange={handleRememberSalespersonChange}
+                  isLoading={isSalespersonRestoring || isVerifyingPin}
+                  onOpenSalespersonModal={() => setShowSalespersonModal(true)}
+                />
+
+                <SalespersonAuthModal
+                  isOpen={showSalespersonModal}
+                  onClose={() => setShowSalespersonModal(false)}
+                  title="Verify salesperson"
+                  description="Switch or verify the salesperson assigned to this sale."
                 />
 
                 <TotalsSection

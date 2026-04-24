@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FileText,
@@ -26,6 +26,7 @@ import InvoiceViewModal from "../components/InvoiceViewModal";
 import BottomNavigation from "../components/BottomNavigation";
 import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
 import SingleInvoiceReturn from "../components/SingleInvoiceReturn";
+import SalespersonAuthModal from "../components/dialog/SalespersonAuthModal";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import type { SalesInvoice } from "../../types";
@@ -33,6 +34,7 @@ import { useSalesInvoices } from "../hooks/useSalesInvoices";
 import { useCustomers } from "../hooks/useCustomers";
 import { useUserInfo } from "../hooks/useUserInfo";
 import { usePOSProfileStore } from "../stores/posProfileStore";
+import { useSalespersonStore } from "../stores/salespersonStore";
 import { toast } from "react-toastify";
 import { extractErrorFromException } from "../utils/errorExtraction";
 import { createSalesReturn, submitDraftInvoice, retryQueuedInvoice } from "../services/salesInvoice";
@@ -80,6 +82,8 @@ export default function InvoiceHistoryPage() {
   // Original edit options states
   const [showEditOptions, setShowEditOptions] = useState(false);
   const [selectedDraftInvoice, setSelectedDraftInvoice] = useState<SalesInvoice | null>(null);
+  const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false);
+  const pendingSalespersonActionRef = useRef<null | (() => void)>(null);
 
   // Skip opening entry filter for Invoice History - show all invoices for cashier regardless of opening entry
   // Pass cashier filter to API so it filters on server side (more efficient)
@@ -87,7 +91,37 @@ export default function InvoiceHistoryPage() {
   const { modes } = useAllPaymentModes();
   const { customers } = useCustomers();
   const { posDetails } = usePOSProfileStore();
+  const { activeSalesperson, ensureInitialized } = useSalespersonStore();
   const { userInfo, isLoading: userInfoLoading } = useUserInfo();
+  const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
+
+  useEffect(() => {
+    if (requiresSalespersonPin) {
+      void ensureInitialized();
+    }
+  }, [requiresSalespersonPin, ensureInitialized]);
+
+  const runWithSalespersonGate = (action: () => void | Promise<void>) => {
+    if (!requiresSalespersonPin || activeSalesperson) {
+      void action();
+      return;
+    }
+
+    pendingSalespersonActionRef.current = () => {
+      void action();
+    };
+    setShowSalespersonAuthModal(true);
+  };
+
+  const handleSalespersonAuthenticated = () => {
+    const pendingAction = pendingSalespersonActionRef.current;
+    pendingSalespersonActionRef.current = null;
+    setShowSalespersonAuthModal(false);
+    if (pendingAction) {
+      pendingAction();
+    }
+  };
+  
   const canProcessReturns = ![0, "0", false].includes(posDetails?.custom_allow_return as 0 | "0" | false);
 
   // Role-based filtering
@@ -768,6 +802,11 @@ const getStatusBadge = (status: string) => {
   };
 
   const handleGoToCart = async (invoice: SalesInvoice) => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(() => handleGoToCart(invoice));
+      return;
+    }
+
     try {
       const success = await addDraftInvoiceToCart(invoice.id);
       if (success) {
@@ -785,6 +824,11 @@ const getStatusBadge = (status: string) => {
   };
 
   const handleSubmitDirect = async (invoice: SalesInvoice) => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(() => handleSubmitDirect(invoice));
+      return;
+    }
+
     try {
       await submitDraftInvoice(invoice.id);
       toast.success(`Draft invoice ${invoice.id} submitted successfully`);
@@ -811,6 +855,10 @@ const getStatusBadge = (status: string) => {
   };
 
   const handleReturnClick = async (invoiceName: string) => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(() => handleReturnClick(invoiceName));
+    }
+
     if (!canProcessReturns) {
       toast.error("Returns are disabled for this POS Profile");
       return;
@@ -845,6 +893,10 @@ const getStatusBadge = (status: string) => {
 
       // Multi-Invoice Return handlers
     const handleMultiReturnClick = () => {
+      if (requiresSalespersonPin && !activeSalesperson) {
+        runWithSalespersonGate(handleMultiReturnClick);
+      }
+        
       if (!canProcessReturns) {
         toast.error("Returns are disabled for this POS Profile");
         return;
@@ -856,6 +908,9 @@ const getStatusBadge = (status: string) => {
 
     // Single Invoice Return handlers
     const handleSingleReturnClick = (invoice: SalesInvoice) => {
+      if (requiresSalespersonPin && !activeSalesperson) {
+        runWithSalespersonGate(() => handleSingleReturnClick(invoice));
+      }
       if (!canProcessReturns) {
         toast.error("Returns are disabled for this POS Profile");
         return;
@@ -1333,6 +1388,18 @@ const getStatusBadge = (status: string) => {
             </div>
           </div>
         )}
+
+        <SalespersonAuthModal
+          isOpen={showSalespersonAuthModal}
+          onClose={() => {
+            setShowSalespersonAuthModal(false);
+            pendingSalespersonActionRef.current = null;
+          }}
+          onAuthenticated={handleSalespersonAuthenticated}
+          allowDismiss
+          title="Verify salesperson"
+          description="Verify the salesperson before continuing this invoice action."
+        />
       </div>
     </div>
   );

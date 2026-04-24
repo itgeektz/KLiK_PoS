@@ -10,6 +10,7 @@ import { getSerials } from "../../utils/serial";
 import type { CartItem } from "../../../types";
 import type { Customer } from "../../types/customer";
 import PaymentDialog from "../dialog/PaymentDialog";
+import SalespersonAuthModal from "../dialog/SalespersonAuthModal";
 import {
   createDraftSalesInvoice,
   validateCheckoutInvoice,
@@ -18,6 +19,7 @@ import { CustomerSearchSection } from "./CustomerSearchSection";
 import { CartItemRow } from "./CartItemRow";
 import { OrderSummaryFooter } from "./OrderSummaryFooter";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
+import { useSalespersonStore } from "../../stores/salespersonStore";
 
 interface OrderSummaryProps {
   onClearCart?: () => void;
@@ -40,11 +42,16 @@ export default function OrderSummary({
   } = useCartStore();
 
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false);
   const [isValidatingCheckout, setIsValidatingCheckout] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [pendingSalespersonAction, setPendingSalespersonAction] = useState<
+    "checkout" | "hold" | null
+  >(null);
 
   const { posDetails } = usePOSProfileStore();
   const { refreshStockOnly } = useProductStore();
+  const { activeSalesperson, ensureInitialized } = useSalespersonStore();
 
   const [itemDiscounts, setItemDiscounts] = useState<Record<string, any>>(() => {
     const saved: Record<string, any> = {};
@@ -71,6 +78,12 @@ export default function OrderSummary({
       refreshCartPricing();
     }
   }, [selectedCustomer?.id, cartItems.length, refreshCartPricing]);
+
+  useEffect(() => {
+    if (posDetails?.custom_sales_person_pin_required) {
+      void ensureInitialized();
+    }
+  }, [posDetails?.custom_sales_person_pin_required, ensureInitialized]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -182,7 +195,7 @@ export default function OrderSummary({
     return true;
   };
 
-  const handleCheckoutClick = async () => {
+  const startCheckoutFlow = async () => {
     if (!validateCustomer() || isValidatingCheckout) return;
     setIsValidatingCheckout(true);
     try {
@@ -207,6 +220,56 @@ export default function OrderSummary({
     }
   };
 
+  const holdCurrentOrder = async () => {
+    if (!selectedCustomer) {
+      toast.error("Kindly select a customer");
+      return;
+    }
+
+    try {
+      const result = await createDraftSalesInvoice({
+        items: cartItems.map((item) => ({
+          ...item,
+          price: getDiscountedPrice(item),
+        })),
+        customer: { id: selectedCustomer.id },
+        subtotal,
+        total,
+        appliedCoupons: [],
+        itemDiscounts,
+        totalItemDiscount,
+        totalSavings: totalItemDiscount + couponDiscount,
+        status: "held",
+        salesperson: activeSalesperson?.name || null,
+      });
+      if (result?.success) {
+        handleClearCart();
+        toast.success("Draft invoice created and order held successfully!");
+      }
+    } catch (error) {
+      toast.error(extractErrorFromException(error, "Failed to create draft invoice"));
+    }
+  };
+
+  const requireSalespersonAndRun = async (action: "checkout" | "hold") => {
+    const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
+    if (!requiresSalespersonPin || activeSalesperson) {
+      if (action === "checkout") {
+        await startCheckoutFlow();
+      } else {
+        await holdCurrentOrder();
+      }
+      return;
+    }
+
+    setPendingSalespersonAction(action);
+    setShowSalespersonAuthModal(true);
+  };
+
+  const handleCheckoutClick = async () => {
+    await requireSalespersonAndRun("checkout");
+  };
+
   const handleClearCart = () => {
     if (cartItems.length === 0) return;
     clearCart();
@@ -215,18 +278,31 @@ export default function OrderSummary({
   };
 
   const handleHoldOrder = async (orderData: any) => {
-    if (!selectedCustomer) {
-      toast.error("Kindly select a customer");
-      return;
-    }
     try {
-      const result = await createDraftSalesInvoice(orderData);
+      const result = await createDraftSalesInvoice({
+        ...orderData,
+        salesperson: activeSalesperson?.name || null,
+      });
       if (result?.success) {
         handleClearCart();
         toast.success("Draft invoice created and order held successfully!");
       }
     } catch (error) {
       toast.error(extractErrorFromException(error, "Failed to create draft invoice"));
+    }
+  };
+
+  const handleSalespersonAuthenticated = () => {
+    const nextAction = pendingSalespersonAction;
+    setPendingSalespersonAction(null);
+    setShowSalespersonAuthModal(false);
+
+    if (nextAction === "checkout") {
+      void startCheckoutFlow();
+    }
+
+    if (nextAction === "hold") {
+      void holdCurrentOrder();
     }
   };
 
@@ -340,21 +416,7 @@ export default function OrderSummary({
           onClearCart={handleClearCart}
           onHoldOrder={() => {
             if (!validateCustomer()) return;
-            if (!selectedCustomer) return;
-            handleHoldOrder({
-              items: cartItems.map((item) => ({
-                ...item,
-                price: getDiscountedPrice(item),
-              })),
-              customer: { id: selectedCustomer.id },
-              subtotal,
-              total,
-              appliedCoupons: [],
-              itemDiscounts,
-              totalItemDiscount,
-              totalSavings: totalItemDiscount + couponDiscount,
-              status: "held",
-            });
+            void requireSalespersonAndRun("hold");
           }}
           isValidating={isValidatingCheckout}
           isMobile={isMobile}
@@ -383,6 +445,18 @@ export default function OrderSummary({
           totalItemDiscount={totalItemDiscount}
         />
       )}
+
+      <SalespersonAuthModal
+        isOpen={showSalespersonAuthModal}
+        onClose={() => {
+          setShowSalespersonAuthModal(false);
+          setPendingSalespersonAction(null);
+        }}
+        onAuthenticated={handleSalespersonAuthenticated}
+        allowDismiss
+        title="Start transaction"
+        description="Verify the salesperson before checkout or holding this order."
+      />
     </div>
   );
 }

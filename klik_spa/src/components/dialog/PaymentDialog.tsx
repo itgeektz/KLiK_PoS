@@ -604,11 +604,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       setInvoiceData(response.invoice);
       toast.success(enableBackgroundSubmission ? "Invoice queued for background submission!" : "Invoice submitted successfully!");
 
-      try {
-        // Force PIN re-entry for the next order by ending the active salesperson session.
-        await clearActiveSalesperson(true);
-      } catch (salespersonClearError) {
-        console.error("Failed to clear salesperson session after submit:", salespersonClearError);
+      if (!rememberSalesperson) {
+        try {
+          await clearActiveSalesperson(true);
+        } catch (salespersonClearError) {
+          console.error("Failed to clear salesperson session after submit:", salespersonClearError);
+        }
       }
 
       const originalDraftInvoiceId = getOriginalDraftInvoiceId();

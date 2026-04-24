@@ -440,7 +440,6 @@ export default function InvoiceViewPage() {
 
                     <button
                       className="group relative p-2 text-orange-600 hover:bg-orange-100 dark:text-orange-400 dark:hover:bg-orange-900 rounded-lg transition-all duration-200"
-                      onClick={handleOpenSingleReturn}
                       onClick={() => {
                         if (!canProcessReturns) {
                           toast.error("Returns are disabled for this POS Profile");
@@ -457,7 +456,6 @@ export default function InvoiceViewPage() {
 
                     <button
                       className="group relative p-2 text-orange-600 hover:bg-indigo-100 dark:text-indigo-400 dark:hover:bg-indigo-900 rounded-lg transition-all duration-200"
-                      onClick={handleOpenMultiReturn}
                       onClick={() => {
                         if (!canProcessReturns) {
                           toast.error("Returns are disabled for this POS Profile");

@@ -857,6 +857,8 @@ const getStatusBadge = (status: string) => {
   const handleReturnClick = async (invoiceName: string) => {
     if (requiresSalespersonPin && !activeSalesperson) {
       runWithSalespersonGate(() => handleReturnClick(invoiceName));
+    }
+
     if (!canProcessReturns) {
       toast.error("Returns are disabled for this POS Profile");
       return;
@@ -893,6 +895,7 @@ const getStatusBadge = (status: string) => {
     const handleMultiReturnClick = () => {
       if (requiresSalespersonPin && !activeSalesperson) {
         runWithSalespersonGate(handleMultiReturnClick);
+      }
         
       if (!canProcessReturns) {
         toast.error("Returns are disabled for this POS Profile");
@@ -907,6 +910,7 @@ const getStatusBadge = (status: string) => {
     const handleSingleReturnClick = (invoice: SalesInvoice) => {
       if (requiresSalespersonPin && !activeSalesperson) {
         runWithSalespersonGate(() => handleSingleReturnClick(invoice));
+      }
       if (!canProcessReturns) {
         toast.error("Returns are disabled for this POS Profile");
         return;

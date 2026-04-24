@@ -301,8 +301,8 @@ export const useProductStore = create<ProductStoreState>()(
 
       searchProducts: async (query: string, immediate = false) => {
         const trimmedQuery = query.trim();
-        set({ searchQuery: trimmedQuery, isSearching: true });
-        
+        set({ searchQuery: query, isSearching: true });
+
         if (!trimmedQuery) {
           set({ isSearching: false });
           get().fetchProducts(true);
@@ -329,7 +329,7 @@ export const useProductStore = create<ProductStoreState>()(
         try {
           const result = await fetchProductsFromAPI(500, 0, query, selectedCategory, customerId, priceList);
           
-          if (get().searchQuery === query) {
+          if (get().searchQuery.trim() === query) {
             set({
               products: result.items,
               itemGroups: result.item_groups,

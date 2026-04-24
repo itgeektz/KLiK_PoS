@@ -50,6 +50,7 @@ export default function InvoiceViewPage() {
   const { invoice, isLoading, error, refetch } = useInvoiceDetails(invoiceId);
   const { statistics: customerStats, isLoading: statsLoading } = useCustomerStatistics(invoice?.customer || null);
   const { posDetails } = usePOSProfileStore();
+  const canProcessReturns = ![0, "0", false].includes(posDetails?.custom_allow_return as 0 | "0" | false);
   const navigate = useNavigate()
 
   // PaymentDialog state for sharing
@@ -375,13 +376,19 @@ export default function InvoiceViewPage() {
 
                 {/* Return Buttons */}
                            {/* @ts-expect-error just ignore */}
-                {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems() && (
+                {canProcessReturns && ["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems() && (
                   <>
                     <div className="w-px h-6 bg-gray-300 dark:bg-gray-600"></div>
 
                     <button
                       className="group relative p-2 text-orange-600 hover:bg-orange-100 dark:text-orange-400 dark:hover:bg-orange-900 rounded-lg transition-all duration-200"
-                      onClick={() => setShowSingleReturn(true)}
+                      onClick={() => {
+                        if (!canProcessReturns) {
+                          toast.error("Returns are disabled for this POS Profile");
+                          return;
+                        }
+                        setShowSingleReturn(true);
+                      }}
                     >
                       <RotateCcw size={20} />
                       <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">
@@ -391,7 +398,13 @@ export default function InvoiceViewPage() {
 
                     <button
                       className="group relative p-2 text-orange-600 hover:bg-indigo-100 dark:text-indigo-400 dark:hover:bg-indigo-900 rounded-lg transition-all duration-200"
-                      onClick={() => setShowMultiReturn(true)}
+                      onClick={() => {
+                        if (!canProcessReturns) {
+                          toast.error("Returns are disabled for this POS Profile");
+                          return;
+                        }
+                        setShowMultiReturn(true);
+                      }}
                     >
                       <FileMinus size={20} />
                       <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">

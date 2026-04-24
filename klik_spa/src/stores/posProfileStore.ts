@@ -27,6 +27,7 @@ export interface POSProfile {
   write_off_cost_center?: string;
   custom_delivery_required?: number;
   custom_prevent_invoice_reprinting?: boolean | number;
+  custom_allow_return?: boolean | number | string;
   custom_allow_to_create_and_edit_customers?: number;
   custom_default_view?: "Grid View" | "List View";
   custom_scale_barcodes_start_with?: string;

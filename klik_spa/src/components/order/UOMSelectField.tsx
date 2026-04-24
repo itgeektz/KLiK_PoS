@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { CartItem } from "../../../types";
 
 interface UOMSelectFieldProps {
@@ -10,24 +10,42 @@ interface UOMSelectFieldProps {
   selectedCustomer?: { id: string } | null;
 }
 
+interface UOMDataRow {
+  uom: string;
+  conversion_factor: number;
+  price: number;
+}
+
+interface UOMPriceResponse {
+  base_uom?: string;
+  uoms?: UOMDataRow[];
+}
+
 export const UOMSelectField = ({
   item,
   onUOMChange,
   isMobile,
   selectedCustomer,
 }: UOMSelectFieldProps) => {
-  const [availableUOMs, setAvailableUOMs] = useState<string[]>(["Nos"]);
-  const [selectedUOM, setSelectedUOM] = useState<string>(item.uom || "Nos");
+  const [availableUOMs, setAvailableUOMs] = useState<string[]>(
+    item.uom ? [item.uom] : []
+  );
+  const [selectedUOM, setSelectedUOM] = useState<string>(item.uom || "");
+  const [uomPrices, setUOMPrices] = useState<Record<string, number>>({});
+  const [uomConversionFactors, setUOMConversionFactors] = useState<
+    Record<string, number>
+  >({});
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
 
-  const fetchUOMs = async (itemCode: string) => {
+  const fetchUOMs = useCallback(async (itemCode: string) => {
     try {
       const customerParam = selectedCustomer?.id
         ? `&customer=${encodeURIComponent(selectedCustomer.id)}`
         : "";
+
       const response = await fetch(
-        `/api/method/frappe.desk.search.search_link?txt=&doctype=UOM&ignore_user_permissions=0&reference_doctype=&page_length=10&link_fieldname=uom&query=erpnext.controllers.queries.get_item_uom_query&filters=${encodeURIComponent(JSON.stringify({ item_code: itemCode }))}${customerParam}&_=${Date.now()}`,
+        `/api/method/klik_pos.api.item.item_details.get_item_uoms_and_prices?item_code=${encodeURIComponent(itemCode)}${customerParam}&_=${Date.now()}`,
         {
           method: "GET",
           headers: { "Content-Type": "application/json" },
@@ -38,24 +56,59 @@ export const UOMSelectField = ({
       if (response.ok) {
         const data = await response.json();
         if (data?.message) {
-          let uoms: string[] = [];
-          if (Array.isArray(data.message)) {
-            uoms = data.message.map((uom: any) => uom.value || uom.uom || uom);
-          } else if (data.message?.uoms && Array.isArray(data.message.uoms)) {
-            uoms = data.message.uoms.map((uom: any) => uom.uom || uom);
+          const uomData = data.message as UOMPriceResponse;
+          const rows = Array.isArray(uomData.uoms) ? uomData.uoms : [];
+          const uoms = rows
+            .map((row) => row.uom)
+            .filter((uom): uom is string => Boolean(uom));
+
+          const uniqueUOMs = Array.from(new Set(uoms));
+
+          const prices: Record<string, number> = {};
+          const factors: Record<string, number> = {};
+
+          for (const row of rows) {
+            if (!row.uom) continue;
+            prices[row.uom] = Number(row.price) || 0;
+            factors[row.uom] = Number(row.conversion_factor) || 1;
           }
-          if (uoms.length > 0) {
-            setAvailableUOMs(uoms);
+
+          if (uomData.base_uom && !factors[uomData.base_uom]) {
+            factors[uomData.base_uom] = 1;
+          }
+
+          setUOMPrices(prices);
+          setUOMConversionFactors(factors);
+
+          if (uniqueUOMs.length > 0) {
+            setAvailableUOMs(uniqueUOMs);
             return;
           }
         }
       }
-      setAvailableUOMs(["Nos"]);
+
+      if (item.uom) {
+        setAvailableUOMs([item.uom]);
+        setUOMPrices({ [item.uom]: item.price });
+        setUOMConversionFactors({ [item.uom]: 1 });
+      } else {
+        setAvailableUOMs([]);
+        setUOMPrices({});
+        setUOMConversionFactors({});
+      }
     } catch (error) {
       console.error("Error loading item-specific UOMs:", error);
-      setAvailableUOMs(["Nos"]);
+      if (item.uom) {
+        setAvailableUOMs([item.uom]);
+        setUOMPrices({ [item.uom]: item.price });
+        setUOMConversionFactors({ [item.uom]: 1 });
+      } else {
+        setAvailableUOMs([]);
+        setUOMPrices({});
+        setUOMConversionFactors({});
+      }
     }
-  };
+  }, [item.price, item.uom, selectedCustomer?.id]);
 
   useEffect(() => {
     const loadItemSpecificUOMs = async () => {
@@ -63,26 +116,44 @@ export const UOMSelectField = ({
       if (itemCode) {
         await fetchUOMs(itemCode);
       } else {
-        setAvailableUOMs(["Nos"]);
+        if (item.uom) {
+          setAvailableUOMs([item.uom]);
+          setUOMPrices({ [item.uom]: item.price });
+          setUOMConversionFactors({ [item.uom]: 1 });
+        } else {
+          setAvailableUOMs([]);
+          setUOMPrices({});
+          setUOMConversionFactors({});
+        }
       }
     };
 
     loadItemSpecificUOMs();
-  }, [item.id, item.item_code, selectedCustomer?.id]);
+  }, [item.id, item.item_code, item.price, item.uom, fetchUOMs]);
 
   useEffect(() => {
-    setSelectedUOM(item.uom || "Nos");
-  }, [item.uom]);
+    setSelectedUOM(item.uom || availableUOMs[0] || "");
+  }, [item.uom, availableUOMs]);
 
   const filteredUOMs = availableUOMs.filter((uom) =>
     uom.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleUOMSelect = (newUOM: string) => {
+    const directUOMPrice = uomPrices[newUOM];
+    const currentFactor = uomConversionFactors[selectedUOM] || 1;
+    const targetFactor = uomConversionFactors[newUOM] || 1;
+    const stockUOMPrice = currentFactor > 0 ? item.price / currentFactor : item.price;
+    const fallbackConvertedPrice = stockUOMPrice * targetFactor;
+    const newPrice =
+      typeof directUOMPrice === "number" && directUOMPrice > 0
+        ? directUOMPrice
+        : fallbackConvertedPrice;
+
     setSelectedUOM(newUOM);
     setIsDropdownOpen(false);
     setSearchQuery("");
-    onUOMChange(item.id, newUOM, item.price);
+    onUOMChange(item.id, newUOM, Number(newPrice.toFixed(6)));
   };
 
   return (
@@ -94,7 +165,7 @@ export const UOMSelectField = ({
           isMobile ? "text-sm" : "text-sm"
         } px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-left flex items-center justify-between`}
       >
-        <span>{selectedUOM}</span>
+        <span>{selectedUOM || "Select UOM"}</span>
         <svg
           className={`w-4 h-4 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
           fill="none"

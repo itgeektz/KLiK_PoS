@@ -56,6 +56,7 @@ def get_item_uoms_and_prices(item_code, customer=None):
             "UOM Conversion Detail",
             filters={"parent": item_code},
             fields=["uom", "conversion_factor"],
+            ignore_permissions=True,
         )
 
         uom_data = []
@@ -127,11 +128,13 @@ def get_item_uoms_and_prices(item_code, customer=None):
                         * uom_info["conversion_factor"]
                     )
 
-        return {
+        result = {
             "base_uom": stock_uom,
             "uoms": uom_data,
             "price_list_used": price_list,
         }
+
+        return result
 
     except Exception:
         frappe.log_error(
@@ -139,10 +142,9 @@ def get_item_uoms_and_prices(item_code, customer=None):
             f"Get Item UOMs Error for {item_code}",
         )
         return {
-            "base_uom": "Nos",
-            "uoms": [
-                {"uom": "Nos", "conversion_factor": 1.0, "price": 0.0}
-            ],
+            "base_uom": None,
+            "uoms": [],
+            "price_list_used": None,
         }
 
 

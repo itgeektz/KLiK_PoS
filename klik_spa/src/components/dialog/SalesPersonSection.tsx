@@ -1,13 +1,11 @@
-import { Loader2, Lock, Unlock } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 interface SalesPersonSectionProps {
   requiresSalespersonPin: boolean;
   invoiceSubmitted: boolean;
   currentSalesperson: { name: string; salesperson_name: string } | null;
   isLoading: boolean;
-  rememberSalesperson: boolean;
   onOpenSalespersonModal: () => void;
-  onRememberChange: (checked: boolean) => void;
 }
 
 export default function SalesPersonSection({
@@ -15,9 +13,7 @@ export default function SalesPersonSection({
   invoiceSubmitted,
   currentSalesperson,
   isLoading,
-  rememberSalesperson,
   onOpenSalespersonModal,
-  onRememberChange,
 }: SalesPersonSectionProps) {
   if (!requiresSalespersonPin) {
     return null;
@@ -27,18 +23,6 @@ export default function SalesPersonSection({
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Sales Person</h3>
-        <button
-          type="button"
-          onClick={() => onRememberChange(!rememberSalesperson)}
-          className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-            rememberSalesperson
-              ? "bg-beveren-600 text-white hover:bg-beveren-700"
-              : "border border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-          }`}
-        >
-          {rememberSalesperson ? <Lock size={14} /> : <Unlock size={14} />}
-          <span>{rememberSalesperson ? "Locked" : "Unlocked"}</span>
-        </button>
       </div>
       {isLoading ? (
         <div className="flex items-center justify-center py-4 space-x-2 text-gray-500">

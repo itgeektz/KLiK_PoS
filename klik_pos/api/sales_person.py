@@ -4,12 +4,19 @@ from frappe.query_builder import Table
 from frappe.utils import now
 
 
-def _get_active_salespeople():
+def _get_active_salespeople(pos_profile=None):
+
     SalesPerson = Table("tabSales Person")
     Auth = Table("__Auth")
+    SalesPersonPOSProfile = Table("tabSales Person POS Profile")
+    POSProfile = Table("tabPOS Profile")
 
-    rows = (
+    query = (
         frappe.qb.from_(SalesPerson)
+        .join(SalesPersonPOSProfile)
+        .on(SalesPersonPOSProfile.parent == SalesPerson.name)
+        .join(POSProfile)
+        .on(POSProfile.name == SalesPersonPOSProfile.pos_profile)
         .left_join(Auth)
         .on(
             (Auth.name == SalesPerson.name)
@@ -20,27 +27,50 @@ def _get_active_salespeople():
             SalesPerson.name,
             SalesPerson.sales_person_name,
             Auth.name.as_("has_pin_auth"),
+            SalesPersonPOSProfile.pos_profile,
         )
         .where(SalesPerson.enabled == 1)
         .where(SalesPerson.name != "Sales Team")
+        .where(POSProfile.disabled == 0)
         .orderby(SalesPerson.sales_person_name)
-    ).run(as_dict=True)
+        .distinct()
+    )
+
+    query = query.where(SalesPersonPOSProfile.pos_profile == pos_profile)
+
+    rows = query.run(as_dict=True)
 
     return [
         {
             "salesperson": row.name,
             "salesperson_name": row.sales_person_name,
             "has_pin": bool(row.has_pin_auth),
+            "pos_profile": row.pos_profile,
         }
         for row in rows
     ]
 
 
+def _is_salesperson_allowed_for_profile(salesperson, pos_profile):
+    if not salesperson or not pos_profile:
+        return True
+
+    return bool(
+        frappe.db.exists(
+            "Sales Person POS Profile",
+            {"parent": salesperson, "pos_profile": pos_profile},
+        )
+    )
+
+
 @frappe.whitelist()
-def list_salespeople():
+def list_salespeople(pos_profile=None):
     """Return active salespeople for POS selector UI."""
     try:
-        return {"success": True, "salespeople": _get_active_salespeople()}
+        return {
+            "success": True,
+            "salespeople": _get_active_salespeople(pos_profile=pos_profile),
+        }
     except Exception:
         frappe.log_error(frappe.get_traceback(), _("List Salespeople Error"))
         return {
@@ -50,12 +80,13 @@ def list_salespeople():
 
 
 @frappe.whitelist()
-def verify_pin(pin, device_id, salesperson=None):
+def verify_pin(pin, device_id, salesperson=None, pos_profile=None):
     """
     Verify PIN against all Sales Persons and return matching salesperson
     """
     try:
-        sales_persons = _get_active_salespeople()
+        resolved_pos_profile = pos_profile
+        sales_persons = _get_active_salespeople(pos_profile=resolved_pos_profile)
         if salesperson:
             sales_persons = [sp for sp in sales_persons if sp.get("salesperson") == salesperson]
         if not sales_persons:
@@ -108,12 +139,13 @@ def verify_pin(pin, device_id, salesperson=None):
 
 
 @frappe.whitelist()
-def get_remembered_salesperson(device_id):
+def get_remembered_salesperson(device_id, pos_profile=None):
     """
     Get the cached salesperson for this device
     """
     try:
         cache_key_sp = f"pos_device:{device_id}:salesperson"
+        resolved_pos_profile = pos_profile
 
         cached_salesperson = frappe.cache().get_value(cache_key_sp)
 
@@ -122,7 +154,9 @@ def get_remembered_salesperson(device_id):
                 "Sales Person", {"name": cached_salesperson, "enabled": 1}
             )
 
-            if sp_exists:
+            if sp_exists and _is_salesperson_allowed_for_profile(
+                cached_salesperson, resolved_pos_profile
+            ):
                 sp_name = frappe.db.get_value(
                     "Sales Person", cached_salesperson, "sales_person_name"
                 )

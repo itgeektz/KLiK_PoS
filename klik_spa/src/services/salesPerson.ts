@@ -22,7 +22,8 @@ interface SalespersonApiResponse {
 export async function verifyPin(
   pin: string,
   device_id: string,
-  salesperson?: string
+  salesperson?: string,
+  pos_profile?: string
 ): Promise<SalespersonApiResponse> {
   const csrfToken = window.csrf_token;
 
@@ -34,7 +35,7 @@ export async function verifyPin(
         "Content-Type": "application/json",
         "X-Frappe-CSRF-Token": csrfToken,
       },
-      body: JSON.stringify({ pin, device_id, salesperson }),
+      body: JSON.stringify({ pin, device_id, salesperson, pos_profile }),
       credentials: "include",
     }
   );
@@ -50,7 +51,8 @@ export async function verifyPin(
 }
 
 export async function getRememberedSalesperson(
-  device_id: string
+  device_id: string,
+  pos_profile?: string
 ): Promise<SalespersonApiResponse> {
   const csrfToken = window.csrf_token;
 
@@ -62,7 +64,7 @@ export async function getRememberedSalesperson(
         "Content-Type": "application/json",
         "X-Frappe-CSRF-Token": csrfToken,
       },
-      body: JSON.stringify({ device_id }),
+      body: JSON.stringify({ device_id, pos_profile }),
       credentials: "include",
     }
   );
@@ -80,7 +82,6 @@ export async function getRememberedSalesperson(
   return result.message;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function clearRememberedSalesperson(device_id: string) {
   const csrfToken = window.csrf_token;
 
@@ -110,9 +111,20 @@ export async function clearRememberedSalesperson(device_id: string) {
   return result.message;
 }
 
-export async function listSalespeople(): Promise<SalespersonSummary[]> {
+export async function listSalespeople(
+  pos_profile?: string
+): Promise<SalespersonSummary[]> {
+  const params = new URLSearchParams();
+  if (pos_profile) {
+    params.set("pos_profile", pos_profile);
+  }
+
+  const endpoint = params.toString()
+    ? `/api/method/klik_pos.api.sales_person.list_salespeople?${params.toString()}`
+    : "/api/method/klik_pos.api.sales_person.list_salespeople";
+
   const response = await fetch(
-    "/api/method/klik_pos.api.sales_person.list_salespeople",
+    endpoint,
     {
       method: "GET",
       headers: { Accept: "application/json" },

@@ -9,8 +9,11 @@ import {
   type SalespersonIdentity,
   type SalespersonSummary,
 } from "../services/salesPerson";
+import { usePOSProfileStore } from "./posProfileStore";
 
 const SALESPERSON_CACHE_MS = 5 * 60 * 1000;
+
+const getActivePOSProfileName = () => usePOSProfileStore.getState().posDetails?.name;
 
 export const getPOSDeviceId = () => {
   let deviceId = localStorage.getItem("pos_device_id");
@@ -63,7 +66,10 @@ export const useSalespersonStore = create<SalespersonState>()(
         try {
           if (!rememberLocked) return;
 
-          const result = await getRememberedSalesperson(getPOSDeviceId());
+          const result = await getRememberedSalesperson(
+            getPOSDeviceId(),
+            getActivePOSProfileName()
+          );
           if (result?.success && result.salesperson && result.salesperson_name) {
             set({
               activeSalesperson: {
@@ -93,7 +99,7 @@ export const useSalespersonStore = create<SalespersonState>()(
         set({ isLoadingSalespeople: true, error: null });
 
         try {
-          const salespeople = await listSalespeople();
+          const salespeople = await listSalespeople(getActivePOSProfileName());
           set({
             salespeople,
             isLoadingSalespeople: false,
@@ -113,7 +119,12 @@ export const useSalespersonStore = create<SalespersonState>()(
         set({ isVerifying: true, error: null });
 
         try {
-          const result = await verifyPin(pin, getPOSDeviceId(), salesperson);
+          const result = await verifyPin(
+            pin,
+            getPOSDeviceId(),
+            salesperson,
+            getActivePOSProfileName()
+          );
           if (!result?.success || !result.salesperson || !result.salesperson_name) {
             throw new Error(result?.message || "Invalid PIN. Please try again.");
           }

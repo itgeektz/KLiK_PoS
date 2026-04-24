@@ -1268,9 +1268,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   invoiceSubmitted={invoiceSubmitted}
                   currentSalesperson={currentSalesperson}
                   isLoading={isSalespersonRestoring || isVerifyingPin}
-                  rememberSalesperson={rememberSalesperson}
                   onOpenSalespersonModal={() => setShowSalespersonModal(true)}
-                  onRememberChange={handleRememberSalespersonChange}
                 />
 
                 <SalespersonAuthModal

@@ -56,6 +56,7 @@ export default function ClosingShiftPage() {
   const { invoices, isLoading,  error,  } = useSalesInvoices();
   const { modes, isLoading: modesLoading, error: modesError } = useAllPaymentModes()
   const { posDetails } = usePOSProfileStore();
+  const canProcessReturns = ![0, "0", false].includes(posDetails?.custom_allow_return as 0 | "0" | false);
 
 
   const hideExpectedAmount = posDetails?.custom_hide_expected_amount || false;
@@ -294,6 +295,11 @@ export default function ClosingShiftPage() {
   };
 
   const handleReturnClick = async (invoiceName: string) => {
+    if (!canProcessReturns) {
+      toast.error("Returns are disabled for this POS Profile");
+      return;
+    }
+
     try {
       const result = await createSalesReturn(invoiceName);
       toast.success(`Invoice returned: ${result.return_invoice}`);
@@ -327,6 +333,11 @@ export default function ClosingShiftPage() {
 
   // Single Invoice Return handlers
   const handleSingleReturnClick = (invoice: SalesInvoice) => {
+    if (!canProcessReturns) {
+      toast.error("Returns are disabled for this POS Profile");
+      return;
+    }
+
     setSelectedInvoiceForReturn(invoice);
     setShowSingleReturn(true);
   };
@@ -616,7 +627,7 @@ export default function ClosingShiftPage() {
                             </button>
                           )}
                                                 {/* @ts-expect-error just ignore */}
-                          {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
+                          {canProcessReturns && ["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
                             <button
                               onClick={() => handleSingleReturnClick(invoice)}
                               className="text-orange-600 hover:text-orange-900 flex items-center space-x-1"
@@ -964,7 +975,7 @@ export default function ClosingShiftPage() {
                             </button>
                           )}
                                                 {/* @ts-expect-error just ignore */}
-                          {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
+                          {canProcessReturns && ["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
                             <button
                               onClick={() => handleSingleReturnClick(invoice)}
                               className="text-orange-600 hover:text-orange-900 flex items-center space-x-1"

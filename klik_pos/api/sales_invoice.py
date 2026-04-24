@@ -54,6 +54,23 @@ def validate_required_salesperson(doc):
 		_("Sales person is mandatory to complete this sale. Please enter a valid salesperson PIN before continuing.")
 	)
 
+def _is_return_allowed_for_current_profile():
+	"""Return True unless POS Profile explicitly disables returns."""
+	try:
+		pos_profile = get_current_pos_profile()
+		allow_return = getattr(pos_profile, "custom_allow_return", None)
+		if allow_return in (0, "0", False):
+			return False
+		return True
+	except Exception:
+		# Keep backward compatibility: do not block returns when profile resolution fails.
+		return True
+
+
+def _ensure_return_allowed():
+	if not _is_return_allowed_for_current_profile():
+		frappe.throw(_("Returns are disabled for the current POS Profile."))
+
 def _coerce_queue_status(status):
 	if not status:
 		return QUEUE_STATUSES["queued"]
@@ -2071,6 +2088,8 @@ from frappe.model.mapper import get_mapped_doc
 @frappe.whitelist()
 def return_sales_invoice(invoice_name):
 	try:
+		_ensure_return_allowed()
+
 		original_invoice = frappe.get_doc("Sales Invoice", invoice_name)
 
 		if original_invoice.docstatus != 1:
@@ -2646,6 +2665,8 @@ def returned_qty(customer, sales_invoice, item):
 @frappe.whitelist()
 def get_valid_sales_invoices(doctype, txt, searchfield, start, page_len, filters=None):
 	"""Get valid sales invoices based on filters for multi-invoice returns"""
+	_ensure_return_allowed()
+
 	filters = filters or {}
 
 	customer = filters.get("customer")
@@ -2716,6 +2737,8 @@ def get_valid_sales_invoices(doctype, txt, searchfield, start, page_len, filters
 def get_customer_invoices_for_return(customer, start_date=None, end_date=None, shipping_address=None):
 	"""Get all invoices for a customer within date range that can be returned"""
 	try:
+		_ensure_return_allowed()
+
 		filters = {
 			"customer": customer,
 			"docstatus": 1,
@@ -2865,6 +2888,8 @@ def create_partial_return(
 	"""Create a partial return for selected items from an invoice with custom payment method"""
 
 	try:
+		_ensure_return_allowed()
+
 		if isinstance(return_items, str):
 			return_items = json.loads(return_items)
 
@@ -3019,6 +3044,8 @@ def create_partial_return(
 def create_multi_invoice_return(return_data):
 	"""Create multiple return invoices for items from different invoices"""
 	try:
+		_ensure_return_allowed()
+
 		if isinstance(return_data, str):
 			return_data = json.loads(return_data)
 

@@ -121,6 +121,8 @@ export default function InvoiceHistoryPage() {
       pendingAction();
     }
   };
+  
+  const canProcessReturns = ![0, "0", false].includes(posDetails?.custom_allow_return as 0 | "0" | false);
 
   // Role-based filtering
   const isAdminUser = userInfo?.is_admin_user || false;
@@ -619,7 +621,7 @@ const getStatusBadge = (status: string) => {
                         </button>
                       )}
                       {/* @ts-expect-error just ignore */}
-                      {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
+                      {canProcessReturns && ["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
 
                         <button
                           onClick={() => handleSingleReturnClick(invoice)}
@@ -697,7 +699,7 @@ const getStatusBadge = (status: string) => {
                     <span>Edit</span>
                   </button>
                 )}
-                  {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && hasReturnableItems(invoice) && (
+                  {canProcessReturns && ["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && hasReturnableItems(invoice) && (
                   <button
                     onClick={() => handleSingleReturnClick(invoice)}
                     className="flex-1 text-xs px-3 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors"
@@ -855,6 +857,8 @@ const getStatusBadge = (status: string) => {
   const handleReturnClick = async (invoiceName: string) => {
     if (requiresSalespersonPin && !activeSalesperson) {
       runWithSalespersonGate(() => handleReturnClick(invoiceName));
+    if (!canProcessReturns) {
+      toast.error("Returns are disabled for this POS Profile");
       return;
     }
 
@@ -889,6 +893,9 @@ const getStatusBadge = (status: string) => {
     const handleMultiReturnClick = () => {
       if (requiresSalespersonPin && !activeSalesperson) {
         runWithSalespersonGate(handleMultiReturnClick);
+        
+      if (!canProcessReturns) {
+        toast.error("Returns are disabled for this POS Profile");
         return;
       }
 
@@ -900,6 +907,8 @@ const getStatusBadge = (status: string) => {
     const handleSingleReturnClick = (invoice: SalesInvoice) => {
       if (requiresSalespersonPin && !activeSalesperson) {
         runWithSalespersonGate(() => handleSingleReturnClick(invoice));
+      if (!canProcessReturns) {
+        toast.error("Returns are disabled for this POS Profile");
         return;
       }
 
@@ -990,13 +999,13 @@ const getStatusBadge = (status: string) => {
             <div className="flex items-center justify-between">
               <h1 className="text-lg font-bold text-gray-900 dark:text-white">Invoice History</h1>
               <div className="flex items-center space-x-2">
-                                  <button
+                {canProcessReturns && <button
                     onClick={handleMultiReturnClick}
                     className="flex items-center space-x-2 px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
                   >
                   <Users className="w-4 h-4" />
                   <span>Multi Return</span>
-                </button>
+                </button>}
                 <button
                   onClick={handleExportInvoices}
                   className="flex items-center space-x-2 px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm"
@@ -1161,13 +1170,13 @@ const getStatusBadge = (status: string) => {
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Invoice History</h1>
               </div>
               <div className="flex items-center space-x-3">
-                <button
+                {canProcessReturns && <button
                   onClick={handleMultiReturnClick}
                   className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
                 >
                   <FileMinus className="w-4 h-4" />
                   <span>Multi-Invoice Return</span>
-                </button>
+                </button>}
                 <button
                   onClick={handleExportInvoices}
                   className="flex items-center space-x-2 px-4 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors"

@@ -195,6 +195,13 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     return cashMethodsWithAmount.length > 0;
   })();
 
+  const toggleCreditSale = () => {
+    setIsCreditSale((prev) => {
+      if (!prev) setPaymentAmounts({});
+      return !prev;
+    });
+  };
+
   const currentDate = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -779,7 +786,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   }, [isOpen, defaultTax, selectedSalesTaxCharges]);
 
   useEffect(() => {
-    if (isOpen && modes.length > 0) {
+    if (isOpen && modes.length > 0 && !isCreditSale) {
       const defaultMode = modes.find((mode) => mode.default === 1);
       if (defaultMode && Object.keys(paymentAmounts).length === 0) {
         const defaultAmount = parseFloat(calculations.grandTotal.toFixed(2));
@@ -787,7 +794,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         setPaymentAmounts({ [defaultMode.mode_of_payment]: defaultAmount });
       }
     }
-  }, [isOpen, modes, calculations.grandTotal, isB2B, isB2C, paymentAmounts]);
+  }, [isOpen, modes, calculations.grandTotal, isB2B, isB2C, paymentAmounts, isCreditSale]);
 
   useEffect(() => {
     if (modes.length > 0 && Object.keys(paymentAmounts).length > 0) {
@@ -1006,7 +1013,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                 </div>
                 {allowPartialPayments && (
                   <div className="space-y-3 pt-2">
-                    <button type="button" onClick={() => setIsCreditSale(!isCreditSale)} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
+                    <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
                       {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
                     </button>
                     {isCreditSale && (
@@ -1235,7 +1242,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
                 {allowPartialPayments && (
                   <div className="space-y-3">
-                    <button type="button" onClick={() => setIsCreditSale(!isCreditSale)} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
+                    <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
                       {isCreditSale ? "Credit Sale Enabled" : "Is Credit Sale"}
                     </button>
                     {isCreditSale && (

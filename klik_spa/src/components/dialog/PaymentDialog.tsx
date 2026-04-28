@@ -611,14 +611,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       setInvoiceData(response.invoice);
       toast.success(enableBackgroundSubmission ? "Invoice queued for background submission!" : "Invoice submitted successfully!");
 
-      if (!rememberSalesperson) {
-        try {
-          await clearActiveSalesperson(true);
-        } catch (salespersonClearError) {
-          console.error("Failed to clear salesperson session after submit:", salespersonClearError);
-        }
-      }
-
       const originalDraftInvoiceId = getOriginalDraftInvoiceId();
       if (originalDraftInvoiceId) {
         try {
@@ -687,13 +679,27 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   };
 
   const handleViewInvoice = (invoice: any) => {
-    clearOrderState();
-    navigate(`/invoice/${invoice.name}`);
+    void finalizeCompletedOrderState(() => {
+      navigate(`/invoice/${invoice.name}`);
+    });
   };
 
   const clearOrderState = () => {
     clearDraftInvoiceCache();
     clearCart();
+  };
+
+  const finalizeCompletedOrderState = async (afterClear?: () => void) => {
+    if (invoiceSubmitted && !rememberSalesperson) {
+      try {
+        await clearActiveSalesperson(true);
+      } catch (salespersonClearError) {
+        console.error("Failed to clear salesperson session after completion:", salespersonClearError);
+      }
+    }
+
+    clearOrderState();
+    afterClear?.();
   };
 
   const getActionButtonText = () => {
@@ -951,11 +957,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                       <span className="text-sm">Printing...</span>
                     </div>
                   )}
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" onClick={() => { handlePrintInvoice(invoiceData, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting) }); clearOrderState(); }}>
+                  <button className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" onClick={() => { handlePrintInvoice(invoiceData, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting) }); void finalizeCompletedOrderState(); }}>
                     <Printer size={18} />
                     <span>Print</span>
                   </button>
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors" onClick={() => { clearOrderState(); window.open(`mailto:${selectedCustomer?.email}?subject=Your%20Invoice&body=Dear%20${selectedCustomer?.name},%0A%0AHere%20is%20your%20invoice%20total:%20${formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}%0A%0AThank%20you.`); }}>
+                  <button className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors" onClick={() => { void finalizeCompletedOrderState(() => { window.open(`mailto:${selectedCustomer?.email}?subject=Your%20Invoice&body=Dear%20${selectedCustomer?.name},%0A%0AHere%20is%20your%20invoice%20total:%20${formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}%0A%0AThank%20you.`); }); }}>
                     <MailPlus size={18} />
                     <span>Email</span>
                   </button>
@@ -981,7 +987,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   </div>
                 )}
                 <div className="pt-4">
-                  <button onClick={() => { clearOrderState(); onClose(true); }} className="w-full py-3 bg-beveren-600 text-white rounded-lg font-medium hover:bg-beveren-700 transition-colors">
+                  <button onClick={() => { void finalizeCompletedOrderState(() => onClose(true)); }} className="w-full py-3 bg-beveren-600 text-white rounded-lg font-medium hover:bg-beveren-700 transition-colors">
                     Start New Order
                   </button>
                 </div>
@@ -1187,8 +1193,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           isHoldingOrder={isHoldingOrder}
           onClose={onClose}
           handleViewInvoice={handleViewInvoice}
-          clearOrderState={clearOrderState}
-          navigate={navigate}
+          finalizeCompletedOrderState={(afterClear) => {
+            void finalizeCompletedOrderState(afterClear);
+          }}
           posDetails={posDetails}
         />
 
@@ -1367,7 +1374,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   onCompletePayment={handleCompletePayment}
                   onHoldOrder={handleHoldOrder}
                   onEditOrder={handleEditOrder}
-                  onNewOrder={() => { clearOrderState(); onClose(true); }}
+                  onNewOrder={() => { void finalizeCompletedOrderState(() => onClose(true)); }}
                   isB2B={isB2B}
                   allow_holding_invoices={allow_holding_invoices}
                 />

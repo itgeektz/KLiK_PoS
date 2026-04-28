@@ -1932,10 +1932,21 @@ def _add_payment_entries(doc, mode_of_payment):
 		return
 
 	for payment in mode_of_payment:
-		doc.append(
-			"payments",
-			{"mode_of_payment": payment["method"], "amount": payment["amount"]},
-		)
+		payment_row = {
+			"mode_of_payment": payment.get("method"),
+			"amount": payment.get("amount"),
+		}
+
+		if payment.get("reference_no"):
+			payment_row["reference_no"] = payment.get("reference_no")
+		if payment.get("phone_number"):
+			payment_row["phone_number"] = payment.get("phone_number")
+		if payment.get("type"):
+			payment_row["type"] = payment.get("type")
+		if payment.get("custom_reference_text"):
+			payment_row["custom_reference_text"] = payment.get("custom_reference_text")
+
+		doc.append("payments", payment_row)
 
 
 def _get_default_payment_mode():
@@ -3145,7 +3156,7 @@ def delete_draft_invoice(invoice_id):
 
 
 @frappe.whitelist()
-def submit_draft_invoice(invoice_id):
+def submit_draft_invoice(invoice_id, data=None):
 	"""
 	Submit a draft sales invoice directly without payment dialog.
 	This converts a draft invoice to submitted status.
@@ -3158,6 +3169,32 @@ def submit_draft_invoice(invoice_id):
 				"success": False,
 				"error": f"Cannot submit invoice {invoice_id}. Only Draft invoices can be submitted. Current status: {invoice_doc.status}",
 			}
+
+		if data:
+			(
+				_customer,
+				_items,
+				_amount_paid,
+				_sales_and_tax_charges,
+				mode_of_payment,
+				_business_type,
+				_roundoff_amount,
+				_delivery_personnel,
+				_is_credit_sale,
+				_allow_partial_payment,
+				_due_date,
+				_salesperson,
+				tax_id,
+				_enable_background_submission,
+			) = parse_invoice_data(data)
+
+			invoice_doc.set("payments", [])
+			_add_payment_entries(invoice_doc, mode_of_payment)
+
+			if tax_id:
+				invoice_doc.tax_id = tax_id
+
+			invoice_doc.save(ignore_permissions=True)
 
 		validate_required_salesperson(invoice_doc)
 

@@ -11,8 +11,7 @@ interface PaymentHeaderProps {
   isHoldingOrder: boolean;
   onClose: (completed?: boolean) => void;
   handleViewInvoice: (invoice: any) => void;
-  clearOrderState: () => void;
-  navigate: (path: string) => void;
+  finalizeCompletedOrderState: (afterClear?: () => void) => void;
   posDetails: any;
 }
 
@@ -26,8 +25,7 @@ export default function PaymentHeader({
   isHoldingOrder,
   onClose,
   handleViewInvoice,
-  clearOrderState,
-  navigate,
+  finalizeCompletedOrderState,
   posDetails,
 }: PaymentHeaderProps) {
   if (invoiceSubmitted) {
@@ -46,8 +44,7 @@ export default function PaymentHeader({
             title="Print"
             onClick={() => {
               handlePrintInvoice(invoiceData, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting) });
-              clearOrderState();
-              navigate("/");
+              finalizeCompletedOrderState();
             }}
           >
             <Printer size={20} />

@@ -8,15 +8,15 @@ def _get_active_salespeople(pos_profile=None):
 
     SalesPerson = Table("tabSales Person")
     Auth = Table("__Auth")
-    SalesPersonPOSProfile = Table("tabSales Person POS Profile")
+    POSProfileSalesPerson = Table("tabPOS Profile Sales Person")
     POSProfile = Table("tabPOS Profile")
 
     query = (
         frappe.qb.from_(SalesPerson)
-        .join(SalesPersonPOSProfile)
-        .on(SalesPersonPOSProfile.parent == SalesPerson.name)
+        .join(POSProfileSalesPerson)
+        .on(POSProfileSalesPerson.sales_person == SalesPerson.name)
         .join(POSProfile)
-        .on(POSProfile.name == SalesPersonPOSProfile.pos_profile)
+        .on(POSProfile.name == POSProfileSalesPerson.parent)
         .left_join(Auth)
         .on(
             (Auth.name == SalesPerson.name)
@@ -27,16 +27,16 @@ def _get_active_salespeople(pos_profile=None):
             SalesPerson.name,
             SalesPerson.sales_person_name,
             Auth.name.as_("has_pin_auth"),
-            SalesPersonPOSProfile.pos_profile,
         )
         .where(SalesPerson.enabled == 1)
+        .where(POSProfileSalesPerson.enabled == 1)
         .where(SalesPerson.name != "Sales Team")
         .where(POSProfile.disabled == 0)
         .orderby(SalesPerson.sales_person_name)
         .distinct()
     )
 
-    query = query.where(SalesPersonPOSProfile.pos_profile == pos_profile)
+    query = query.where(POSProfile.name == pos_profile)
 
     rows = query.run(as_dict=True)
 
@@ -45,7 +45,7 @@ def _get_active_salespeople(pos_profile=None):
             "salesperson": row.name,
             "salesperson_name": row.sales_person_name,
             "has_pin": bool(row.has_pin_auth),
-            "pos_profile": row.pos_profile,
+            "pos_profile": pos_profile,
         }
         for row in rows
     ]
@@ -57,8 +57,8 @@ def _is_salesperson_allowed_for_profile(salesperson, pos_profile):
 
     return bool(
         frappe.db.exists(
-            "Sales Person POS Profile",
-            {"parent": salesperson, "pos_profile": pos_profile},
+            "POS Profile Sales Person",
+            {"parent": pos_profile, "sales_person": salesperson},
         )
     )
 
@@ -75,7 +75,9 @@ def list_salespeople(pos_profile=None):
         frappe.log_error(frappe.get_traceback(), _("List Salespeople Error"))
         return {
             "success": False,
-            "message": _("An error occurred while loading salespeople. Please try again."),
+            "message": _(
+                "An error occurred while loading salespeople. Please try again."
+            ),
         }
 
 
@@ -88,7 +90,9 @@ def verify_pin(pin, device_id, salesperson=None, pos_profile=None):
         resolved_pos_profile = pos_profile
         sales_persons = _get_active_salespeople(pos_profile=resolved_pos_profile)
         if salesperson:
-            sales_persons = [sp for sp in sales_persons if sp.get("salesperson") == salesperson]
+            sales_persons = [
+                sp for sp in sales_persons if sp.get("salesperson") == salesperson
+            ]
         if not sales_persons:
             return {"success": False, "message": _("No active sales persons found")}
 

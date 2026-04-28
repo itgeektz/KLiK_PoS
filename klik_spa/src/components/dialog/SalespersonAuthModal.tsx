@@ -144,19 +144,30 @@ export default function SalespersonAuthModal({
                 salespeople.map((entry) => {
                   const isSelected = entry.salesperson === selectedSalesperson;
                   const isActive = activeSalesperson?.name === entry.salesperson;
+                  const isSelectable = entry.has_pin;
                   return (
                     <button
                       key={entry.salesperson}
                       type="button"
-                      onClick={() => setSelectedSalesperson(entry.salesperson)}
+                      onClick={() => {
+                        if (!isSelectable) return;
+                        setSelectedSalesperson(entry.salesperson);
+                      }}
+                      disabled={!isSelectable}
                       className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${
                         isSelected
                           ? "border-beveren-500 bg-beveren-50 text-beveren-900 dark:bg-beveren-950/30"
-                          : "border-gray-200 bg-white text-gray-800 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+                          : isSelectable
+                            ? "border-gray-200 bg-white text-gray-800 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+                            : "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-950/40 dark:text-gray-500"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-beveren-600 text-sm font-semibold text-white">
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${
+                          isSelectable
+                            ? "bg-beveren-600 text-white"
+                            : "bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+                        }`}>
                           {entry.salesperson_name.slice(0, 2).toUpperCase()}
                         </div>
                         <div>
@@ -165,9 +176,32 @@ export default function SalespersonAuthModal({
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                          {entry.has_pin ? "PIN set" : "No PIN"}
-                        </div>
+                        {entry.has_pin && isSelected ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedSalesperson(entry.salesperson);
+                              void setRememberLocked(!rememberLocked);
+                            }}
+                            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                              rememberLocked
+                                ? "bg-beveren-600 text-white hover:bg-beveren-700"
+                                : "bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-800"
+                            }`}
+                          >
+                            {rememberLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                            <span>{rememberLocked ? "Locked" : "Unlocked"}</span>
+                          </button>
+                        ) : entry.has_pin ? (
+                          <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                            PIN set
+                          </div>
+                        ) : (
+                          <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                            PIN not set
+                          </div>
+                        )}
                         {isActive ? (
                           <div className="mt-1 text-xs font-semibold text-emerald-600">Active</div>
                         ) : null}
@@ -180,46 +214,33 @@ export default function SalespersonAuthModal({
           </div>
 
           <div className="rounded-2xl bg-gray-50 p-5 dark:bg-gray-950/40">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Device lock</p>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {rememberLocked
-                    ? "This salesperson will auto-restore on this device."
-                    : "Salesperson stays active only for this session."}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void setRememberLocked(!rememberLocked)}
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
-                  rememberLocked
-                    ? "bg-beveren-600 text-white hover:bg-beveren-700"
-                    : "bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-800"
-                }`}
-              >
-                {rememberLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
-                <span>{rememberLocked ? "Locked" : "Unlocked"}</span>
-              </button>
-            </div>
-
             <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                  <UserRound className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                    Selected salesperson
-                  </p>
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {selectedSalespersonDetails?.salesperson_name || "Choose a salesperson"}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {selectedSalespersonDetails?.salesperson || "PIN verification is scoped to the selected salesperson."}
-                  </p>
+              <div className="flex items-start gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                    <UserRound className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      Selected salesperson
+                    </p>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {selectedSalespersonDetails?.salesperson_name || "Choose a salesperson"}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {selectedSalespersonDetails?.salesperson || "PIN verification is scoped to the selected salesperson."}
+                    </p>
+                  </div>
                 </div>
               </div>
+
+              <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                {selectedSalespersonDetails?.has_pin
+                  ? rememberLocked
+                    ? "This salesperson will auto-restore on this device."
+                    : "Salesperson stays active only for this session."
+                  : "This salesperson needs a PIN before device lock can be used."}
+              </p>
 
               <div className="mt-5 space-y-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
+import type { MenuItem } from "../../types";
 import { useProduct } from "../providers/ProductProvider";
 import ProductCard from "./ProductCard";
 import ProductLineView from "./ProductLineView";
@@ -34,7 +35,7 @@ export default function ProductGrid({
   const { posDetails } = usePOSProfileStore();
   const { activeSalesperson, ensureInitialized, isRestoring } = useSalespersonStore();
   const [showSalespersonModal, setShowSalespersonModal] = useState(false);
-  const [pendingCartItem, setPendingCartItem] = useState<any | null>(null);
+  const [pendingCartItem, setPendingCartItem] = useState<MenuItem | null>(null);
 
   const defaultView = posDetails?.custom_default_view || "Grid View";
   const viewMode = propViewMode || (defaultView === "List View" ? "list" : "grid");
@@ -64,25 +65,30 @@ export default function ProductGrid({
     setPendingCartItem(null);
   }, [isSalespersonLockActive]);
 
-  const addItemToCart = useCallback(async (item: any) => {
+  const addItemToCart = useCallback(async (item: MenuItem) => {
     await addToCart({
       ...item,
       item_code: item.id,
     });
   }, [addToCart]);
 
-  const handleAddToCart = useCallback(async (item: any) => {
+  const handleAddToCart = useCallback(async (item: MenuItem) => {
     if (item.available <= 0) return;
     if (scannerOnly) return;
 
     if (requiresSalespersonPin) {
       await ensureInitialized();
 
-      if (isRestoring) {
+      const {
+        activeSalesperson: currentSalesperson,
+        isRestoring: isCurrentlyRestoring,
+      } = useSalespersonStore.getState();
+
+      if (isCurrentlyRestoring) {
         return;
       }
 
-      if (!activeSalesperson) {
+      if (!currentSalesperson) {
         setPendingCartItem(item);
         setShowSalespersonModal(true);
         return;
@@ -123,14 +129,15 @@ export default function ProductGrid({
     };
 
     const observer = new IntersectionObserver(handleObserver, option);
+    const currentLoadMoreRef = loadMoreRef.current;
 
-    if (loadMoreRef.current) {
-      observer.observe(loadMoreRef.current);
+    if (currentLoadMoreRef) {
+      observer.observe(currentLoadMoreRef);
     }
 
     return () => {
-      if (loadMoreRef.current) {
-        observer.unobserve(loadMoreRef.current);
+      if (currentLoadMoreRef) {
+        observer.unobserve(currentLoadMoreRef);
       }
     };
   }, [handleObserver]);

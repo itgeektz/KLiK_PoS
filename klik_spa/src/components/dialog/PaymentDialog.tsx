@@ -487,7 +487,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         account_reference: accountReference,
         reference_doctype: "Sales Invoice",
         reference_name: draftInvoiceName,
-        currency: "KES",
+        currency: posDetails?.currency || posDetails?.company?.default_currency,
         prevent_duplicates: 1,
       });
 

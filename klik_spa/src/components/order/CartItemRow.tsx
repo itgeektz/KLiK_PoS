@@ -402,13 +402,16 @@ export const CartItemRow = ({
           )}
 
           <div className="flex-1 min-w-0 px-3">
-            <h4
-              className={`font-semibold text-gray-900 dark:text-white ${
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              title="Show/Hide Details"
+              className={`w-full text-left font-semibold text-gray-900 dark:text-white cursor-pointer ${
                 isMobile ? "text-base" : "text-sm"
               } truncate`}
             >
               {item.name}
-            </h4>
+            </button>
             <p
               className={`text-gray-500 dark:text-gray-400 capitalize font-medium ${
                 isMobile ? "text-sm" : "text-xs"

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import {
@@ -29,9 +29,11 @@ import {
 
 
 import PaymentDialog from "../components/dialog/PaymentDialog";
+import SalespersonAuthModal from "../components/dialog/SalespersonAuthModal";
 import { useInvoiceDetails } from "../hooks/useInvoiceDetails";
 import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
 import { usePOSProfileStore } from "../stores/posProfileStore";
+import { useSalespersonStore } from "../stores/salespersonStore";
 import { deleteDraftInvoice } from "../services/salesInvoice";
 import { toast } from "react-toastify";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
@@ -69,6 +71,36 @@ export default function InvoiceViewPage() {
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false)
+  const pendingSalespersonActionRef = useRef<null | (() => void)>(null)
+
+  const { activeSalesperson, ensureInitialized } = useSalespersonStore()
+  const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required
+
+  useEffect(() => {
+    if (requiresSalespersonPin) {
+      void ensureInitialized()
+    }
+  }, [requiresSalespersonPin, ensureInitialized])
+
+  const runWithSalespersonGate = (action: () => void | Promise<void>) => {
+    if (!requiresSalespersonPin || activeSalesperson) {
+      void action()
+      return
+    }
+
+    pendingSalespersonActionRef.current = () => {
+      void action()
+    }
+    setShowSalespersonAuthModal(true)
+  }
+
+  const handleSalespersonAuthenticated = () => {
+    const pendingAction = pendingSalespersonActionRef.current
+    pendingSalespersonActionRef.current = null
+    setShowSalespersonAuthModal(false)
+    if (pendingAction) pendingAction()
+  }
 
 
   const handleBackClick = () => {
@@ -77,6 +109,11 @@ export default function InvoiceViewPage() {
 
   // Delete invoice handlers
   const handleDeleteClick = () => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(handleDeleteClick)
+      return
+    }
+
     if (!invoice) return;
     console.log("Invoice object in detail page:", invoice);
     if (invoice.status !== "Pending") {
@@ -87,6 +124,11 @@ export default function InvoiceViewPage() {
   };
 
   const handleDeleteConfirm = async () => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(handleDeleteConfirm)
+      return
+    }
+
     if (!invoice) return;
 
     try {
@@ -219,6 +261,22 @@ export default function InvoiceViewPage() {
     toast.success(`${returnInvoices.length} return invoices created successfully`);
     navigate('/invoice');
   };
+
+  const handleOpenSingleReturn = () => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(handleOpenSingleReturn)
+      return
+    }
+    setShowSingleReturn(true)
+  }
+
+  const handleOpenMultiReturn = () => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(handleOpenMultiReturn)
+      return
+    }
+    setShowMultiReturn(true)
+  }
 
   // Helper function to check if invoice has items that can still be returned
   const hasReturnableItems = () => {
@@ -953,6 +1011,18 @@ export default function InvoiceViewPage() {
         confirmText="Delete"
         cancelText="Cancel"
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+      />
+
+      <SalespersonAuthModal
+        isOpen={showSalespersonAuthModal}
+        onClose={() => {
+          setShowSalespersonAuthModal(false)
+          pendingSalespersonActionRef.current = null
+        }}
+        onAuthenticated={handleSalespersonAuthenticated}
+        allowDismiss
+        title="Verify salesperson"
+        description="Verify the salesperson before continuing this invoice action."
       />
 
       </div>

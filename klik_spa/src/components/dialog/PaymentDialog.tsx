@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Calculator, ChevronDown, Eye, Loader2, MailPlus, MessageCirclePlus, MessageSquarePlus, Printer } from "lucide-react";
@@ -8,37 +8,76 @@ import { useCartStore } from "../../stores/cartStore";
 import { usePaymentModes } from "../../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../../hooks/useSalesTaxCharges";
 import { useDeliveryPersonnel } from "../../hooks/useDeliveryPersonnel";
-import { createSalesInvoice, validateCheckoutInvoice } from "../../services/salesInvoice";
+import {
+  createDraftSalesInvoice,
+  createSalesInvoice,
+  submitDraftInvoice,
+  validateCheckoutInvoice,
+} from "../../services/salesInvoice";
 import { clearDraftInvoiceCache, getOriginalDraftInvoiceId } from "../../utils/draftInvoiceCache";
 import { formatCurrencyWithSymbol, getCurrencySymbol } from "../../utils/currency";
 import { calculateRemainingAmount, calculateTotalPayments, roundCurrency, subtractCurrency } from "../../utils/currencyMath";
 import { extractErrorFromException } from "../../utils/errorExtraction";
 import { fetchWhatsAppTemplates, getDefaultWhatsAppTemplate, processTemplate, getDefaultMessageTemplate } from "../../services/whatsappTemplateService";
 import { fetchEmailTemplates, getDefaultEmailTemplate, processEmailTemplate, getDefaultEmailMessageTemplate } from "../../services/emailTemplateService";
-import { verifyPin, getRememberedSalesperson, clearRememberedSalesperson } from "../../services/salesPerson";
 import { getIconAndColor } from "./paymentIcons";
 import PaymentHeader from "./PaymentHeader";
 import PaymentMethods from "./PaymentMethods";
 import SalesPersonSection from "./SalesPersonSection";
+import SalespersonAuthModal from "./SalespersonAuthModal";
 import TaxSection from "./TaxSection";
 import TotalsSection from "./TotalsSection";
 import ActionButtons from "./ActionButtons";
 import InvoicePreview from "./InvoicePreview";
 import SharingInterface from "./SharingInterface";
 import DeliveryPersonnelModal from "./DeliveryPersonnelModal";
+import MpesaOptionsModal from "./MpesaOptionsModal";
 import type { PaymentDialogProps, PaymentAmount, Calculations, BackendTaxPreview } from "./types";
 import DisplayPrintPreview from "../../utils/invoicePrint";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { handlePrintInvoice } from "../../utils/printHandler";
+import { useSalespersonStore } from "../../stores/salespersonStore";
+import {
+  fetchKlikPosStkStatus,
+  fetchMpesaRegisterPayments,
+  initiateKlikPosStkPush,
+  processKlikPosMpesaPayments,
+  type MpesaRegisterPayment,
+} from "../../services/mpesa";
 
-const getDeviceId = () => {
-  let device_id = localStorage.getItem("pos_device_id");
-  if (!device_id) {
-    device_id = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem("pos_device_id", device_id);
-  }
-  return device_id;
-};
+interface MpesaFlowState {
+  modeOfPayment: string;
+  amount: number;
+  phoneNumber: string;
+  accountReference: string;
+  source: "stk" | "c2b";
+  draftInvoiceName?: string;
+  requestName?: string;
+  checkoutRequestId?: string;
+  transactionId?: string;
+  status: "idle" | "in_progress" | "completed" | "failed";
+  message?: string;
+  c2bPayments?: Array<{ name: string; amount: number }>;
+}
+
+interface MpesaRealtimeEvent {
+  request_name?: string;
+  status?: string;
+  transaction_id?: string;
+}
+
+interface FrappeRealtimeClient {
+  on?: (event: string, handler: (data: MpesaRealtimeEvent) => void) => void;
+  off?: (event: string, handler: (data: MpesaRealtimeEvent) => void) => void;
+}
+
+function normalizeMpesaStatus(status?: string) {
+  const normalized = (status || "").toLowerCase();
+  if (["completed", "success", "successful"].includes(normalized)) return "completed" as const;
+  if (["failed", "cancelled", "timed out", "timeout"].includes(normalized)) return "failed" as const;
+  if (normalized === "idle") return "idle" as const;
+  return "in_progress" as const;
+}
 
 export default function PaymentDialog(props: PaymentDialogProps) {
   const {
@@ -88,34 +127,53 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [isLoadingEmailTemplates, setIsLoadingEmailTemplates] = useState(false);
   const [isEditingEmail, setIsEditingEmail] = useState(false);
   const [showDeliveryPersonnelModal, setShowDeliveryPersonnelModal] = useState(false);
+  const [showSalespersonModal, setShowSalespersonModal] = useState(false);
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
-  const [currentSalesperson, setCurrentSalesperson] = useState<{ name: string; salesperson_name: string } | null>(null);
-  const [salespersonPin, setSalespersonPin] = useState("");
-  const [salespersonPinError, setSalespersonPinError] = useState("");
-  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
-  const [rememberSalesperson, setRememberSalesperson] = useState(() => {
-    const pref = localStorage.getItem("pos_remember_salesperson");
-    return pref === null ? true : pref === "true";
-  });
   const [taxPin, setTaxPin] = useState("");
   const [backendTaxPreview, setBackendTaxPreview] = useState<BackendTaxPreview | null>(null);
   const [isTaxPreviewLoading, setIsTaxPreviewLoading] = useState(false);
   const [taxPreviewError, setTaxPreviewError] = useState<string | null>(null);
+  const [mpesaFlow, setMpesaFlow] = useState<MpesaFlowState | null>(null);
+  const [mpesaDraftInvoiceName, setMpesaDraftInvoiceName] = useState<string | null>(null);
+  const [showMpesaOptionsModal, setShowMpesaOptionsModal] = useState(false);
+  const [mpesaPhoneNumber, setMpesaPhoneNumber] = useState(selectedCustomer?.phone || "");
+  const [mpesaSearchTerm, setMpesaSearchTerm] = useState("");
+  const [mpesaRegisterPayments, setMpesaRegisterPayments] = useState<MpesaRegisterPayment[]>([]);
+  const [mpesaRegisterCount, setMpesaRegisterCount] = useState(0);
+  const [selectedMpesaPayments, setSelectedMpesaPayments] = useState<MpesaRegisterPayment[]>([]);
+  const [mergeMpesaPayments, setMergeMpesaPayments] = useState(true);
+  const [isLoadingMpesaRegisterPayments, setIsLoadingMpesaRegisterPayments] = useState(false);
   const backendTaxPreviewRef = useRef<BackendTaxPreview | null>(null);
   const taxPreviewRequestIdRef = useRef(0);
 
-  const { posDetails, loading: posLoading } = usePOSProfileStore();
+  const { posDetails } = usePOSProfileStore();
+  const posLoading = false;
+  const {
+    activeSalesperson: currentSalesperson,
+    rememberLocked: rememberSalesperson,
+    ensureInitialized,
+    isRestoring: isSalespersonRestoring,
+    isVerifying: isVerifyingPin,
+    clearActiveSalesperson,
+  } = useSalespersonStore();
   const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === "string" ? posDetails.name : "");
   const { salesTaxCharges, defaultTax, isLoading: salesTaxLoading } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
   const navigate = useNavigate();
   const { clearCart } = useCartStore();
+  const posProfileName = typeof posDetails?.name === "string" ? posDetails.name : "";
+  const posCompanyName =
+    typeof posDetails?.company === "string"
+      ? posDetails.company
+      : typeof posDetails?.company?.name === "string"
+        ? posDetails.company.name
+        : "";
 
   const isB2B = posDetails?.business_type === "B2B";
   const isB2C = posDetails?.business_type === "B2C";
   const print_receipt_on_order_complete = posDetails?.print_receipt_on_order_complete;
   const deliveryRequiredValue = posDetails?.custom_delivery_required;
-  const isDeliveryRequired = deliveryRequiredValue === 1 || deliveryRequiredValue === true || deliveryRequiredValue === "1";
+  const isDeliveryRequired = deliveryRequiredValue === 1;
   const allowPartialPayments = Boolean(posDetails?.allow_partial_payment);
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const allow_holding_invoices = Boolean(posDetails?.allow_holding_invoices);
@@ -124,12 +182,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     posDetails?.custom_auto_allocate_remaining_payment === "1" ||
     posDetails?.custom_auto_allocate_remaining_payment === true;
 
-  const [enableBackgroundSubmission, setEnableBackgroundSubmission] = useState(
-    posDetails?.enable_background_invoice_submission
+  const [enableBackgroundSubmission, setEnableBackgroundSubmission] = useState<boolean>(
+    Boolean(posDetails?.enable_background_invoice_submission)
   );
 
-  useMemo(() => {
-    setEnableBackgroundSubmission(posDetails?.enable_background_invoice_submission);
+  useEffect(() => {
+    setEnableBackgroundSubmission(Boolean(posDetails?.enable_background_invoice_submission));
   }, [posDetails?.enable_background_invoice_submission]);
 
   const displayCurrencySymbol = useMemo(() => {
@@ -250,6 +308,311 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
     return sortedModes.map((mode) => mode.mode_of_payment);
   }, [modes]);
+
+  const getActiveMpesaPayment = useCallback(() => {
+    const entries = Object.entries(paymentAmounts).filter(([, amount]) => (amount || 0) > 0);
+    for (const [method, amount] of entries) {
+      const mode = modes.find((m) => m.mode_of_payment === method);
+      const isMpesaMode =
+        (mode?.type || "").toLowerCase() === "phone" || /mpesa/i.test(method || "");
+      if (isMpesaMode) {
+        return {
+          method,
+          amount: Number(amount || 0),
+        };
+      }
+    }
+    return null;
+  }, [modes, paymentAmounts]);
+
+  const refreshMpesaStatus = useCallback(async (requestName?: string) => {
+    const name = requestName || mpesaFlow?.requestName;
+    if (!name) return;
+    try {
+      const statusResponse = await fetchKlikPosStkStatus(name);
+      const normalizedStatus = normalizeMpesaStatus(statusResponse.status);
+      setMpesaFlow((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          status: normalizedStatus,
+          transactionId: statusResponse.transaction_id || prev.transactionId,
+          checkoutRequestId: statusResponse.checkout_request_id || prev.checkoutRequestId,
+          message: statusResponse.result_desc || prev.message,
+        };
+      });
+    } catch (error) {
+      console.error("Failed to refresh M-Pesa status", error);
+    }
+  }, [mpesaFlow?.requestName]);
+
+  const selectedMpesaTotal = useMemo(
+    () => selectedMpesaPayments.reduce((sum, payment) => sum + Number(payment.transamount || 0), 0),
+    [selectedMpesaPayments]
+  );
+
+  const buildPaymentData = (
+    deliveryPersonnel: string | null = null,
+    options?: { excludeActiveMpesa?: boolean }
+  ) => {
+    const netAmountToSend = isB2B ? totalPaidAmount : calculations.grandTotal;
+    const activeMpesaPayment = options?.excludeActiveMpesa ? getActiveMpesaPayment() : null;
+    const adjustedPaymentMethods = isB2B
+      ? Object.entries(paymentAmounts).filter(([, amount]) => amount > 0)
+      : (() => {
+          const validPayments = Object.entries(paymentAmounts).filter(([, amount]) => amount > 0);
+          if (validPayments.length === 0) return [];
+          const totalPaymentAmount = validPayments.reduce((sum, [, amount]) => sum + amount, 0);
+          if (totalPaymentAmount > calculations.grandTotal) {
+            const excess = totalPaymentAmount - calculations.grandTotal;
+            const lastPaymentIndex = validPayments.length - 1;
+            const lastPayment = validPayments[lastPaymentIndex];
+            if (!lastPayment) return [];
+            const [, lastAmount] = lastPayment;
+            const adjustedLastAmount = parseFloat(Math.max(0, lastAmount - excess).toFixed(2));
+            return validPayments.map(([method, amount], index) => {
+              if (index === lastPaymentIndex) return [method, adjustedLastAmount];
+              return [method, amount];
+            });
+          }
+          return validPayments;
+        })();
+
+    return {
+      items: cartItems.map((item) => {
+        const code = item.item_code || item.id;
+        const discountData = itemDiscounts[code] || itemDiscounts[item.id] || {};
+        return {
+          ...item,
+          id: item.item_code || item.id,
+          item_code: item.item_code || item.id,
+          price: (item as any).discountedPrice || item.price,
+          uom: item.uom || "Nos",
+          discountPercentage: discountData.discountPercentage || 0,
+          discountAmount: discountData.discountAmount || 0,
+          serial_batch_bundle: discountData.serial_batch_bundle || null,
+        };
+      }),
+      customer: selectedCustomer,
+      paymentMethods: (adjustedPaymentMethods ?? []).filter(([method]) => {
+        if (!activeMpesaPayment) return true;
+        return method !== activeMpesaPayment.method;
+      }).map(([method, amount]) => {
+        const paymentLine: Record<string, unknown> = {
+          method,
+          amount: parseFloat((Number(amount) || 0).toFixed(2)),
+        };
+
+        if (
+          mpesaFlow &&
+          mpesaFlow.source === "stk" &&
+          mpesaFlow.modeOfPayment === method &&
+          mpesaFlow.status === "completed" &&
+          mpesaFlow.requestName
+        ) {
+          paymentLine.reference_no = mpesaFlow.transactionId || mpesaFlow.requestName;
+          paymentLine.phone_number = mpesaFlow.phoneNumber;
+          paymentLine.type = "Phone";
+          paymentLine.custom_reference_text = mpesaFlow.requestName;
+        }
+
+        return paymentLine;
+      }),
+      subtotal: calculations.subtotal,
+      SalesTaxCharges: selectedSalesTaxCharges,
+      taxAmount: calculations.taxAmount,
+      taxType: calculations.isInclusive ? "inclusive" : "exclusive",
+      couponDiscount: calculations.couponDiscount,
+      roundOffAmount,
+      grandTotal: calculations.grandTotal,
+      amountPaid: netAmountToSend,
+      outstandingAmount: outstandingAmount,
+      appliedCoupons,
+      businessType: posDetails?.business_type,
+      deliveryPersonnel: deliveryPersonnel || null,
+      isCreditSale,
+      dueDate: isCreditSale ? dueDate : null,
+      is_credit_sale: isCreditSale,
+      due_date: isCreditSale ? dueDate : null,
+      allowPartialPayment: allowPartialPayments,
+      allow_partial_payment: allowPartialPayments,
+      salesperson: currentSalesperson?.name || null,
+      tax_id: taxPin || null,
+    };
+  };
+
+  const ensureMpesaDraftInvoice = async () => {
+    if (mpesaDraftInvoiceName) {
+      return mpesaDraftInvoiceName;
+    }
+
+    const draftResponse = await createDraftSalesInvoice({
+      ...buildPaymentData(selectedDeliveryPersonnel, { excludeActiveMpesa: true }),
+      enable_background_invoice_submission: false,
+    });
+
+    const draftName = draftResponse.invoice_name || draftResponse.invoice?.name;
+    if (!draftName) {
+      throw new Error("Draft invoice was created without a name");
+    }
+
+    setMpesaDraftInvoiceName(draftName);
+    return draftName;
+  };
+
+  const initiateMpesaFlow = async (method: string, amount: number, phoneNumber: string) => {
+    if (!selectedCustomer || !selectedCustomer.name) {
+      toast.error("Kindly select a customer");
+      return;
+    }
+    if (!phoneNumber.trim()) {
+      toast.error("Phone number is required for M-Pesa STK push");
+      return;
+    }
+    if (!posCompanyName) {
+      toast.error("POS company is missing. Unable to initiate M-Pesa STK push.");
+      return;
+    }
+
+    try {
+      setIsProcessingPayment(true);
+      const draftInvoiceName = await ensureMpesaDraftInvoice();
+
+      const accountReference = draftInvoiceName;
+      const response = await initiateKlikPosStkPush({
+        phone_number: phoneNumber,
+        amount,
+        mode_of_payment: method,
+        company: posCompanyName,
+        account_reference: accountReference,
+        reference_doctype: "Sales Invoice",
+        reference_name: draftInvoiceName,
+        currency: "KES",
+        prevent_duplicates: 1,
+      });
+
+      setMpesaFlow({
+        modeOfPayment: method,
+        amount,
+        phoneNumber: phoneNumber,
+        accountReference,
+        source: "stk",
+        draftInvoiceName,
+        requestName: response.request_name,
+        checkoutRequestId: response.checkout_request_id,
+        transactionId: response.transaction_id,
+        status: normalizeMpesaStatus(response.request_status),
+        message: response.duplicate_prevented
+          ? "Using existing pending M-Pesa request"
+          : "STK push sent. Awaiting customer confirmation.",
+      });
+      toast.info("STK push sent. Awaiting customer confirmation.");
+    } catch (error) {
+      toast.error(extractErrorFromException(error, "Failed to initiate M-Pesa STK push"));
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  const handleOpenMpesaOptions = async () => {
+    if (requiresSalespersonPin && !currentSalesperson) {
+      setShowSalespersonModal(true);
+      toast.error("Verify the salesperson before managing M-Pesa payments");
+      return;
+    }
+
+    const activeMpesaPayment = getActiveMpesaPayment();
+    if (!activeMpesaPayment || activeMpesaPayment.amount <= 0) {
+      toast.error("Enter an amount on an M-Pesa payment method before opening M-Pesa options.");
+      return;
+    }
+
+    setMpesaPhoneNumber(selectedCustomer?.phone || mpesaFlow?.phoneNumber || "");
+    setShowMpesaOptionsModal(true);
+  };
+
+  const handleInitiateMpesaPayment = async () => {
+    const activeMpesaPayment = getActiveMpesaPayment();
+    if (!activeMpesaPayment || activeMpesaPayment.amount <= 0) {
+      toast.error("Enter an amount on an M-Pesa payment method before initiating STK push.");
+      return;
+    }
+
+    await initiateMpesaFlow(activeMpesaPayment.method, activeMpesaPayment.amount, mpesaPhoneNumber.trim());
+    setShowMpesaOptionsModal(false);
+  };
+
+  const handleToggleMpesaPayment = (paymentName: string) => {
+    const payment = mpesaRegisterPayments.find((entry) => entry.name === paymentName);
+    if (!payment) return;
+
+    setSelectedMpesaPayments((prev) => {
+      const exists = prev.some((entry) => entry.name === paymentName);
+      if (exists) {
+        return prev.filter((entry) => entry.name !== paymentName);
+      }
+      return [...prev, payment];
+    });
+  };
+
+  const handleReconcileMpesaPayments = async () => {
+    if (!selectedCustomer?.id && !selectedCustomer?.name) {
+      toast.error("Kindly select a customer");
+      return;
+    }
+
+    const activeMpesaPayment = getActiveMpesaPayment();
+    if (!activeMpesaPayment || activeMpesaPayment.amount <= 0) {
+      toast.error("Enter an amount on an M-Pesa payment method before reconciling payments.");
+      return;
+    }
+
+    if (!selectedMpesaPayments.length) {
+      toast.error("Select at least one M-Pesa register payment to reconcile.");
+      return;
+    }
+
+    try {
+      setIsProcessingPayment(true);
+      const draftInvoiceName = await ensureMpesaDraftInvoice();
+      const response = await processKlikPosMpesaPayments({
+        doctype: "Sales Invoice",
+        invoice_name: draftInvoiceName,
+        customer: selectedCustomer.id || selectedCustomer.name,
+        mpesa_payments: selectedMpesaPayments.map((payment) => payment.name).join(","),
+        auto_save: 1,
+        auto_submit: 0,
+        merge_payments: mergeMpesaPayments ? 1 : 0,
+      });
+
+      setPaymentAmounts((prev) => ({
+        ...prev,
+        [activeMpesaPayment.method]: Number(response.total_amount || selectedMpesaTotal),
+      }));
+      setMpesaFlow({
+        modeOfPayment: activeMpesaPayment.method,
+        amount: Number(response.total_amount || selectedMpesaTotal),
+        phoneNumber: "",
+        accountReference: draftInvoiceName,
+        source: "c2b",
+        draftInvoiceName,
+        status: "completed",
+        message: `${selectedMpesaPayments.length} M-Pesa register payment(s) linked to draft invoice ${draftInvoiceName}.`,
+        c2bPayments: selectedMpesaPayments.map((payment) => ({
+          name: payment.name,
+          amount: Number(payment.transamount || 0),
+        })),
+      });
+      setShowMpesaOptionsModal(false);
+      setSelectedMpesaPayments([]);
+      setMpesaSearchTerm("");
+      toast.success("M-Pesa register payments added to draft invoice.");
+    } catch (error) {
+      toast.error(extractErrorFromException(error, "Failed to reconcile M-Pesa payments"));
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
 
   const autoAllocateRemainingToNextMethod = (
     methodId: string,
@@ -504,63 +867,92 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     roundOffAmount,
   ]);
 
-  const handleVerifyPin = async () => {
-    const pin = salespersonPin.trim();
-    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-      setSalespersonPinError("Please enter a valid 4-digit PIN");
-      return;
-    }
-    setIsVerifyingPin(true);
-    setSalespersonPinError("");
-    try {
-      const result = await verifyPin(pin, getDeviceId());
-      if (result?.success) {
-        setCurrentSalesperson({ name: result.salesperson, salesperson_name: result.salesperson_name });
-        setSalespersonPin("");
-        toast.success(`Welcome, ${result.salesperson_name}!`);
-        if (!rememberSalesperson) {
-          try {
-            await clearRememberedSalesperson(getDeviceId());
-          } catch (err) {
-            console.error("Error clearing remembered salesperson:", err);
-          }
-        }
-      } else {
-        setSalespersonPinError(result?.message || "Invalid PIN. Please try again.");
-        setSalespersonPin("");
-      }
-    } catch (err: any) {
-      setSalespersonPinError(err?.message || "An error occurred. Please try again.");
-      setSalespersonPin("");
-    } finally {
-      setIsVerifyingPin(false);
-    }
-  };
+  useEffect(() => {
+    if (!showMpesaOptionsModal || !posCompanyName) return;
 
-  const handleClearSalesperson = async () => {
-    setCurrentSalesperson(null);
-    setSalespersonPin("");
-    setSalespersonPinError("");
-    try {
-      await clearRememberedSalesperson(getDeviceId());
-    } catch (err) {
-      console.error("Error clearing remembered salesperson:", err);
-    }
-  };
+    const activeMpesaPayment = getActiveMpesaPayment();
+    if (!activeMpesaPayment) return;
 
-  const handleRememberSalespersonChange = async (checked: boolean) => {
-    setRememberSalesperson(checked);
-    localStorage.setItem("pos_remember_salesperson", String(checked));
-    if (!checked) {
-      setCurrentSalesperson(null);
-      setSalespersonPin("");
+    let cancelled = false;
+    const loadMpesaRegisterPayments = async () => {
+      setIsLoadingMpesaRegisterPayments(true);
       try {
-        await clearRememberedSalesperson(getDeviceId());
-      } catch (err) {
-        console.error("Error clearing remembered salesperson:", err);
+        const response = await fetchMpesaRegisterPayments({
+          company: posCompanyName,
+          pos_profile: posProfileName || undefined,
+          mode_of_payment: activeMpesaPayment.method,
+          search: mpesaSearchTerm.trim().length >= 3 ? mpesaSearchTerm.trim() : undefined,
+        });
+        if (cancelled) return;
+        setMpesaRegisterCount(Number(response.count || 0));
+        setMpesaRegisterPayments(response.payments || []);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load M-Pesa register payments", error);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingMpesaRegisterPayments(false);
+        }
       }
+    };
+
+    void loadMpesaRegisterPayments();
+    return () => {
+      cancelled = true;
+    };
+  }, [showMpesaOptionsModal, posCompanyName, posProfileName, mpesaSearchTerm, getActiveMpesaPayment]);
+
+  useEffect(() => {
+    if (mpesaFlow?.source !== "stk" || !mpesaFlow?.requestName) return;
+    if (mpesaFlow.status === "completed" || mpesaFlow.status === "failed") return;
+
+    const interval = window.setInterval(() => {
+      void refreshMpesaStatus(mpesaFlow.requestName);
+    }, 5000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [mpesaFlow?.requestName, mpesaFlow?.source, mpesaFlow?.status, refreshMpesaStatus]);
+
+  useEffect(() => {
+    if (mpesaFlow?.source !== "stk" || !mpesaFlow?.requestName) return;
+    const realtime = (window as typeof window & { frappe?: { realtime?: FrappeRealtimeClient } })?.frappe?.realtime;
+    if (!realtime?.on) return;
+
+    const handler = (data: MpesaRealtimeEvent) => {
+      if (!data || data.request_name !== mpesaFlow.requestName) return;
+      const status = normalizeMpesaStatus(data.status);
+      setMpesaFlow((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          status,
+          transactionId: data.transaction_id || prev.transactionId,
+          message: status === "completed" ? "Payment confirmed" : prev.message,
+        };
+      });
+      if (status === "completed") {
+        toast.success("M-Pesa payment confirmed. You can now submit the invoice.");
+      }
+    };
+
+    realtime.on("mpesa_stk_payment_completed", handler);
+    return () => {
+      realtime.off?.("mpesa_stk_payment_completed", handler);
+    };
+  }, [mpesaFlow?.requestName, mpesaFlow?.source]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setMpesaFlow(null);
+      setMpesaDraftInvoiceName(null);
+      setShowMpesaOptionsModal(false);
+      setMpesaSearchTerm("");
+      setSelectedMpesaPayments([]);
     }
-  };
+  }, [isOpen]);
 
   const processPayment = async (deliveryPersonnel: string | null = null) => {
     if (!selectedCustomer || !selectedCustomer.name) {
@@ -599,84 +991,42 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       }
     }
     setIsProcessingPayment(true);
-    const netAmountToSend = isB2B ? totalPaidAmount : calculations.grandTotal;
-    const adjustedPaymentMethods = isB2B
-      ? Object.entries(paymentAmounts).filter(([, amount]) => amount > 0)
-      : (() => {
-          const validPayments = Object.entries(paymentAmounts).filter(([, amount]) => amount > 0);
-          if (validPayments.length === 0) return [];
-          const totalPaymentAmount = validPayments.reduce((sum, [, amount]) => sum + amount, 0);
-          if (totalPaymentAmount > calculations.grandTotal) {
-            const excess = totalPaymentAmount - calculations.grandTotal;
-            const lastPaymentIndex = validPayments.length - 1;
-            const lastPayment = validPayments[lastPaymentIndex];
-            if (!lastPayment) return [];
-            const [, lastAmount] = lastPayment;
-            const adjustedLastAmount = parseFloat(Math.max(0, lastAmount - excess).toFixed(2));
-            return validPayments.map(([method, amount], index) => {
-              if (index === lastPaymentIndex) return [method, adjustedLastAmount];
-              return [method, amount];
-            });
-          }
-          return validPayments;
-        })();
-    const paymentData = {
-      items: cartItems.map((item) => {
-        const code = item.item_code || item.id;
-        const discountData = itemDiscounts[code] || itemDiscounts[item.id] || {};
-        return {
-          ...item,
-          id: item.item_code || item.id,
-          item_code: item.item_code || item.id,
-          price: (item as any).discountedPrice || item.price,
-          uom: item.uom || "Nos",
-          discountPercentage: discountData.discountPercentage || 0,
-          discountAmount: discountData.discountAmount || 0,
-          serial_batch_bundle: discountData.serial_batch_bundle || null,
-        };
-      }),
-      customer: selectedCustomer,
-      paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => ({
-        method,
-        amount: parseFloat((Number(amount) || 0).toFixed(2)),
-      })),
-      subtotal: calculations.subtotal,
-      SalesTaxCharges: selectedSalesTaxCharges,
-      taxAmount: calculations.taxAmount,
-      taxType: calculations.isInclusive ? "inclusive" : "exclusive",
-      couponDiscount: calculations.couponDiscount,
-      roundOffAmount,
-      grandTotal: calculations.grandTotal,
-      amountPaid: netAmountToSend,
-      outstandingAmount: outstandingAmount,
-      appliedCoupons,
-      businessType: posDetails?.business_type,
-      deliveryPersonnel: deliveryPersonnel || null,
-      isCreditSale,
-      dueDate: isCreditSale ? dueDate : null,
-      is_credit_sale: isCreditSale,
-      due_date: isCreditSale ? dueDate : null,
-      allowPartialPayment: allowPartialPayments,
-      allow_partial_payment: allowPartialPayments,
-      salesperson: currentSalesperson?.name || null,
-      tax_id: taxPin || null,
-    };
+    const paymentData = buildPaymentData(deliveryPersonnel);
+    const originalDraftInvoiceId = getOriginalDraftInvoiceId();
     try {
-      const response = await createSalesInvoice({
-        ...paymentData,
-        enable_background_invoice_submission: enableBackgroundSubmission
-      });
+      let response;
+
+      if (mpesaDraftInvoiceName) {
+        response = await submitDraftInvoice(
+          mpesaDraftInvoiceName,
+          mpesaFlow?.source === "c2b" ? undefined : {
+            ...paymentData,
+            enable_background_invoice_submission: enableBackgroundSubmission,
+          }
+        );
+      } else if (originalDraftInvoiceId) {
+        // If editing a held invoice, submit the original draft instead of creating a new one
+        response = await submitDraftInvoice(
+          originalDraftInvoiceId,
+          {
+            ...paymentData,
+            enable_background_invoice_submission: enableBackgroundSubmission,
+          }
+        );
+      } else {
+        response = await createSalesInvoice({
+          ...paymentData,
+          enable_background_invoice_submission: enableBackgroundSubmission,
+        });
+      }
+
       setInvoiceSubmitted(true);
       setSubmittedInvoice(response);
       setInvoiceData(response.invoice);
+      setMpesaFlow(null);
+      setMpesaDraftInvoiceName(null);
       toast.success(enableBackgroundSubmission ? "Invoice queued for background submission!" : "Invoice submitted successfully!");
-      const originalDraftInvoiceId = getOriginalDraftInvoiceId();
-      if (originalDraftInvoiceId) {
-        try {
-        } catch (deleteError) {
-          console.error("Failed to delete original draft invoice:", deleteError);
-        }
-      }
+
       clearDraftInvoiceCache();
     } catch (err: any) {
       const defaultMessage = isB2B ? "Failed to submit invoice" : "Failed to process payment";
@@ -689,15 +1039,38 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
   const handleCompletePayment = async () => {
     if (requiresSalespersonPin && !currentSalesperson) {
-      toast.error("Please verify your salesperson PIN before completing payment");
+      setShowSalespersonModal(true);
+      toast.error("Verify the salesperson before completing payment");
       return;
     }
+
+    const activeMpesaPayment = getActiveMpesaPayment();
+    if (activeMpesaPayment && activeMpesaPayment.amount > 0) {
+      const sameRequestForMethod =
+        mpesaFlow && mpesaFlow.modeOfPayment === activeMpesaPayment.method ? mpesaFlow : null;
+
+      if (sameRequestForMethod?.source === "stk" && sameRequestForMethod.status === "in_progress") {
+        toast.info("M-Pesa payment is still pending. Confirm on phone or click Refresh Status.");
+        return;
+      }
+
+      if (sameRequestForMethod?.source === "stk" && sameRequestForMethod.status !== "completed" && sameRequestForMethod.requestName) {
+        await refreshMpesaStatus(sameRequestForMethod.requestName);
+        return;
+      }
+    }
+
     await processPayment(selectedDeliveryPersonnel);
   };
 
   const handleHoldOrder = async () => {
     if (!selectedCustomer) {
       toast.error("Kindly select a customer");
+      return;
+    }
+    if (requiresSalespersonPin && !currentSalesperson) {
+      setShowSalespersonModal(true);
+      toast.error("Verify the salesperson before holding this order");
       return;
     }
     setIsHoldingOrder(true);
@@ -732,8 +1105,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   };
 
   const handleViewInvoice = (invoice: any) => {
-    clearOrderState();
-    navigate(`/invoice/${invoice.name}`);
+    void finalizeCompletedOrderState(() => {
+      navigate(`/invoice/${invoice.name}`);
+    });
   };
 
   const clearOrderState = () => {
@@ -741,9 +1115,38 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     clearCart();
   };
 
+  const finalizeCompletedOrderState = async (afterClear?: () => void) => {
+    if (invoiceSubmitted && !rememberSalesperson) {
+      try {
+        await clearActiveSalesperson(true);
+      } catch (salespersonClearError) {
+        console.error("Failed to clear salesperson session after completion:", salespersonClearError);
+      }
+    }
+
+    clearOrderState();
+    afterClear?.();
+  };
+
   const getActionButtonText = () => {
     if (isProcessingPayment) return isB2B ? "Submitting Invoice..." : "Processing Payment...";
+    if (mpesaFlow?.source === "stk" && mpesaFlow?.status === "completed") return "Submit Confirmed Payment";
     return "Submit";
+  };
+
+  const getMpesaButtonText = () => {
+    if (isProcessingPayment) return "Processing M-Pesa...";
+    if (mpesaFlow?.source === "stk" && mpesaFlow?.status === "in_progress") return "M-Pesa Pending";
+    if (mpesaFlow?.source === "c2b") return "Review M-Pesa Options";
+    return "M-Pesa Options";
+  };
+
+  const hasActiveMpesaPayment = Boolean(getActiveMpesaPayment());
+
+  const isMpesaButtonDisabled = () => {
+    if (!hasActiveMpesaPayment) return true;
+    if (invoiceSubmitted || isProcessingPayment) return true;
+    return false;
   };
 
   const isActionButtonDisabled = () => {
@@ -808,28 +1211,14 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   };
 
   useEffect(() => {
-    if (!isOpen || !requiresSalespersonPin) return;
-    const pref = localStorage.getItem("pos_remember_salesperson");
-    const shouldRemember = pref === null ? true : pref === "true";
-    if (!shouldRemember || currentSalesperson) return;
-    setIsVerifyingPin(true);
-    (async () => {
-      try {
-        const result = await getRememberedSalesperson(getDeviceId());
-        if (result?.success) {
-          setCurrentSalesperson({ name: result.salesperson, salesperson_name: result.salesperson_name });
-        }
-      } catch (err) {
-        console.error("Error fetching remembered salesperson:", err);
-      } finally {
-        setIsVerifyingPin(false);
-      }
-    })();
-  }, [isOpen, requiresSalespersonPin]);
+    if (isOpen && requiresSalespersonPin) {
+      void ensureInitialized();
+    }
+  }, [isOpen, requiresSalespersonPin, ensureInitialized]);
 
   useEffect(() => {
     if (isOpen && !dueDate) {
-      const today = new Date().toISOString().split("T")[0];
+      const today = new Date().toISOString().split("T")[0] || "";
       setDueDate(today);
     }
   }, [isOpen, dueDate]);
@@ -880,7 +1269,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         setIsAutoPrinting(false);
       }, 500);
     }
-  }, [invoiceSubmitted, invoiceData, print_receipt_on_order_complete]);
+  }, [invoiceSubmitted, invoiceData, print_receipt_on_order_complete, posDetails?.custom_prevent_invoice_reprinting]);
 
   useEffect(() => {
     if (!roundOffEnabled && roundOffAmount !== 0) {
@@ -979,6 +1368,82 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     return person?.delivery_personnel || selectedDeliveryPersonnel;
   };
 
+  const retryMpesaRequest = async () => {
+    const activeMpesaPayment = getActiveMpesaPayment();
+    if (!activeMpesaPayment) {
+      toast.error("No active M-Pesa amount found to retry.");
+      return;
+    }
+    setMpesaFlow((prev) => (prev ? { ...prev, status: "idle", message: undefined } : prev));
+    setShowMpesaOptionsModal(true);
+  };
+
+  const renderMpesaStatusNotice = () => {
+    if (!mpesaFlow) return null;
+
+    const statusText =
+      mpesaFlow.source === "c2b"
+        ? "Register payments linked"
+        : mpesaFlow.status === "completed"
+          ? "Payment confirmed"
+        : mpesaFlow.status === "failed"
+          ? "Payment failed"
+          : "Awaiting customer confirmation";
+
+    const statusClass =
+      mpesaFlow.status === "completed"
+        ? "border-green-200 bg-green-50 text-green-800"
+        : mpesaFlow.status === "failed"
+          ? "border-red-200 bg-red-50 text-red-800"
+          : "border-yellow-200 bg-yellow-50 text-yellow-800";
+
+    return (
+      <div className={`rounded-lg border p-3 ${statusClass}`}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-semibold">
+              {mpesaFlow.source === "c2b" ? "M-Pesa Register Status" : "M-Pesa STK Status"}: {statusText}
+            </p>
+            {mpesaFlow.source === "c2b" ? (
+              <p className="text-xs">
+                Draft Invoice: {mpesaFlow.draftInvoiceName}
+                {mpesaFlow.c2bPayments?.length ? ` | Payments: ${mpesaFlow.c2bPayments.length}` : ""}
+              </p>
+            ) : (
+              <p className="text-xs">
+                Request: {mpesaFlow.requestName}
+                {mpesaFlow.transactionId ? ` | Txn: ${mpesaFlow.transactionId}` : ""}
+              </p>
+            )}
+            {mpesaFlow.message && <p className="text-xs mt-1">{mpesaFlow.message}</p>}
+          </div>
+          <div className="flex items-center gap-2">
+            {mpesaFlow.source === "stk" && mpesaFlow.requestName && (
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-current text-xs"
+                onClick={() => void refreshMpesaStatus()}
+                disabled={isProcessingPayment}
+              >
+                Refresh Status
+              </button>
+            )}
+            {mpesaFlow.source === "stk" && mpesaFlow.status === "failed" && (
+              <button
+                type="button"
+                className="px-2 py-1 rounded bg-red-600 text-white text-xs"
+                onClick={() => void retryMpesaRequest()}
+                disabled={isProcessingPayment}
+              >
+                Retry STK
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (!isOpen) return null;
   if (isLoading || posLoading) return <div className="p-6">Loading...</div>;
   if (error) return <div className="p-6 text-red-500">Error: {error}</div>;
@@ -1010,11 +1475,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                       <span className="text-sm">Printing...</span>
                     </div>
                   )}
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" onClick={() => { handlePrintInvoice(invoiceData, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting) }); clearOrderState(); }}>
+                  <button className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" onClick={() => { handlePrintInvoice(invoiceData, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting) }); void finalizeCompletedOrderState(); }}>
                     <Printer size={18} />
                     <span>Print</span>
                   </button>
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors" onClick={() => { clearOrderState(); window.open(`mailto:${selectedCustomer?.email}?subject=Your%20Invoice&body=Dear%20${selectedCustomer?.name},%0A%0AHere%20is%20your%20invoice%20total:%20${formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}%0A%0AThank%20you.`); }}>
+                  <button className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors" onClick={() => { void finalizeCompletedOrderState(() => { window.open(`mailto:${selectedCustomer?.email}?subject=Your%20Invoice&body=Dear%20${selectedCustomer?.name},%0A%0AHere%20is%20your%20invoice%20total:%20${formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}%0A%0AThank%20you.`); }); }}>
                     <MailPlus size={18} />
                     <span>Email</span>
                   </button>
@@ -1040,7 +1505,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   </div>
                 )}
                 <div className="pt-4">
-                  <button onClick={() => { clearOrderState(); onClose(true); }} className="w-full py-3 bg-beveren-600 text-white rounded-lg font-medium hover:bg-beveren-700 transition-colors">
+                  <button onClick={() => { void finalizeCompletedOrderState(() => onClose(true)); }} className="w-full py-3 bg-beveren-600 text-white rounded-lg font-medium hover:bg-beveren-700 transition-colors">
                     Start New Order
                   </button>
                 </div>
@@ -1070,6 +1535,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     ))}
                   </div>
                 </div>
+                {renderMpesaStatusNotice()}
                 {allowPartialPayments && (
                   <div className="space-y-3 pt-2">
                     <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
@@ -1202,6 +1668,16 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                       <span>{getActionButtonText()}</span>
                     )}
                   </button>
+                  {hasActiveMpesaPayment && (
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenMpesaOptions()}
+                      disabled={isMpesaButtonDisabled()}
+                      className="w-full py-4 rounded-lg font-semibold border border-emerald-600 text-emerald-700 disabled:border-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed hover:bg-emerald-50 transition-colors"
+                    >
+                      {getMpesaButtonText()}
+                    </button>
+                  )}
 
                   <div className={`grid ${allow_holding_invoices ? "grid-cols-2" : "grid-cols-1"} gap-3`}>
                     <button
@@ -1229,6 +1705,28 @@ export default function PaymentDialog(props: PaymentDialogProps) {
             )}
           </div>
         </div>
+        <MpesaOptionsModal
+          isOpen={showMpesaOptionsModal}
+          modeOfPayment={getActiveMpesaPayment()?.method || "M-Pesa"}
+          amount={getActiveMpesaPayment()?.amount || 0}
+          phoneNumber={mpesaPhoneNumber}
+          currencySymbol={displayCurrencySymbol}
+          searchTerm={mpesaSearchTerm}
+          payments={mpesaRegisterPayments}
+          pendingCount={mpesaRegisterCount}
+          selectedPaymentNames={selectedMpesaPayments.map((payment) => payment.name)}
+          selectedTotal={selectedMpesaTotal}
+          mergePayments={mergeMpesaPayments}
+          isLoadingPayments={isLoadingMpesaRegisterPayments}
+          isProcessing={isProcessingPayment}
+          onClose={() => setShowMpesaOptionsModal(false)}
+          onPhoneNumberChange={setMpesaPhoneNumber}
+          onSearchChange={setMpesaSearchTerm}
+          onTogglePayment={handleToggleMpesaPayment}
+          onToggleMergePayments={setMergeMpesaPayments}
+          onInitiateStk={() => void handleInitiateMpesaPayment()}
+          onAddPayments={() => void handleReconcileMpesaPayments()}
+        />
       </div>
     );
   }
@@ -1246,8 +1744,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           isHoldingOrder={isHoldingOrder}
           onClose={onClose}
           handleViewInvoice={handleViewInvoice}
-          clearOrderState={clearOrderState}
-          navigate={navigate}
+          finalizeCompletedOrderState={(afterClear) => {
+            void finalizeCompletedOrderState(afterClear);
+          }}
           posDetails={posDetails}
         />
 
@@ -1299,6 +1798,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   setActiveMethodId={setActiveMethodId}
                 />
 
+                {renderMpesaStatusNotice()}
+
                 {allowPartialPayments && (
                   <div className="space-y-3">
                     <button type="button" onClick={() => toggleCreditSale()} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full py-3 rounded-lg font-medium transition-colors ${isCreditSale ? "bg-teal-600 text-white dark:bg-teal-500" : "bg-teal-100 text-teal-800 hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"} ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}>
@@ -1333,14 +1834,15 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   requiresSalespersonPin={requiresSalespersonPin}
                   invoiceSubmitted={invoiceSubmitted}
                   currentSalesperson={currentSalesperson}
-                  isVerifyingPin={isVerifyingPin}
-                  salespersonPin={salespersonPin}
-                  salespersonPinError={salespersonPinError}
-                  rememberSalesperson={rememberSalesperson}
-                  onPinChange={setSalespersonPin}
-                  onVerifyPin={handleVerifyPin}
-                  onClearSalesperson={handleClearSalesperson}
-                  onRememberChange={handleRememberSalespersonChange}
+                  isLoading={isSalespersonRestoring || isVerifyingPin}
+                  onOpenSalespersonModal={() => setShowSalespersonModal(true)}
+                />
+
+                <SalespersonAuthModal
+                  isOpen={showSalespersonModal}
+                  onClose={() => setShowSalespersonModal(false)}
+                  title="Verify salesperson"
+                  description="Switch or verify the salesperson assigned to this sale."
                 />
 
                 <TotalsSection
@@ -1421,11 +1923,15 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   isProcessingPayment={isProcessingPayment}
                   isHoldingOrder={isHoldingOrder}
                   isActionButtonDisabled={isActionButtonDisabled}
+                showMpesaButton={hasActiveMpesaPayment}
+                isMpesaButtonDisabled={isMpesaButtonDisabled}
                   getActionButtonText={getActionButtonText}
+                getMpesaButtonText={getMpesaButtonText}
+                  onInitiateMpesa={handleOpenMpesaOptions}
                   onCompletePayment={handleCompletePayment}
                   onHoldOrder={handleHoldOrder}
                   onEditOrder={handleEditOrder}
-                  onNewOrder={() => { clearOrderState(); onClose(true); }}
+                  onNewOrder={() => { void finalizeCompletedOrderState(() => onClose(true)); }}
                   isB2B={isB2B}
                   allow_holding_invoices={allow_holding_invoices}
                 />
@@ -1439,6 +1945,29 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         isOpen={showDeliveryPersonnelModal}
         onClose={() => setShowDeliveryPersonnelModal(false)}
         onSelect={(name) => setSelectedDeliveryPersonnel(name)}
+      />
+
+      <MpesaOptionsModal
+        isOpen={showMpesaOptionsModal}
+        modeOfPayment={getActiveMpesaPayment()?.method || "M-Pesa"}
+        amount={getActiveMpesaPayment()?.amount || 0}
+        phoneNumber={mpesaPhoneNumber}
+        currencySymbol={displayCurrencySymbol}
+        searchTerm={mpesaSearchTerm}
+        payments={mpesaRegisterPayments}
+        pendingCount={mpesaRegisterCount}
+        selectedPaymentNames={selectedMpesaPayments.map((payment) => payment.name)}
+        selectedTotal={selectedMpesaTotal}
+        mergePayments={mergeMpesaPayments}
+        isLoadingPayments={isLoadingMpesaRegisterPayments}
+        isProcessing={isProcessingPayment}
+        onClose={() => setShowMpesaOptionsModal(false)}
+        onPhoneNumberChange={setMpesaPhoneNumber}
+        onSearchChange={setMpesaSearchTerm}
+        onTogglePayment={handleToggleMpesaPayment}
+        onToggleMergePayments={setMergeMpesaPayments}
+        onInitiateStk={() => void handleInitiateMpesaPayment()}
+        onAddPayments={() => void handleReconcileMpesaPayments()}
       />
     </div>
   );

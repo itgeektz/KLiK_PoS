@@ -43,6 +43,7 @@ export interface PriceListRate {
 
 export interface MenuItem {
   id: string
+  item_code?: string
   name: string
   category: string
   price: number

@@ -5,7 +5,7 @@ import frappe
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from frappe import _
 from frappe.exceptions import ValidationError
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
@@ -24,6 +24,35 @@ QUEUE_STATUSES = {
 	"submitted": "Submitted",
 }
 
+
+def validate_required_salesperson(doc):
+	"""Enforce salesperson presence for POS flows when the POS profile requires it."""
+	if not doc or not getattr(doc, "is_pos", 0):
+		return
+
+	pos_profile_name = getattr(doc, "pos_profile", None)
+	if not pos_profile_name:
+		return
+
+	require_sales_person = frappe.db.get_value(
+		"POS Profile",
+		pos_profile_name,
+		"custom_sales_person_pin_required",
+	)
+	if not cint(require_sales_person):
+		return
+
+	sales_team = getattr(doc, "sales_team", None) or []
+	has_salesperson = any(
+		(row.get("sales_person") if isinstance(row, dict) else getattr(row, "sales_person", None))
+		for row in sales_team
+	)
+	if has_salesperson:
+		return
+
+	frappe.throw(
+		_("Sales person is mandatory to complete this sale. Please enter a valid salesperson PIN before continuing.")
+	)
 
 def _is_return_allowed_for_current_profile():
 	"""Return True unless POS Profile explicitly disables returns."""
@@ -825,6 +854,8 @@ def validate_checkout_invoice(data):
 			enable_background_submission=enable_background_submission,
 		)
 
+		validate_required_salesperson(preview_doc)
+
 		_validate_reserved_stock_for_items(preview_doc)
 
 		tax_breakdown = []
@@ -1032,6 +1063,8 @@ def queue_sales_invoice(data):
 			tax_id=tax_id,
 			enable_background_submission=enable_background_submission,
 		)
+
+		validate_required_salesperson(doc)
 
 		doc.base_paid_amount = amount_paid
 		doc.paid_amount = amount_paid
@@ -1262,6 +1295,8 @@ def create_draft_invoice(data):
 			tax_id=tax_id,
 			enable_background_submission=enable_background_submission,
 		)
+
+		validate_required_salesperson(doc)
 		doc.insert(ignore_permissions=True)
 
 		if tax_id:
@@ -1476,6 +1511,7 @@ def build_sales_invoice_doc(
 
 	# Add payment information
 	if include_payments:
+		doc.is_pos = 1
 		_add_payment_entries(doc, mode_of_payment)
 
 	if is_credit_sale and due_date:
@@ -1651,8 +1687,9 @@ def _autofetch_batch_fifo(item_code, warehouse, qty):
 		if available_qty >= required_qty:
 			return batch.name
 
+	item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
 	frappe.throw(
-		f"No batch with sufficient stock found for item {item_code} "
+		f"No batch with sufficient stock found for item {item_name} ({item_code}) "
 		f"in warehouse {warehouse}. Required: {qty}"
 	)
 
@@ -1897,10 +1934,21 @@ def _add_payment_entries(doc, mode_of_payment):
 		return
 
 	for payment in mode_of_payment:
-		doc.append(
-			"payments",
-			{"mode_of_payment": payment["method"], "amount": payment["amount"]},
-		)
+		payment_row = {
+			"mode_of_payment": payment.get("method"),
+			"amount": payment.get("amount"),
+		}
+
+		if payment.get("reference_no"):
+			payment_row["reference_no"] = payment.get("reference_no")
+		if payment.get("phone_number"):
+			payment_row["phone_number"] = payment.get("phone_number")
+		if payment.get("type"):
+			payment_row["type"] = payment.get("type")
+		if payment.get("custom_reference_text"):
+			payment_row["custom_reference_text"] = payment.get("custom_reference_text")
+
+		doc.append("payments", payment_row)
 
 
 def _get_default_payment_mode():
@@ -3110,7 +3158,7 @@ def delete_draft_invoice(invoice_id):
 
 
 @frappe.whitelist()
-def submit_draft_invoice(invoice_id):
+def submit_draft_invoice(invoice_id, data=None):
 	"""
 	Submit a draft sales invoice directly without payment dialog.
 	This converts a draft invoice to submitted status.
@@ -3124,21 +3172,128 @@ def submit_draft_invoice(invoice_id):
 				"error": f"Cannot submit invoice {invoice_id}. Only Draft invoices can be submitted. Current status: {invoice_doc.status}",
 			}
 
-		invoice_doc.submit()
-		try:
-			_cancel_sales_invoice_reservations(invoice_doc.name)
-		except Exception:
-			frappe.log_error(
-				frappe.get_traceback(),
-				f"Failed to cancel reservations after submit for {invoice_doc.name}",
+		if data:
+			(
+				customer,
+				items,
+				amount_paid,
+				sales_and_tax_charges,
+				mode_of_payment,
+				business_type,
+				roundoff_amount,
+				delivery_personnel,
+				is_credit_sale,
+				allow_partial_payment,
+				due_date,
+				salesperson,
+				tax_id,
+				enable_background_submission,
+			) = parse_invoice_data(data)
+
+			rebuilt_doc = build_sales_invoice_doc(
+				customer,
+				items,
+				amount_paid,
+				sales_and_tax_charges,
+				mode_of_payment,
+				business_type,
+				roundoff_amount,
+				include_payments=True,
+				delivery_personnel=delivery_personnel,
+				is_credit_sale=is_credit_sale,
+				allow_partial_payment=allow_partial_payment,
+				due_date=due_date,
+				salesperson=salesperson,
+				tax_id=tax_id,
+				create_batch_and_serial_bundle=False,
+				enable_background_submission=enable_background_submission,
 			)
 
-		return {
-			"success": True,
-			"message": f"Draft invoice {invoice_id} submitted successfully",
-			"invoice_name": invoice_doc.name,
-			"invoice": invoice_doc,
-		}
+			invoice_doc.customer = rebuilt_doc.customer
+			invoice_doc.due_date = rebuilt_doc.due_date
+			invoice_doc.custom_delivery_date = rebuilt_doc.custom_delivery_date
+			invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
+			invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
+			invoice_doc.tax_id = rebuilt_doc.tax_id
+			invoice_doc.pos_profile = rebuilt_doc.pos_profile
+			invoice_doc.company = rebuilt_doc.company
+			invoice_doc.currency = rebuilt_doc.currency
+			invoice_doc.selling_price_list = rebuilt_doc.selling_price_list
+			invoice_doc.conversion_rate = rebuilt_doc.conversion_rate
+			invoice_doc.update_stock = rebuilt_doc.update_stock
+			invoice_doc.warehouse = rebuilt_doc.warehouse
+			invoice_doc.cost_center = rebuilt_doc.cost_center
+			invoice_doc.is_pos = rebuilt_doc.is_pos
+			invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+			invoice_doc.custom_allow_partial_payment = rebuilt_doc.custom_allow_partial_payment
+			invoice_doc.set("items", [])
+			for item_row in rebuilt_doc.get("items", []):
+				invoice_doc.append("items", item_row.as_dict())
+			invoice_doc.set("taxes", [])
+			for tax_row in rebuilt_doc.get("taxes", []):
+				invoice_doc.append("taxes", tax_row.as_dict())
+			invoice_doc.set("sales_team", [])
+			for sales_person_row in rebuilt_doc.get("sales_team", []):
+				invoice_doc.append("sales_team", sales_person_row.as_dict())
+
+			if items:
+				_create_batch_and_serial_bundle(items, invoice_doc)
+
+			invoice_doc.set_taxes()
+			invoice_doc.set_missing_values()
+			invoice_doc.calculate_taxes_and_totals()
+
+			# Payments must be applied AFTER calculate_taxes_and_totals to prevent
+			# ERPNext's set_payments() from overwriting the user-entered amounts.
+			invoice_doc.set("payments", [])
+			_add_payment_entries(invoice_doc, mode_of_payment)
+
+			invoice_doc.save(ignore_permissions=True)
+
+		validate_required_salesperson(invoice_doc)
+
+		if enable_background_submission:
+			_mark_invoice_queued(invoice_doc, frappe.session.user)
+			invoice_doc.save(ignore_permissions=True)
+
+			try:
+				_reserve_stock_for_queued_invoice(invoice_doc)
+			except Exception as reserve_error:
+				_update_queue_fields(invoice_doc, QUEUE_STATUSES["failed"], error_message=str(reserve_error))
+				invoice_doc.save(ignore_permissions=True)
+				return {"success": False, "error": str(reserve_error)}
+
+			frappe.enqueue(
+				"klik_pos.api.sales_invoice.process_queued_sales_invoice",
+				queue="long",
+				enqueue_after_commit=True,
+				invoice_name=invoice_doc.name,
+				requested_by=frappe.session.user,
+			)
+
+			return {
+				"success": True,
+				"message": f"Draft invoice {invoice_id} queued for background submission",
+				"queue_status": invoice_doc.queue_status,
+				"invoice_name": invoice_doc.name,
+				"invoice": invoice_doc,
+			}
+		else:
+			invoice_doc.submit()
+			try:
+				_cancel_sales_invoice_reservations(invoice_doc.name)
+			except Exception:
+				frappe.log_error(
+					frappe.get_traceback(),
+					f"Failed to cancel reservations after submit for {invoice_doc.name}",
+				)
+
+			return {
+				"success": True,
+				"message": f"Draft invoice {invoice_id} submitted successfully",
+				"invoice_name": invoice_doc.name,
+				"invoice": invoice_doc,
+			}
 
 	except frappe.DoesNotExistError:
 		return {"success": False, "error": f"Invoice {invoice_id} not found"}

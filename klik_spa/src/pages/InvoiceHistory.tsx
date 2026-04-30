@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FileText,
@@ -26,6 +26,7 @@ import InvoiceViewModal from "../components/InvoiceViewModal";
 import BottomNavigation from "../components/BottomNavigation";
 import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
 import SingleInvoiceReturn from "../components/SingleInvoiceReturn";
+import SalespersonAuthModal from "../components/dialog/SalespersonAuthModal";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import type { SalesInvoice } from "../../types";
@@ -33,12 +34,15 @@ import { useSalesInvoices } from "../hooks/useSalesInvoices";
 import { useCustomers } from "../hooks/useCustomers";
 import { useUserInfo } from "../hooks/useUserInfo";
 import { usePOSProfileStore } from "../stores/posProfileStore";
+import { useSalespersonStore } from "../stores/salespersonStore";
 import { toast } from "react-toastify";
 import { extractErrorFromException } from "../utils/errorExtraction";
-import { createSalesReturn, submitDraftInvoice, retryQueuedInvoice } from "../services/salesInvoice";
+import { createSalesReturn, retryQueuedInvoice } from "../services/salesInvoice";
 import { useAllPaymentModes } from "../hooks/usePaymentModes";
-
+import PaymentDialog from "../components/dialog/PaymentDialog";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
+import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
+import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import { exportInvoicesToCSV, getExportFilename, type ExportableInvoice } from "../utils/exportUtils";
 // import InvoiceViewPage from "./InvoiceViewPage";
@@ -80,14 +84,48 @@ export default function InvoiceHistoryPage() {
   // Original edit options states
   const [showEditOptions, setShowEditOptions] = useState(false);
   const [selectedDraftInvoice, setSelectedDraftInvoice] = useState<SalesInvoice | null>(null);
+  const [showDraftPaymentDialog, setShowDraftPaymentDialog] = useState(false);
+  const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false);
+  const pendingSalespersonActionRef = useRef<null | (() => void)>(null);
 
   // Skip opening entry filter for Invoice History - show all invoices for cashier regardless of opening entry
   // Pass cashier filter to API so it filters on server side (more efficient)
   const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore, refetch } = useSalesInvoices(searchTerm, true, cashierFilter);
   const { modes } = useAllPaymentModes();
+  const { cartItems, selectedCustomer: cartCustomer } = useCartStore();
   const { customers } = useCustomers();
   const { posDetails } = usePOSProfileStore();
+  const { activeSalesperson, ensureInitialized } = useSalespersonStore();
   const { userInfo, isLoading: userInfoLoading } = useUserInfo();
+  const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
+
+  useEffect(() => {
+    if (requiresSalespersonPin) {
+      void ensureInitialized();
+    }
+  }, [requiresSalespersonPin, ensureInitialized]);
+
+  const runWithSalespersonGate = (action: () => void | Promise<void>) => {
+    if (!requiresSalespersonPin || activeSalesperson) {
+      void action();
+      return;
+    }
+
+    pendingSalespersonActionRef.current = () => {
+      void action();
+    };
+    setShowSalespersonAuthModal(true);
+  };
+
+  const handleSalespersonAuthenticated = () => {
+    const pendingAction = pendingSalespersonActionRef.current;
+    pendingSalespersonActionRef.current = null;
+    setShowSalespersonAuthModal(false);
+    if (pendingAction) {
+      pendingAction();
+    }
+  };
+  
   const canProcessReturns = ![0, "0", false].includes(posDetails?.custom_allow_return as 0 | "0" | false);
 
   // Role-based filtering
@@ -497,19 +535,19 @@ const getStatusBadge = (status: string) => {
 
       {viewMode === "list" ? (
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full table-auto">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Invoice
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 w-48 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Customer
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Cashier
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 w-40 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Payment
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -523,14 +561,14 @@ const getStatusBadge = (status: string) => {
                     Zatca Status
                   </th>
                 )}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 sticky right-0 z-10 bg-gray-50 dark:bg-gray-700 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
               {filteredInvoices.map((invoice) => (
-                <tr key={`${activeTab}-${invoice.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                <tr key={`${activeTab}-${invoice.id}`} className="group hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
@@ -539,15 +577,14 @@ const getStatusBadge = (status: string) => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900 dark:text-white">{invoice.customer}</div>
-
+                  <td className="px-6 py-4 max-w-[12rem]">
+                    <div title={invoice.customer} className="block truncate text-sm text-gray-900 dark:text-white">{invoice.customer}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                     {invoice.cashier}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-900 dark:text-white">{invoice.paymentMethod}</span>
+                  <td className="px-6 py-4 max-w-[10rem]">
+                    <span title={invoice.paymentMethod} className="block truncate text-sm text-gray-900 dark:text-white">{invoice.paymentMethod}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900 dark:text-white">
@@ -568,7 +605,7 @@ const getStatusBadge = (status: string) => {
                       <span className={getStatusBadge(invoice.custom_zatca_submit_status)}>{invoice.custom_zatca_submit_status}</span>
                     </td>
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <td className="px-6 py-4 sticky right-0 z-10 whitespace-nowrap bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700 text-sm font-medium">
                     <div className="flex space-x-2">
                       <button
                         onClick={() => handleViewInvoice(invoice)}
@@ -768,6 +805,11 @@ const getStatusBadge = (status: string) => {
   };
 
   const handleGoToCart = async (invoice: SalesInvoice) => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(() => handleGoToCart(invoice));
+      return;
+    }
+
     try {
       const success = await addDraftInvoiceToCart(invoice.id);
       if (success) {
@@ -785,17 +827,23 @@ const getStatusBadge = (status: string) => {
   };
 
   const handleSubmitDirect = async (invoice: SalesInvoice) => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(() => handleSubmitDirect(invoice));
+      return;
+    }
+
     try {
-      await submitDraftInvoice(invoice.id);
-      toast.success(`Draft invoice ${invoice.id} submitted successfully`);
-      setShowEditOptions(false);
-      setSelectedDraftInvoice(null);
-      // Refresh the invoices list
-      window.location.reload();
+      const success = await addDraftInvoiceToCart(invoice.id);
+      if (success) {
+        await loadCachedItemsToCart();
+        setShowEditOptions(false);
+        setSelectedDraftInvoice(null);
+        setShowDraftPaymentDialog(true);
+      }
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      console.error("Error submitting draft invoice:", error);
-      const errorMessage = extractErrorFromException(error, "Failed to submit draft invoice");
+      console.error("Error opening payment dialog for draft invoice:", error);
+      const errorMessage = extractErrorFromException(error, "Failed to load invoice for payment");
       toast.error(errorMessage);
     }
   };
@@ -811,6 +859,10 @@ const getStatusBadge = (status: string) => {
   };
 
   const handleReturnClick = async (invoiceName: string) => {
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(() => handleReturnClick(invoiceName));
+    }
+
     if (!canProcessReturns) {
       toast.error("Returns are disabled for this POS Profile");
       return;
@@ -845,6 +897,10 @@ const getStatusBadge = (status: string) => {
 
       // Multi-Invoice Return handlers
     const handleMultiReturnClick = () => {
+      if (requiresSalespersonPin && !activeSalesperson) {
+        runWithSalespersonGate(handleMultiReturnClick);
+      }
+        
       if (!canProcessReturns) {
         toast.error("Returns are disabled for this POS Profile");
         return;
@@ -856,6 +912,9 @@ const getStatusBadge = (status: string) => {
 
     // Single Invoice Return handlers
     const handleSingleReturnClick = (invoice: SalesInvoice) => {
+      if (requiresSalespersonPin && !activeSalesperson) {
+        runWithSalespersonGate(() => handleSingleReturnClick(invoice));
+      }
       if (!canProcessReturns) {
         toast.error("Returns are disabled for this POS Profile");
         return;
@@ -1332,6 +1391,38 @@ const getStatusBadge = (status: string) => {
               </div>
             </div>
           </div>
+        )}
+
+        <SalespersonAuthModal
+          isOpen={showSalespersonAuthModal}
+          onClose={() => {
+            setShowSalespersonAuthModal(false);
+            pendingSalespersonActionRef.current = null;
+          }}
+          onAuthenticated={handleSalespersonAuthenticated}
+          allowDismiss
+          title="Verify salesperson"
+          description="Verify the salesperson before continuing this invoice action."
+        />
+
+        {showDraftPaymentDialog && (
+          <PaymentDialog
+            isOpen={showDraftPaymentDialog}
+            onClose={(paymentCompleted) => {
+              setShowDraftPaymentDialog(false);
+              if (paymentCompleted) refetch();
+            }}
+            cartItems={cartItems}
+            appliedCoupons={[]}
+            selectedCustomer={cartCustomer}
+            onCompletePayment={() => {
+              setShowDraftPaymentDialog(false);
+              refetch();
+            }}
+            onHoldOrder={() => setShowDraftPaymentDialog(false)}
+            isMobile={false}
+            isFullPage={false}
+          />
         )}
       </div>
     </div>

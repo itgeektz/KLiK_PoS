@@ -14,7 +14,7 @@ export interface POSCompanyDetails {
 
 export interface POSProfile {
   name: string;
-  company?: string;
+  company?: string | POSCompanyDetails;
   currency?: string;
   currency_symbol?: string;
   is_zatca_enabled?: boolean;
@@ -30,6 +30,8 @@ export interface POSProfile {
   custom_allow_return?: boolean | number | string;
   custom_allow_to_create_and_edit_customers?: number;
   custom_default_view?: "Grid View" | "List View";
+  custom_cart_item_insertion_position?: "Top" | "Bottom";
+  custom_show_item_code_in_product_list?: boolean | number;
   custom_scale_barcodes_start_with?: string;
   warehouse?: string;
   restrict_cost_visibility_in_tooltip?: boolean;
@@ -378,7 +380,7 @@ export const usePOSProfileStore = create<POSDetailsState>()(
       
       updatePOSDetails: (details: Partial<POSDetails>) => {
         set(state => {
-          const updatedDetails = { ...state.posDetails, ...details };
+          const updatedDetails = ({ ...(state.posDetails || {}), ...details } as POSDetails);
           return {
             posDetails: updatedDetails,
             useScannerOnly: updatedDetails?.custom_use_scanner_fully || false,

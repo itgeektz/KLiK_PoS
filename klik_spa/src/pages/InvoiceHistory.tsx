@@ -537,7 +537,7 @@ const getStatusBadge = (status: string) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Invoice
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 w-48 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Customer
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -573,9 +573,8 @@ const getStatusBadge = (status: string) => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900 dark:text-white">{invoice.customer}</div>
-
+                  <td className="px-6 py-4 max-w-[12rem]">
+                    <div title={invoice.customer} className="block truncate text-sm text-gray-900 dark:text-white">{invoice.customer}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                     {invoice.cashier}

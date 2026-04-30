@@ -37,10 +37,12 @@ import { usePOSProfileStore } from "../stores/posProfileStore";
 import { useSalespersonStore } from "../stores/salespersonStore";
 import { toast } from "react-toastify";
 import { extractErrorFromException } from "../utils/errorExtraction";
-import { createSalesReturn, submitDraftInvoice, retryQueuedInvoice } from "../services/salesInvoice";
+import { createSalesReturn, retryQueuedInvoice } from "../services/salesInvoice";
 import { useAllPaymentModes } from "../hooks/usePaymentModes";
-
+import PaymentDialog from "../components/dialog/PaymentDialog";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
+import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
+import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import { exportInvoicesToCSV, getExportFilename, type ExportableInvoice } from "../utils/exportUtils";
 // import InvoiceViewPage from "./InvoiceViewPage";
@@ -82,6 +84,7 @@ export default function InvoiceHistoryPage() {
   // Original edit options states
   const [showEditOptions, setShowEditOptions] = useState(false);
   const [selectedDraftInvoice, setSelectedDraftInvoice] = useState<SalesInvoice | null>(null);
+  const [showDraftPaymentDialog, setShowDraftPaymentDialog] = useState(false);
   const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false);
   const pendingSalespersonActionRef = useRef<null | (() => void)>(null);
 
@@ -89,6 +92,7 @@ export default function InvoiceHistoryPage() {
   // Pass cashier filter to API so it filters on server side (more efficient)
   const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore, refetch } = useSalesInvoices(searchTerm, true, cashierFilter);
   const { modes } = useAllPaymentModes();
+  const { cartItems, selectedCustomer: cartCustomer } = useCartStore();
   const { customers } = useCustomers();
   const { posDetails } = usePOSProfileStore();
   const { activeSalesperson, ensureInitialized } = useSalespersonStore();
@@ -829,16 +833,17 @@ const getStatusBadge = (status: string) => {
     }
 
     try {
-      await submitDraftInvoice(invoice.id);
-      toast.success(`Draft invoice ${invoice.id} submitted successfully`);
-      setShowEditOptions(false);
-      setSelectedDraftInvoice(null);
-      // Refresh the invoices list
-      window.location.reload();
+      const success = await addDraftInvoiceToCart(invoice.id);
+      if (success) {
+        await loadCachedItemsToCart();
+        setShowEditOptions(false);
+        setSelectedDraftInvoice(null);
+        setShowDraftPaymentDialog(true);
+      }
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      console.error("Error submitting draft invoice:", error);
-      const errorMessage = extractErrorFromException(error, "Failed to submit draft invoice");
+      console.error("Error opening payment dialog for draft invoice:", error);
+      const errorMessage = extractErrorFromException(error, "Failed to load invoice for payment");
       toast.error(errorMessage);
     }
   };
@@ -1399,6 +1404,26 @@ const getStatusBadge = (status: string) => {
           title="Verify salesperson"
           description="Verify the salesperson before continuing this invoice action."
         />
+
+        {showDraftPaymentDialog && (
+          <PaymentDialog
+            isOpen={showDraftPaymentDialog}
+            onClose={(paymentCompleted) => {
+              setShowDraftPaymentDialog(false);
+              if (paymentCompleted) refetch();
+            }}
+            cartItems={cartItems}
+            appliedCoupons={[]}
+            selectedCustomer={cartCustomer}
+            onCompletePayment={() => {
+              setShowDraftPaymentDialog(false);
+              refetch();
+            }}
+            onHoldOrder={() => setShowDraftPaymentDialog(false)}
+            isMobile={false}
+            isFullPage={false}
+          />
+        )}
       </div>
     </div>
   );

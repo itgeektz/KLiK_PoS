@@ -44,6 +44,7 @@ export default function OrderSummary({
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false);
   const [isValidatingCheckout, setIsValidatingCheckout] = useState(false);
+  const [isHoldingOrder, setIsHoldingOrder] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [pendingSalespersonAction, setPendingSalespersonAction] = useState<
     "checkout" | "hold" | null
@@ -225,7 +226,9 @@ export default function OrderSummary({
       toast.error("Kindly select a customer");
       return;
     }
+    if (isHoldingOrder) return;
 
+    setIsHoldingOrder(true);
     try {
       const result = await createDraftSalesInvoice({
         items: cartItems.map((item) => ({
@@ -248,6 +251,8 @@ export default function OrderSummary({
       }
     } catch (error) {
       toast.error(extractErrorFromException(error, "Failed to create draft invoice"));
+    } finally {
+      setIsHoldingOrder(false);
     }
   };
 
@@ -278,6 +283,8 @@ export default function OrderSummary({
   };
 
   const handleHoldOrder = async (orderData: any) => {
+    if (isHoldingOrder) return;
+    setIsHoldingOrder(true);
     try {
       const result = await createDraftSalesInvoice({
         ...orderData,
@@ -289,6 +296,8 @@ export default function OrderSummary({
       }
     } catch (error) {
       toast.error(extractErrorFromException(error, "Failed to create draft invoice"));
+    } finally {
+      setIsHoldingOrder(false);
     }
   };
 
@@ -418,6 +427,7 @@ export default function OrderSummary({
             if (!validateCustomer()) return;
             void requireSalespersonAndRun("hold");
           }}
+          isHoldingOrder={isHoldingOrder}
           isValidating={isValidatingCheckout}
           isMobile={isMobile}
           currency_symbol={currency_symbol}

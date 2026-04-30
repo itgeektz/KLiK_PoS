@@ -5,6 +5,7 @@ import type { CartItem, GiftCoupon } from '../../types'
 import type { Customer } from '../types/customer'
 import { toast } from 'react-toastify'
 import { clearDraftInvoiceCache } from '../utils/draftInvoiceCache'
+import { usePOSProfileStore } from './posProfileStore'
 
 interface SerialBatchEntry {
   serial_no?: string;
@@ -31,6 +32,11 @@ interface CartState {
   refreshCartPricing: () => Promise<void>
   updateItemBundleEntries: (id: string, entries: SerialBatchEntry[]) => void
 }
+
+const shouldInsertNewItemsAtTop = (): boolean => {
+  const position = usePOSProfileStore.getState().posDetails?.custom_cart_item_insertion_position;
+  return position === 'Top';
+};
 
 export const useCartStore = create<CartState>()(
   persist(
@@ -128,11 +134,14 @@ export const useCartStore = create<CartState>()(
             )
           }));
         } else {
-          const newCartItems = [...state.cartItems, { 
+          const newItem = {
             ...item, 
             quantity: 1,
             bundle_entries: []
-          }];
+          };
+          const newCartItems = shouldInsertNewItemsAtTop()
+            ? [newItem, ...state.cartItems]
+            : [...state.cartItems, newItem];
           set({ cartItems: newCartItems });
         }
 
@@ -162,11 +171,14 @@ export const useCartStore = create<CartState>()(
             )
           }));
         } else {
-          const newCartItems = [...state.cartItems, { 
+          const newItem = {
             ...item, 
             quantity,
             bundle_entries: []
-          }];
+          };
+          const newCartItems = shouldInsertNewItemsAtTop()
+            ? [newItem, ...state.cartItems]
+            : [...state.cartItems, newItem];
           set({ cartItems: newCartItems });
         }
 

@@ -412,6 +412,11 @@ export const CartItemRow = ({
             >
               {item.name}
             </button>
+            {(item.item_code || item.id) && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 font-mono leading-tight">
+                {item.item_code || item.id}
+              </p>
+            )}
             <p
               className={`text-gray-500 dark:text-gray-400 capitalize font-medium ${
                 isMobile ? "text-sm" : "text-xs"

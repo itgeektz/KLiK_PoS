@@ -1687,8 +1687,9 @@ def _autofetch_batch_fifo(item_code, warehouse, qty):
 		if available_qty >= required_qty:
 			return batch.name
 
+	item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
 	frappe.throw(
-		f"No batch with sufficient stock found for item {item_code} "
+		f"No batch with sufficient stock found for item {item_name} ({item_code}) "
 		f"in warehouse {warehouse}. Required: {qty}"
 	)
 

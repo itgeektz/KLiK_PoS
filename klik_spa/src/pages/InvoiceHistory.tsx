@@ -531,7 +531,7 @@ const getStatusBadge = (status: string) => {
 
       {viewMode === "list" ? (
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full table-auto">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -543,7 +543,7 @@ const getStatusBadge = (status: string) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Cashier
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 w-40 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Payment
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -557,14 +557,14 @@ const getStatusBadge = (status: string) => {
                     Zatca Status
                   </th>
                 )}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 sticky right-0 z-10 bg-gray-50 dark:bg-gray-700 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
               {filteredInvoices.map((invoice) => (
-                <tr key={`${activeTab}-${invoice.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                <tr key={`${activeTab}-${invoice.id}`} className="group hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
@@ -580,8 +580,8 @@ const getStatusBadge = (status: string) => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                     {invoice.cashier}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-900 dark:text-white">{invoice.paymentMethod}</span>
+                  <td className="px-6 py-4 max-w-[10rem]">
+                    <span title={invoice.paymentMethod} className="block truncate text-sm text-gray-900 dark:text-white">{invoice.paymentMethod}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900 dark:text-white">
@@ -602,7 +602,7 @@ const getStatusBadge = (status: string) => {
                       <span className={getStatusBadge(invoice.custom_zatca_submit_status)}>{invoice.custom_zatca_submit_status}</span>
                     </td>
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <td className="px-6 py-4 sticky right-0 z-10 whitespace-nowrap bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700 text-sm font-medium">
                     <div className="flex space-x-2">
                       <button
                         onClick={() => handleViewInvoice(invoice)}

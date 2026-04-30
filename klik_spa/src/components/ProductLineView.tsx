@@ -12,6 +12,7 @@ interface ProductLineViewProps {
   onAddToCart: (item: MenuItem) => void
   isMobile?: boolean
   scannerOnly?: boolean
+  showItemCode?: boolean
 }
 
 export default function ProductLineView({
@@ -19,6 +20,7 @@ export default function ProductLineView({
   onAddToCart,
   isMobile = false,
   scannerOnly = false,
+  showItemCode = false,
 }: ProductLineViewProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | number | null>(null)
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
@@ -109,6 +111,11 @@ export default function ProductLineView({
                           )}
                         </div>
                       </div>
+                      {showItemCode && (
+                        <p className={`text-gray-600 dark:text-gray-300 ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
+                          {item.item_code || item.id}
+                        </p>
+                      )}
                       <p className={`text-gray-500 dark:text-gray-400 ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
                         {item.category}
                       </p>

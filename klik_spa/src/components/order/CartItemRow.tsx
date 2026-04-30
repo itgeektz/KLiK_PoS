@@ -392,7 +392,7 @@ export const CartItemRow = ({
                 src={item.image}
                 alt={item.name}
                 className={`${
-                  isMobile ? "w-16 h-16" : "w-12 h-12"
+                  isMobile ? "w-12 h-12" : "w-12 h-12"
                 } rounded-lg object-cover`}
                 crossOrigin="anonymous"
               />
@@ -402,13 +402,16 @@ export const CartItemRow = ({
           )}
 
           <div className="flex-1 min-w-0 px-3">
-            <h4
-              className={`font-semibold text-gray-900 dark:text-white ${
-                isMobile ? "text-base" : "text-sm"
-              } truncate`}
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              title="Show/Hide Details"
+              className={`w-full text-left font-semibold text-gray-900 dark:text-white cursor-pointer ${
+                isMobile ? "text-sm" : "text-sm"
+              } leading-tight whitespace-normal break-words`}
             >
               {item.name}
-            </h4>
+            </button>
             <p
               className={`text-gray-500 dark:text-gray-400 capitalize font-medium ${
                 isMobile ? "text-sm" : "text-xs"
@@ -434,7 +437,7 @@ export const CartItemRow = ({
             </div>
           </div>
 
-          <div className="flex-shrink-0 flex items-center ml-10 space-x-1 min-w-[70px] justify-center">
+          <div className={`flex-shrink-0 flex items-center space-x-1 min-w-[70px] justify-center ${isMobile ? "ml-1" : "ml-6"}`}>
             <button
               onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
               className={`${

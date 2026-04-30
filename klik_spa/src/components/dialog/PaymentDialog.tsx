@@ -992,6 +992,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     }
     setIsProcessingPayment(true);
     const paymentData = buildPaymentData(deliveryPersonnel);
+    const originalDraftInvoiceId = getOriginalDraftInvoiceId();
     try {
       let response;
 
@@ -999,6 +1000,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         response = await submitDraftInvoice(
           mpesaDraftInvoiceName,
           mpesaFlow?.source === "c2b" ? undefined : paymentData
+        );
+      } else if (originalDraftInvoiceId) {
+        // If editing a held invoice, submit the original draft instead of creating a new one
+        response = await submitDraftInvoice(
+          originalDraftInvoiceId,
+          paymentData
         );
       } else {
         response = await createSalesInvoice({
@@ -1014,13 +1021,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       setMpesaDraftInvoiceName(null);
       toast.success(enableBackgroundSubmission ? "Invoice queued for background submission!" : "Invoice submitted successfully!");
 
-      const originalDraftInvoiceId = getOriginalDraftInvoiceId();
-      if (originalDraftInvoiceId) {
-        try {
-        } catch (deleteError) {
-          console.error("Failed to delete original draft invoice:", deleteError);
-        }
-      }
       clearDraftInvoiceCache();
     } catch (err: any) {
       const defaultMessage = isB2B ? "Failed to submit invoice" : "Failed to process payment";

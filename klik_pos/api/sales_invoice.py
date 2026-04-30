@@ -3252,21 +3252,48 @@ def submit_draft_invoice(invoice_id, data=None):
 
 		validate_required_salesperson(invoice_doc)
 
-		invoice_doc.submit()
-		try:
-			_cancel_sales_invoice_reservations(invoice_doc.name)
-		except Exception:
-			frappe.log_error(
-				frappe.get_traceback(),
-				f"Failed to cancel reservations after submit for {invoice_doc.name}",
+		if enable_background_submission:
+			_mark_invoice_queued(invoice_doc, frappe.session.user)
+			invoice_doc.save(ignore_permissions=True)
+
+			try:
+				_reserve_stock_for_queued_invoice(invoice_doc)
+			except Exception as reserve_error:
+				_update_queue_fields(invoice_doc, QUEUE_STATUSES["failed"], error_message=str(reserve_error))
+				invoice_doc.save(ignore_permissions=True)
+				return {"success": False, "error": str(reserve_error)}
+
+			frappe.enqueue(
+				"klik_pos.api.sales_invoice.process_queued_sales_invoice",
+				queue="long",
+				enqueue_after_commit=True,
+				invoice_name=invoice_doc.name,
+				requested_by=frappe.session.user,
 			)
 
-		return {
-			"success": True,
-			"message": f"Draft invoice {invoice_id} submitted successfully",
-			"invoice_name": invoice_doc.name,
-			"invoice": invoice_doc,
-		}
+			return {
+				"success": True,
+				"message": f"Draft invoice {invoice_id} queued for background submission",
+				"queue_status": invoice_doc.queue_status,
+				"invoice_name": invoice_doc.name,
+				"invoice": invoice_doc,
+			}
+		else:
+			invoice_doc.submit()
+			try:
+				_cancel_sales_invoice_reservations(invoice_doc.name)
+			except Exception:
+				frappe.log_error(
+					frappe.get_traceback(),
+					f"Failed to cancel reservations after submit for {invoice_doc.name}",
+				)
+
+			return {
+				"success": True,
+				"message": f"Draft invoice {invoice_id} submitted successfully",
+				"invoice_name": invoice_doc.name,
+				"invoice": invoice_doc,
+			}
 
 	except frappe.DoesNotExistError:
 		return {"success": False, "error": f"Invoice {invoice_id} not found"}

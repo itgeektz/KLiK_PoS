@@ -999,13 +999,19 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       if (mpesaDraftInvoiceName) {
         response = await submitDraftInvoice(
           mpesaDraftInvoiceName,
-          mpesaFlow?.source === "c2b" ? undefined : paymentData
+          mpesaFlow?.source === "c2b" ? undefined : {
+            ...paymentData,
+            enable_background_invoice_submission: enableBackgroundSubmission,
+          }
         );
       } else if (originalDraftInvoiceId) {
         // If editing a held invoice, submit the original draft instead of creating a new one
         response = await submitDraftInvoice(
           originalDraftInvoiceId,
-          paymentData
+          {
+            ...paymentData,
+            enable_background_invoice_submission: enableBackgroundSubmission,
+          }
         );
       } else {
         response = await createSalesInvoice({

@@ -540,47 +540,47 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 
 		if not skip_opening_entry_filter:
 			if is_admin_user:
-				conditions.append("custom_pos_opening_entry != ''")
+				conditions.append("si.custom_pos_opening_entry != ''")
 			elif current_opening_entry:
-				conditions.append("custom_pos_opening_entry = %s")
+				conditions.append("si.custom_pos_opening_entry = %s")
 				params.append(current_opening_entry)
 			else:
-				conditions.append("custom_pos_opening_entry != ''")
+				conditions.append("si.custom_pos_opening_entry != ''")
 
 		if submitted_only:
-			conditions.append("docstatus = 1")
+			conditions.append("si.docstatus = 1")
 
 		if cashier_user_ids:
 			if len(cashier_user_ids) == 1:
-				conditions.append("owner = %s")
+				conditions.append("si.owner = %s")
 				params.append(cashier_user_ids[0])
 			else:
 				placeholders = ", ".join(["%s"] * len(cashier_user_ids))
-				conditions.append(f"owner IN ({placeholders})")
+				conditions.append(f"si.owner IN ({placeholders})")
 				params.extend(cashier_user_ids)
 
 		if current_pos_profile and not is_admin_user:
-			conditions.append("pos_profile = %s")
+			conditions.append("si.pos_profile = %s")
 			params.append(current_pos_profile)
 
 		if search and search.strip():
 			search_term = f"%{search.strip()}%"
-			conditions.append("(name LIKE %s OR customer_name LIKE %s OR customer LIKE %s)")
+			conditions.append("(si.name LIKE %s OR si.customer_name LIKE %s OR si.customer LIKE %s)")
 			params.extend([search_term, search_term, search_term])
 
 		where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
 		count_sql = apply_sql_permissions(
-			f"SELECT COUNT(*) as total FROM `tabSales Invoice` {where_clause}"
+			f"SELECT COUNT(*) as total FROM `tabSales Invoice` si {where_clause}"
 		)
 		count_result = frappe.db.sql(count_sql, tuple(params), as_dict=True)
 		total_count = count_result[0]["total"] if count_result else 0
 
 		main_sql = apply_sql_permissions(f"""
 			SELECT {select_fields}
-			FROM `tabSales Invoice`
+			FROM `tabSales Invoice` si
 			{where_clause}
-			ORDER BY modified DESC
+			ORDER BY si.modified DESC
 			LIMIT %s OFFSET %s
 		""")
 		invoices = frappe.db.sql(main_sql, (*params, limit, start), as_dict=True)
@@ -1499,15 +1499,15 @@ def build_sales_invoice_doc(
 	# Add items to invoice
 	_populate_invoice_items(doc, items, pos_profile)
 
-	if create_batch_and_serial_bundle:
-		_create_batch_and_serial_bundle(items, doc)
-
 	# Populate tax details
 	_populate_tax_details(doc)
 
 	doc.set_taxes()
 	doc.set_missing_values()
 	doc.calculate_taxes_and_totals()
+
+	if create_batch_and_serial_bundle:
+		_create_batch_and_serial_bundle(items, doc)
 
 	# Add payment information
 	if include_payments:
@@ -1519,8 +1519,77 @@ def build_sales_invoice_doc(
 
 	return doc
 
+
+def _select_invoice_row_for_bundle(doc, item_code, preferred_index, used_rows):
+	if preferred_index < len(doc.items):
+		candidate = doc.items[preferred_index]
+		if candidate.item_code == item_code and candidate.name not in used_rows:
+			return candidate
+
+	for row in doc.items:
+		if row.item_code == item_code and row.name not in used_rows:
+			return row
+
+	return None
+
+
+def _normalize_bundle_qty_entries(row, entries, item_meta, item_code):
+	cleaned_entries = []
+	for entry in entries:
+		if not isinstance(entry, dict):
+			continue
+		batch_no = entry.get("batch_no")
+		serial_no = entry.get("serial_no")
+		if not batch_no and not serial_no:
+			continue
+		cleaned_entries.append({"batch_no": batch_no, "serial_no": serial_no, "qty": flt(entry.get("qty") or 0)})
+
+	if not cleaned_entries:
+		return []
+
+	target_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
+	if target_qty <= 0:
+		target_qty = flt(abs(getattr(row, "qty", 0) or 0))
+
+	if target_qty <= 0:
+		return cleaned_entries
+
+	target_precision = row.precision("stock_qty") if hasattr(row, "precision") else 6
+
+	if item_meta.has_serial_no:
+		serial_entries = [entry for entry in cleaned_entries if entry.get("serial_no")]
+		if serial_entries and flt(len(serial_entries), target_precision) != flt(target_qty, target_precision):
+			frappe.throw(
+				_(
+					"Serial count for Item {0} is {1} but required quantity is {2}. Please reselect serial numbers."
+				).format(item_code, len(serial_entries), target_qty)
+			)
+		for entry in cleaned_entries:
+			entry["qty"] = 1 if entry.get("serial_no") else flt(abs(entry.get("qty") or 0))
+		return cleaned_entries
+
+	if len(cleaned_entries) == 1:
+		cleaned_entries[0]["qty"] = target_qty
+		return cleaned_entries
+
+	current_total = flt(sum(abs(flt(entry.get("qty") or 0)) for entry in cleaned_entries))
+	if flt(current_total, target_precision) != flt(target_qty, target_precision):
+		frappe.throw(
+			_(
+				"Batch quantity for Item {0} is {1} but required quantity is {2}. Please reselect batch quantities."
+			).format(item_code, current_total, target_qty)
+		)
+
+	for entry in cleaned_entries:
+		entry["qty"] = flt(abs(entry.get("qty") or 0))
+
+	return cleaned_entries
+
 def _create_batch_and_serial_bundle(items, doc):
-	for item_data in items:
+	used_rows = set()
+
+
+	for idx, item_data in enumerate(items):
 		item_code = item_data.get("item_code") or item_data.get("id")
 		serial_batch_bundle = item_data.get("bundle_entries")
 
@@ -1532,26 +1601,36 @@ def _create_batch_and_serial_bundle(items, doc):
 		if not item_meta or not (item_meta.has_batch_no or item_meta.has_serial_no):
 			continue
 
-		for row in doc.items:
-			if row.item_code == item_code:
-				bundle = frappe.new_doc("Serial and Batch Bundle")
-				bundle.item_code = item_code
-				bundle.company = doc.company
-				bundle.warehouse =  row.warehouse
-				bundle.has_batch_no = item_meta.has_batch_no
-				bundle.has_serial_no = item_meta.has_serial_no
-				bundle.type_of_transaction = "Outward"
-				bundle.voucher_type = doc.doctype
+		row = _select_invoice_row_for_bundle(doc, item_code, idx, used_rows)
+		if not row:
+			continue
 
-				for entry in serial_batch_bundle:
-					bundle.append("entries", {
-						"batch_no": entry.get("batch_no"),
-						"serial_no": entry.get("serial_no"),
-						"qty": -abs(float(entry.get("qty") or 0)),
-					})
-				bundle.insert()
-				row.serial_and_batch_bundle = bundle.name
-				break
+		normalized_entries = _normalize_bundle_qty_entries(row, serial_batch_bundle, item_meta, item_code)
+		if not normalized_entries:
+			continue
+
+		bundle = frappe.new_doc("Serial and Batch Bundle")
+		bundle.item_code = item_code
+		bundle.company = doc.company
+		bundle.warehouse = row.warehouse
+		bundle.has_batch_no = item_meta.has_batch_no
+		bundle.has_serial_no = item_meta.has_serial_no
+		bundle.type_of_transaction = "Outward"
+		bundle.voucher_type = doc.doctype
+
+		for entry in normalized_entries:
+			bundle.append(
+				"entries",
+				{
+					"batch_no": entry.get("batch_no"),
+					"serial_no": entry.get("serial_no"),
+					"qty": -abs(flt(entry.get("qty") or 0)),
+				},
+			)
+
+		bundle.insert()
+		row.serial_and_batch_bundle = bundle.name
+		used_rows.add(row.name)
 
 
 def _get_active_pos_profile():

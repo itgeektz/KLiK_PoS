@@ -295,6 +295,23 @@ def _get_conversion_factor_sql(item_code, uom):
 def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_term=None, selected_category=None):
     try:
         item_groups = []
+
+        def _prepare_sql_args(sql_query, query_params):
+            """Return params only when placeholder count matches query after SQL rewriting."""
+            params = tuple(query_params) if query_params else ()
+            placeholder_count = sql_query.count("%s")
+
+            if placeholder_count == 0:
+                return None
+
+            if placeholder_count != len(params):
+                frappe.log_error(
+                    message=f"Placeholder mismatch in item group query. placeholders={placeholder_count}, params={len(params)}\nSQL: {sql_query}",
+                    title="Item Group Query Param Mismatch",
+                )
+                return None
+
+            return params
         
         allowed_groups = []
         
@@ -333,7 +350,11 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
             
             group_query = apply_sql_permissions(group_query)
             
-            group_results = frappe.db.sql(group_query, tuple(group_query_params) if group_query_params else None, as_dict=True)
+            group_results = frappe.db.sql(
+                group_query,
+                _prepare_sql_args(group_query, group_query_params),
+                as_dict=True,
+            )
             allowed_groups = [row["item_group"] for row in group_results]
         
         if not allowed_groups:
@@ -369,7 +390,11 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
             
             count_sql = apply_sql_permissions(count_query)
             
-            result = frappe.db.sql(count_sql, tuple(params), as_dict=True)
+            result = frappe.db.sql(
+                count_sql,
+                _prepare_sql_args(count_sql, params),
+                as_dict=True,
+            )
             item_count = result[0]["item_count"] if result else 0
             
             if item_count > 0:

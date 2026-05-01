@@ -60,8 +60,8 @@ const PAGE_SIZE = 1000;
 const LOAD_MORE_SIZE = 500;
 const CACHE_DURATION = 5 * 60 * 1000;
 let currentPosName = '';
-let refreshTimers: NodeJS.Timeout[] = [];
-let searchTimer: NodeJS.Timeout | null = null;
+let refreshTimers: Array<ReturnType<typeof setInterval>> = [];
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useProductStore = create<ProductStoreState>()(
   persist(
@@ -480,11 +480,9 @@ export const useProductStore = create<ProductStoreState>()(
       setSelectedCustomer: (customer: Customer | null) => {
         set({ selectedCustomer: customer });
         
-        if (customer) {
-          useCartStore.getState().setSelectedCustomer(customer);
-        }
+        useCartStore.getState().setSelectedCustomer(customer);
         
-        if (currentPosName) {
+        if (currentPosName && customer) {
           get().initializePOS(currentPosName, customer?.id || '');
         }
       },

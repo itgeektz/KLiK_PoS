@@ -25,8 +25,10 @@ export function CartItemDetails({
   item, itemDiscount, onUpdateQuantity, onUOMChange, onDiscountChange, onCustomRateChange, onDuplicateItem,
   selectedCustomer, posDetails, itemBatches, itemSerials, currency_symbol, isMobile
 }: CartItemDetailsProps) {
-  const amount = (itemDiscount.customRate || item.price) * item.quantity;
   const discountedPrice = (() => {
+    if (itemDiscount.customRate !== undefined && itemDiscount.customRate !== null) {
+      return Math.max(0, itemDiscount.customRate);
+    }
     let price = item.price;
     if (itemDiscount.discountPercentage > 0) price = price * (1 - itemDiscount.discountPercentage / 100);
     if (itemDiscount.discountAmount > 0) price = Math.max(0, price - itemDiscount.discountAmount);
@@ -34,6 +36,7 @@ export function CartItemDetails({
   })();
   const originalTotal = item.price * item.quantity;
   const discountedTotal = discountedPrice * item.quantity;
+  const amount = discountedTotal;
 
   return (
     <div className={`border-t border-gray-200 dark:border-gray-600 ${isMobile ? "px-3 pb-3" : "px-6 py-3 ml-7"} bg-gray-25 dark:bg-gray-750`}>
@@ -51,7 +54,7 @@ export function CartItemDetails({
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
           <label className="block text-sm mb-2">Rate</label>
-          <input type="number" step="0.01" value={itemDiscount.customRate ?? item.price} onChange={e => onCustomRateChange(item, parseFloat(e.target.value) || 0)} readOnly={!posDetails?.allow_rate_change} className="w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800" />
+          <input type="number" step="0.01" value={itemDiscount.customRate ?? discountedPrice} onChange={e => onCustomRateChange(item, parseFloat(e.target.value) || 0)} readOnly={!posDetails?.allow_rate_change} className="w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800" />
         </div>
         <div>
           <label className="block text-sm mb-2">Amount</label>

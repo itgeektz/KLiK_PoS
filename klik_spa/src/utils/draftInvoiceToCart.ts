@@ -5,21 +5,25 @@ import { cacheDraftInvoiceItems } from './draftInvoiceCache';
 import type { Customer } from '../../types';
 
 export interface InvoiceItem {
+  name?: string;
   item_code: string;
   item_name: string;
   qty: number;
   rate: number;
   amount: number;
+  uom?: string;
   description?: string;
 }
 
 export interface CartItem {
   id: string;
+  item_code?: string;
   name: string;
   category: string;
   price: number;
   image: string;
   quantity: number;
+  uom?: string;
 }
 
 export async function addDraftInvoiceToCart(invoiceId: string): Promise<boolean> {
@@ -33,14 +37,17 @@ export async function addDraftInvoiceToCart(invoiceId: string): Promise<boolean>
 
     // Convert invoice items to cart items
     const cartItems: CartItem[] = [];
-    for (const item of invoiceData.items) {
+    for (const [index, item] of invoiceData.items.entries()) {
       const cartItem: CartItem = {
-        id: item.item_code,
+        // Keep each draft line unique so duplicate item codes don't collapse into one cart row.
+        id: item.name || `${item.item_code}-${index}`,
+        item_code: item.item_code,
         name: item.item_name,
         category: 'General',
         price: item.rate,
         image: '',
         quantity: item.qty,
+        uom: item.uom,
       };
       cartItems.push(cartItem);
     }

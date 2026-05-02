@@ -16,7 +16,6 @@ import {
   Eye,
   Edit,
   Users,
-  ShoppingCart,
   RotateCcw,
   Check,
   FileMinus,
@@ -81,9 +80,6 @@ export default function InvoiceHistoryPage() {
   // Single Invoice Return states
   const [showSingleReturn, setShowSingleReturn] = useState(false);
   const [selectedInvoiceForReturn, setSelectedInvoiceForReturn] = useState<SalesInvoice | null>(null);
-  // Original edit options states
-  const [showEditOptions, setShowEditOptions] = useState(false);
-  const [selectedDraftInvoice, setSelectedDraftInvoice] = useState<SalesInvoice | null>(null);
   const [showDraftPaymentDialog, setShowDraftPaymentDialog] = useState(false);
   const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false);
   const pendingSalespersonActionRef = useRef<null | (() => void)>(null);
@@ -147,9 +143,6 @@ export default function InvoiceHistoryPage() {
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (showEditOptions) {
-          handleCloseEditOptions();
-        }
         if (showCustomerSelection) {
           setShowCustomerSelection(false);
         }
@@ -161,7 +154,7 @@ export default function InvoiceHistoryPage() {
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [showEditOptions, showCustomerSelection, showMultiReturn]);
+  }, [showCustomerSelection, showMultiReturn]);
 
   const tabs = [
     { id: "all", name: "All Invoices", icon: FileText, color: "text-gray-600" },
@@ -615,13 +608,22 @@ const getStatusBadge = (status: string) => {
                         <span>View</span>
                       </button>
                       {invoice.status === "Draft" && (
-                        <button
-                          onClick={() => handleEditDraftClick(invoice)}
-                          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 flex items-center space-x-1"
-                        >
-                          <Edit className="w-4 h-4" />
-                          <span>Edit</span>
-                        </button>
+                        <>
+                          <button
+                            onClick={() => void handleGoToCart(invoice)}
+                            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 flex items-center space-x-1"
+                          >
+                            <Edit className="w-4 h-4" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={() => void handleSubmitDirect(invoice)}
+                            className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 flex items-center space-x-1"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>Submit</span>
+                          </button>
+                        </>
                       )}
                       {/* @ts-expect-error just ignore */}
                       {canProcessReturns && ["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
@@ -635,7 +637,6 @@ const getStatusBadge = (status: string) => {
                         </button>
                       )}
 
-                      {/* @ts-expect-error just ignore */}
                       {((invoice as SalesInvoice & { queueStatus?: string }).queueStatus || "").toLowerCase() === "failed" && (
                         <button
                           onClick={() => handleRetryQueue(invoice)}
@@ -686,7 +687,7 @@ const getStatusBadge = (status: string) => {
                   <span className="text-gray-900 dark:text-white">{invoice.posProfile}</span>
                 </div>
               </div>
-              <div className="mt-4 flex space-x-2">
+              <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   onClick={() => handleViewInvoice(invoice)}
                   className="flex-1 text-xs px-3 py-2 bg-beveren-600 text-white rounded hover:bg-beveren-700 transition-colors"
@@ -694,13 +695,22 @@ const getStatusBadge = (status: string) => {
                   View
                 </button>
                 {invoice.status === "Draft" && (
-                  <button
-                    onClick={() => handleEditDraftClick(invoice)}
-                    className="flex-1 text-xs px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center space-x-1"
-                  >
-                    <Edit className="w-3 h-3" />
-                    <span>Edit</span>
-                  </button>
+                  <>
+                    <button
+                      onClick={() => void handleGoToCart(invoice)}
+                      className="flex-1 text-xs px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center space-x-1"
+                    >
+                      <Edit className="w-3 h-3" />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      onClick={() => void handleSubmitDirect(invoice)}
+                      className="flex-1 text-xs px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center justify-center space-x-1"
+                    >
+                      <Check className="w-3 h-3" />
+                      <span>Submit</span>
+                    </button>
+                  </>
                 )}
                   {canProcessReturns && ["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && hasReturnableItems(invoice) && (
                   <button
@@ -710,7 +720,6 @@ const getStatusBadge = (status: string) => {
                     Return
                   </button>
                 )}
-                {/* @ts-expect-error just ignore */}
                 {((invoice as SalesInvoice & { queueStatus?: string }).queueStatus || "").toLowerCase() === "failed" && (
                   <button
                     onClick={() => handleRetryQueue(invoice)}
@@ -794,27 +803,21 @@ const getStatusBadge = (status: string) => {
     return hasReturnable;
   };
 
-  // Edit draft invoice handlers
-  const handleEditDraftClick = (invoice: SalesInvoice) => {
-    if (invoice.status !== "Draft") {
-      toast.error("Only draft invoices can be edited");
+  const handleGoToCart = async (invoice: SalesInvoice) => {
+    const draftInvoiceId = invoice.id || invoice.name;
+    if (!draftInvoiceId) {
+      toast.error("Unable to edit draft invoice: missing invoice identifier");
       return;
     }
-    setSelectedDraftInvoice(invoice);
-    setShowEditOptions(true);
-  };
 
-  const handleGoToCart = async (invoice: SalesInvoice) => {
     if (requiresSalespersonPin && !activeSalesperson) {
       runWithSalespersonGate(() => handleGoToCart(invoice));
       return;
     }
 
     try {
-      const success = await addDraftInvoiceToCart(invoice.id);
+      const success = await addDraftInvoiceToCart(draftInvoiceId);
       if (success) {
-        setShowEditOptions(false);
-        setSelectedDraftInvoice(null);
         setTimeout(() => {
           navigate('/pos'); // Navigate directly to POS page
         }, 500);
@@ -827,17 +830,21 @@ const getStatusBadge = (status: string) => {
   };
 
   const handleSubmitDirect = async (invoice: SalesInvoice) => {
+    const draftInvoiceId = invoice.id || invoice.name;
+    if (!draftInvoiceId) {
+      toast.error("Unable to submit draft invoice: missing invoice identifier");
+      return;
+    }
+
     if (requiresSalespersonPin && !activeSalesperson) {
       runWithSalespersonGate(() => handleSubmitDirect(invoice));
       return;
     }
 
     try {
-      const success = await addDraftInvoiceToCart(invoice.id);
+      const success = await addDraftInvoiceToCart(draftInvoiceId);
       if (success) {
         await loadCachedItemsToCart();
-        setShowEditOptions(false);
-        setSelectedDraftInvoice(null);
         setShowDraftPaymentDialog(true);
       }
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -846,11 +853,6 @@ const getStatusBadge = (status: string) => {
       const errorMessage = extractErrorFromException(error, "Failed to load invoice for payment");
       toast.error(errorMessage);
     }
-  };
-
-  const handleCloseEditOptions = () => {
-    setShowEditOptions(false);
-    setSelectedDraftInvoice(null);
   };
 
   const handleRefund = (invoiceId: string) => {
@@ -1338,61 +1340,6 @@ const getStatusBadge = (status: string) => {
           onClose={() => setShowSingleReturn(false)}
           onSuccess={handleSingleReturnSuccess}
         />
-        {/* Original Draft Invoice Edit Options Modal */}
-        {showEditOptions && selectedDraftInvoice && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md relative">
-              {/* Click outside to close */}
-              <div
-                className="absolute inset-0 -z-10"
-                onClick={handleCloseEditOptions}
-              />
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Draft Invoice</h2>
-                  <button
-                    onClick={handleCloseEditOptions}
-                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  >
-                    <XCircle className="w-5 h-5" />
-                  </button>
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                  Invoice: {selectedDraftInvoice.id}
-                </p>
-              </div>
-              <div className="p-6">
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-                  What would you like to do with this draft invoice?
-                </p>
-                <div className="space-y-3">
-                  <button
-                    onClick={() => handleGoToCart(selectedDraftInvoice)}
-                    className="w-full flex items-center justify-center space-x-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
-                  >
-                    <ShoppingCart className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                    <span className="font-medium text-blue-900 dark:text-blue-100">Go to Cart</span>
-                  </button>
-                  {/* <button
-                    onClick={handleGoToPayment}
-                    className="w-full flex items-center justify-center space-x-3 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors"
-                  >
-                    <FileText className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-                    <span className="font-medium text-orange-900 dark:text-orange-100">Submit Payment</span>
-                  </button> */}
-                  <button
-                    onClick={() => handleSubmitDirect(selectedDraftInvoice)}
-                    className="w-full flex items-center justify-center space-x-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors"
-                  >
-                    <Check className="w-5 h-5 text-green-600 dark:text-green-400" />
-                    <span className="font-medium text-green-900 dark:text-green-100">Submit</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         <SalespersonAuthModal
           isOpen={showSalespersonAuthModal}
           onClose={() => {

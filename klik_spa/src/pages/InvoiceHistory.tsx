@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Download,
   Search,
-  DollarSign,
   Grid3X3,
   List,
   Eye,
@@ -53,6 +52,7 @@ interface InvoiceHistoryFiltersState {
   activeTab: string;
   searchTerm: string;
   dateFilter: string;
+  customerFilter: string;
   paymentFilter: string;
   cashierFilter: string;
 }
@@ -61,6 +61,7 @@ const DEFAULT_INVOICE_HISTORY_FILTERS: InvoiceHistoryFiltersState = {
   activeTab: "all",
   searchTerm: "",
   dateFilter: "all",
+  customerFilter: "",
   paymentFilter: "all",
   cashierFilter: "all",
 };
@@ -80,6 +81,7 @@ const getInitialInvoiceHistoryFilters = (): InvoiceHistoryFiltersState => {
     return {
       ...DEFAULT_INVOICE_HISTORY_FILTERS,
       ...parsed,
+      customerFilter: parsed.customerFilter === "all" ? "" : (parsed.customerFilter || ""),
     };
   } catch {
     return DEFAULT_INVOICE_HISTORY_FILTERS;
@@ -103,6 +105,7 @@ export default function InvoiceHistoryPage() {
   const [activeTab, setActiveTab] = useState(initialFilters.activeTab);
   const [searchTerm, setSearchTerm] = useState(initialFilters.searchTerm);
   const [dateFilter, setDateFilter] = useState(initialFilters.dateFilter);
+  const [customerFilter, setCustomerFilter] = useState(initialFilters.customerFilter);
   const [paymentFilter, setPaymentFilter] = useState(initialFilters.paymentFilter);
   const [cashierFilter, setCashierFilter] = useState(initialFilters.cashierFilter);
   const [viewMode, setViewMode] = useState<"cards" | "list">(getInitialViewMode);
@@ -185,11 +188,12 @@ export default function InvoiceHistoryPage() {
         activeTab,
         searchTerm,
         dateFilter,
+        customerFilter,
         paymentFilter,
         cashierFilter,
       })
     );
-  }, [activeTab, searchTerm, dateFilter, paymentFilter, cashierFilter]);
+  }, [activeTab, searchTerm, dateFilter, customerFilter, paymentFilter, cashierFilter]);
 
   // Keyboard event handler for Escape key
   useEffect(() => {
@@ -311,10 +315,12 @@ const getStatusBadge = (status: string) => {
             ? queueStatus.toLowerCase() === "failed"
             : invoiceStatus === tabStatus;
       const matchesPayment = paymentFilter === "all" || invoice.paymentMethod === paymentFilter;
+      const matchesCustomer = !customerFilter.trim()
+        || invoice.customer?.toLowerCase().includes(customerFilter.toLowerCase());
       const matchesCashier = cashierFilter === "all" || invoice.cashier === cashierFilter;
       const matchesDate = filterInvoiceByDate(invoice.date);
 
-      return matchesPayment && matchesCashier && matchesStatus && matchesDate;
+      return matchesPayment && matchesCustomer && matchesCashier && matchesStatus && matchesDate;
     });
 
     // Debug: Log filtering results
@@ -328,7 +334,7 @@ const getStatusBadge = (status: string) => {
     }
 
     return filtered;
-  }, [invoices, activeTab, dateFilter, paymentFilter, cashierFilter, isLoading, error]);
+  }, [invoices, activeTab, dateFilter, customerFilter, paymentFilter, cashierFilter, isLoading, error, filterInvoiceByDate]);
 
   const uniqueCashiers = useMemo(() => {
     return [...new Set(invoices.map(invoice => invoice.cashier).filter(Boolean))];
@@ -361,9 +367,11 @@ const getStatusBadge = (status: string) => {
     // First apply all filters except status
     const invoicesFilteredByOtherFilters = invoices.filter((invoice) => {
       const matchesPayment = paymentFilter === "all" || invoice.paymentMethod === paymentFilter;
+      const matchesCustomer = !customerFilter.trim()
+        || invoice.customer?.toLowerCase().includes(customerFilter.toLowerCase());
       const matchesCashier = cashierFilter === "all" || invoice.cashier === cashierFilter;
       const matchesDate = filterInvoiceByDate(invoice.date);
-      return matchesPayment && matchesCashier && matchesDate;
+      return matchesPayment && matchesCustomer && matchesCashier && matchesDate;
     });
 
     // Then count by status - normalize comparison
@@ -416,16 +424,16 @@ const getStatusBadge = (status: string) => {
 
   // Define render functions before they are used
   const renderFilters = () => (
-    <div className="w-full max-w-none bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 mb-6">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div className="w-full max-w-none bg-white/95 dark:bg-gray-800/95 rounded-xl p-4 border border-gray-200 dark:border-gray-700 mb-4 backdrop-blur">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
           <input
             type="text"
             placeholder="Search invoices..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
           />
           {isLoading && invoices.length > 0 && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -433,10 +441,17 @@ const getStatusBadge = (status: string) => {
             </div>
           )}
         </div>
+        <input
+          type="text"
+          placeholder="Filter customer..."
+          value={customerFilter}
+          onChange={(e) => setCustomerFilter(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+        />
         <select
           value={dateFilter}
           onChange={(e) => setDateFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
         >
           <option value="all">All Time</option>
           <option value="today">Today</option>
@@ -445,11 +460,12 @@ const getStatusBadge = (status: string) => {
           <option value="month">This Month</option>
           <option value="year">This Year</option>
         </select>
+        
         <select
           value={cashierFilter}
           onChange={(e) => setCashierFilter(e.target.value)}
           disabled={!isAdminUser}
-          className={`px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+          className={`px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white ${
             !isAdminUser ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
@@ -466,7 +482,7 @@ const getStatusBadge = (status: string) => {
         <select
           value={paymentFilter}
           onChange={(e) => setPaymentFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
         >
           <option value="all">All Payments</option>
           {modes.map((mode) => (
@@ -483,68 +499,6 @@ const getStatusBadge = (status: string) => {
             </p>
           </div>
         )}
-    </div>
-  );
-
-  const renderSummaryCards = () => (
-    <div className="w-full max-w-none grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Invoices</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{filteredInvoices.length}</p>
-            {hasMore && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Showing {totalLoaded} of {totalCount}
-              </p>
-            )}
-          </div>
-          <FileText className="w-8 h-8 text-orange-600" />
-        </div>
-      </div>
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Amount</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
-              {formatCurrencyWithSymbol(filteredInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0), posDetails?.currency || 'USD')}
-            </p>
-          </div>
-          <DollarSign className="w-8 h-8 text-orange-600" />
-        </div>
-      </div>
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Paid Amount</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
-              {formatCurrencyWithSymbol(
-                filteredInvoices
-                  .filter(inv => inv.status === "Paid")
-                  .reduce((sum, inv) => sum + inv.totalAmount, 0),
-                posDetails?.currency || 'USD'
-              )}
-            </p>
-          </div>
-          <CheckCircle className="w-8 h-8 text-orange-600" />
-        </div>
-      </div>
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Outstanding</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
-              {formatCurrencyWithSymbol(
-                filteredInvoices
-                  .filter(inv => ["Unpaid", "Partly Paid", "Overdue"].includes(inv.status))
-                  .reduce((sum, inv) => sum + inv.totalAmount, 0),
-                posDetails?.currency || 'USD'
-              )}
-            </p>
-          </div>
-          <AlertTriangle className="w-8 h-8 text-orange-600" />
-        </div>
-      </div>
     </div>
   );
 
@@ -1082,35 +1036,36 @@ const getStatusBadge = (status: string) => {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto pb-20 w-[98%] mx-auto px-2 py-4">
-          {/* Status Tabs */}
-          <div className="mb-6 w-full">
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <div className="border-b border-gray-200 dark:border-gray-700">
-                <nav className="-mb-px flex space-x-4 overflow-x-auto">
-                  {tabs.map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-xs whitespace-nowrap ${
-                        activeTab === tab.id
-                          ? "border-beveren-500 text-beveren-600 dark:text-beveren-400"
-                          : `border-transparent ${tab.color} dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300`
-                      }`}
-                    >
-                      <tab.icon className="w-4 h-4" />
-                      <span>{tab.name}</span>
-                      <span className="ml-1 px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 rounded-full">
-                        {getStatusCount(tab.id)}
-                      </span>
-                    </button>
-                  ))}
-                </nav>
+          <div className="sticky top-0 z-20 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur pb-2">
+            {/* Status Tabs */}
+            <div className="mb-6 w-full">
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                <div className="border-b border-gray-200 dark:border-gray-700">
+                  <nav className="-mb-px flex space-x-4 overflow-x-auto">
+                    {tabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-xs whitespace-nowrap ${
+                          activeTab === tab.id
+                            ? "border-beveren-500 text-beveren-600 dark:text-beveren-400"
+                            : `border-transparent ${tab.color} dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300`
+                        }`}
+                      >
+                        <tab.icon className="w-4 h-4" />
+                        <span>{tab.name}</span>
+                        <span className="ml-1 px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 rounded-full">
+                          {getStatusCount(tab.id)}
+                        </span>
+                      </button>
+                    ))}
+                  </nav>
+                </div>
               </div>
             </div>
-          </div>
 
-          {renderFilters()}
-          {renderSummaryCards()}
+            {renderFilters()}
+          </div>
           {renderInvoicesTable()}
         </div>
 
@@ -1222,7 +1177,7 @@ const getStatusBadge = (status: string) => {
   return (
 
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-12">
-      <div className="flex-1 flex flex-col overflow-hidden ml-20">
+      <div className="flex-1 flex flex-col overflow-visible ml-20">
         {/* Header */}
         <div className="fixed top-0 left-20 right-0 z-50 bg-beveren-50 dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
           <div className="px-4 py-4">
@@ -1252,38 +1207,37 @@ const getStatusBadge = (status: string) => {
         </div>
 
         <div className="flex-1 px-6 py-8 mt-16 max-w-none">
-          {/* Status Tabs - Now full width like the table */}
-          <div className="mb-8 w-full max-w-none">
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-              <div className="border-b border-gray-200 dark:border-gray-700">
-                <nav className="-mb-px flex space-x-8 overflow-x-auto">
-                  {tabs.map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
-                        activeTab === tab.id
-                          ? "border-beveren-500 text-beveren-600 dark:text-beveren-400"
-                          : `border-transparent ${tab.color} dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300`
-                      }`}
-                    >
-                      <tab.icon className="w-5 h-5" />
-                      <span>{tab.name}</span>
-                      <span className="ml-2 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded-full">
-                        {getStatusCount(tab.id)}
-                      </span>
-                    </button>
-                  ))}
-                </nav>
+          <div className="sticky top-20 z-30 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur pb-2">
+            {/* Status Tabs - Now full width like the table */}
+            <div className="mb-8 w-full max-w-none">
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div className="border-b border-gray-200 dark:border-gray-700">
+                  <nav className="-mb-px flex space-x-8 overflow-x-auto">
+                    {tabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                          activeTab === tab.id
+                            ? "border-beveren-500 text-beveren-600 dark:text-beveren-400"
+                            : `border-transparent ${tab.color} dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300`
+                        }`}
+                      >
+                        <tab.icon className="w-5 h-5" />
+                        <span>{tab.name}</span>
+                        <span className="ml-2 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded-full">
+                          {getStatusCount(tab.id)}
+                        </span>
+                      </button>
+                    ))}
+                  </nav>
+                </div>
               </div>
             </div>
+
+            {/* Filters */}
+            {renderFilters()}
           </div>
-
-          {/* Filters */}
-          {renderFilters()}
-
-          {/* Summary Cards */}
-          {renderSummaryCards()}
 
           {/* Invoices Table/Grid */}
           {renderInvoicesTable()}

@@ -114,6 +114,26 @@ def get_items(
         count_sql = "\n".join(count_query)
         count_sql = apply_sql_permissions(count_sql)
 
+        # Permission denied — user can't see any items, return empty
+        if count_sql.strip().upper().startswith("SELECT 1 WHERE 1=0"):
+            return {
+                "items": [],
+                "item_groups": [],
+                "total_count": 0,
+                "has_more": False,
+                "limit": limit,
+                "offset": offset,
+            }
+
+        # Validate placeholder count matches params AFTER sql rewrite
+        placeholder_count = count_sql.count("%s")
+        if placeholder_count != len(count_params):
+            frappe.log_error(
+                message=f"Count query placeholder mismatch. placeholders={placeholder_count}, params={len(count_params)}\nSQL:\n{count_sql}",
+                title="Get Items Count Query Param Mismatch",
+            )
+            frappe.throw(_("Something went wrong while fetching item data."))
+
         total_result = frappe.db.sql(
             count_sql,
             tuple(count_params),
@@ -127,6 +147,14 @@ def get_items(
 
         main_sql = "\n".join(base_query)
         main_sql = apply_sql_permissions(main_sql)
+
+        placeholder_count = main_sql.count("%s")
+        if placeholder_count != len(params_list):
+            frappe.log_error(
+                message=f"Main query placeholder mismatch. placeholders={placeholder_count}, params={len(params_list)}\nSQL:\n{main_sql}",
+                title="Get Items Main Query Param Mismatch",
+            )
+            frappe.throw(_("Something went wrong while fetching item data."))
 
         items = frappe.db.sql(
             main_sql,
@@ -297,12 +325,12 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
         item_groups = []
 
         def _prepare_sql_args(sql_query, query_params):
-            """Return params only when placeholder count matches query after SQL rewriting."""
+            """Return params tuple, or () if no placeholders. Returns None only on unrecoverable mismatch."""
             params = tuple(query_params) if query_params else ()
             placeholder_count = sql_query.count("%s")
 
             if placeholder_count == 0:
-                return None
+                return ()
 
             if placeholder_count != len(params):
                 frappe.log_error(
@@ -349,12 +377,12 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
                 group_query_params.extend([search_term, search_term, search_term, search_term])
             
             group_query = apply_sql_permissions(group_query)
+            args = _prepare_sql_args(group_query, group_query_params)
+
+            if args is None:
+                return []
             
-            group_results = frappe.db.sql(
-                group_query,
-                _prepare_sql_args(group_query, group_query_params),
-                as_dict=True,
-            )
+            group_results = frappe.db.sql(group_query, args, as_dict=True)
             allowed_groups = [row["item_group"] for row in group_results]
         
         if not allowed_groups:
@@ -389,12 +417,12 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
                 params.extend([search_term, search_term, search_term, search_term])
             
             count_sql = apply_sql_permissions(count_query)
+            args = _prepare_sql_args(count_sql, params)
+
+            if args is None:
+                continue
             
-            result = frappe.db.sql(
-                count_sql,
-                _prepare_sql_args(count_sql, params),
-                as_dict=True,
-            )
+            result = frappe.db.sql(count_sql, args, as_dict=True)
             item_count = result[0]["item_count"] if result else 0
             
             if item_count > 0:

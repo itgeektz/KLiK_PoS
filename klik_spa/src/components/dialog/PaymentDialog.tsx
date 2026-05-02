@@ -1073,25 +1073,92 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       toast.error("Verify the salesperson before holding this order");
       return;
     }
+
     setIsHoldingOrder(true);
-    const orderData = {
-      items: cartItems,
-      customer: selectedCustomer,
-      subtotal: calculations.subtotal,
-      SalesTaxCharges: selectedSalesTaxCharges,
-      taxAmount: calculations.taxAmount,
-      taxType: calculations.isInclusive ? "inclusive" : "exclusive",
-      couponDiscount: calculations.couponDiscount,
-      roundOffAmount,
-      grandTotal: calculations.grandTotal,
-      appliedCoupons,
-      status: "held",
-      businessType: posDetails?.business_type,
-      salesperson: currentSalesperson?.name || null,
-      tax_id: taxPin || null,
-    };
+
     try {
-      onHoldOrder(orderData);
+      const orderItems = cartItems.map((item) => {
+        const code = item.item_code || item.id;
+        const discountData = itemDiscounts[code] || itemDiscounts[item.id] || {};
+        const basePrice =
+          Number((item as { originalPrice?: number }).originalPrice)
+          || Number((item as { original_price?: number }).original_price)
+          || Number(item.price)
+          || 0;
+        const customRate = discountData.customRate;
+        const discountPercentage =
+          Number(discountData.discountPercentage)
+          || Number((item as { discount_percentage?: number }).discount_percentage)
+          || 0;
+        const discountAmount =
+          Number(discountData.discountAmount)
+          || Number((item as { discount_amount?: number }).discount_amount)
+          || 0;
+
+        let heldPrice = Number((item as { discountedPrice?: number }).discountedPrice);
+        if (!Number.isFinite(heldPrice)) {
+          if (customRate !== undefined && customRate !== null) {
+            heldPrice = Math.max(0, Number(customRate) || 0);
+          } else {
+            heldPrice = basePrice;
+            if (discountPercentage > 0) {
+              heldPrice = heldPrice * (1 - discountPercentage / 100);
+            }
+            if (discountAmount > 0) {
+              heldPrice = Math.max(0, heldPrice - discountAmount);
+            }
+          }
+        }
+
+        return {
+          ...item,
+          price: heldPrice,
+          item_code: code,
+          discountPercentage,
+          discountAmount,
+        };
+      });
+
+      const totalItemDiscount = orderItems.reduce((sum, item) => {
+        const basePrice =
+          Number((item as { originalPrice?: number }).originalPrice)
+          || Number((item as { original_price?: number }).original_price)
+          || Number(item.price)
+          || 0;
+        const currentPrice = Number(item.price) || 0;
+        return sum + Math.max(0, (basePrice - currentPrice) * item.quantity);
+      }, 0);
+
+      const orderData = {
+        items: orderItems,
+        customer: { id: selectedCustomer.id },
+        subtotal: calculations.subtotal,
+        total: calculations.grandTotal,
+        SalesTaxCharges: selectedSalesTaxCharges,
+        taxAmount: calculations.taxAmount,
+        taxType: calculations.isInclusive ? "inclusive" : "exclusive",
+        couponDiscount: calculations.couponDiscount,
+        roundOffAmount,
+        grandTotal: calculations.grandTotal,
+        appliedCoupons,
+        itemDiscounts,
+        totalItemDiscount,
+        totalSavings: totalItemDiscount + calculations.couponDiscount,
+        status: "held",
+        businessType: posDetails?.business_type,
+        salesperson: currentSalesperson?.name || null,
+        tax_id: taxPin || null,
+        draft_invoice_id: getOriginalDraftInvoiceId(),
+      };
+
+      const result = await createDraftSalesInvoice(orderData);
+      if (!result?.success) {
+        throw new Error("Failed to hold order");
+      }
+
+      clearCart();
+      toast.success(orderData.draft_invoice_id ? "Draft invoice updated and order held successfully!" : "Draft invoice created and order held successfully!");
+      await Promise.resolve(onHoldOrder(orderData));
     } catch (err: any) {
       const errorMessage = extractErrorFromException(err, "Failed to hold order");
       toast.error(errorMessage);

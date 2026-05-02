@@ -379,27 +379,6 @@ export default function OrderSummary({
     onClearCart?.();
   };
 
-  const handleHoldOrder = async (orderData: any) => {
-    if (isHoldingOrder) return;
-    setIsHoldingOrder(true);
-    try {
-      const originalDraftInvoiceId = getOriginalDraftInvoiceId();
-      const result = await createDraftSalesInvoice({
-        ...orderData,
-        salesperson: activeSalesperson?.name || null,
-        draft_invoice_id: originalDraftInvoiceId,
-      });
-      if (result?.success) {
-        handleClearCart();
-        toast.success(originalDraftInvoiceId ? "Draft invoice updated and order held successfully!" : "Draft invoice created and order held successfully!");
-      }
-    } catch (error) {
-      toast.error(extractErrorFromException(error, "Failed to create draft invoice"));
-    } finally {
-      setIsHoldingOrder(false);
-    }
-  };
-
   const handleSalespersonAuthenticated = () => {
     const nextAction = pendingSalespersonAction;
     setPendingSalespersonAction(null);
@@ -552,7 +531,7 @@ export default function OrderSummary({
           appliedCoupons={[]}
           selectedCustomer={selectedCustomer}
           onCompletePayment={handleCompletePayment}
-          onHoldOrder={handleHoldOrder}
+          onHoldOrder={() => setShowPaymentDialog(false)}
           isMobile={isMobile}
           itemDiscounts={itemDiscounts}
           totalItemDiscount={totalItemDiscount}

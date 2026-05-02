@@ -338,8 +338,8 @@ export const CartItemRow = ({
   })();
   const originalTotal = item.price * item.quantity;
   const discountedTotal = discountedPrice * item.quantity;
-  const amount = (itemDiscount.customRate !== undefined && itemDiscount.customRate !== null ? itemDiscount.customRate : item.price) * item.quantity;
-  const displayRate = itemDiscount.customRate ?? (item.price > 0 ? item.price : "");
+  const amount = discountedTotal;
+  const displayRate = itemDiscount.customRate ?? (discountedPrice > 0 ? discountedPrice : "");
 
   const hasBundleEntries = bundleEntries.length > 0;
 

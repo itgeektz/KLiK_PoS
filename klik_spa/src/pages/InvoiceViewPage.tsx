@@ -8,6 +8,7 @@ import {
   MessageCirclePlus,
   MessageSquarePlus,
   Edit,
+  Check,
   RefreshCw,
   User,
   Phone,
@@ -35,6 +36,9 @@ import { useCustomerStatistics } from "../hooks/useCustomerStatistics";
 import { usePOSProfileStore } from "../stores/posProfileStore";
 import { useSalespersonStore } from "../stores/salespersonStore";
 import { deleteDraftInvoice } from "../services/salesInvoice";
+import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
+import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
+import { extractErrorFromException } from "../utils/errorExtraction";
 import { toast } from "react-toastify";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import DisplayPrintPreview from "../utils/invoicePrint";
@@ -43,6 +47,7 @@ import SingleInvoiceReturn from "../components/SingleInvoiceReturn";
 import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import AddCustomerModal from "../components/customer/AddCustomerModal";
+import { useCartStore } from "../stores/cartStore";
 
 export default function InvoiceViewPage() {
 
@@ -62,6 +67,7 @@ export default function InvoiceViewPage() {
   // Return modals state
   const [showSingleReturn, setShowSingleReturn] = useState(false)
   const [showMultiReturn, setShowMultiReturn] = useState(false)
+  const [showDraftPaymentDialog, setShowDraftPaymentDialog] = useState(false)
 
   // Customer edit modal state
   const [showCustomerEditModal, setShowCustomerEditModal] = useState(false)
@@ -75,6 +81,7 @@ export default function InvoiceViewPage() {
   const pendingSalespersonActionRef = useRef<null | (() => void)>(null)
 
   const { activeSalesperson, ensureInitialized } = useSalespersonStore()
+  const { cartItems, selectedCustomer: cartCustomer } = useCartStore()
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required
 
   useEffect(() => {
@@ -107,6 +114,8 @@ export default function InvoiceViewPage() {
     navigate(`/invoice`)
   };
 
+  const isDraftInvoiceStatus = (status?: string) => status === "Draft" || status === "Pending"
+
   // Delete invoice handlers
   const handleDeleteClick = () => {
     if (requiresSalespersonPin && !activeSalesperson) {
@@ -116,7 +125,7 @@ export default function InvoiceViewPage() {
 
     if (!invoice) return;
     console.log("Invoice object in detail page:", invoice);
-    if (invoice.status !== "Pending") {
+    if (!isDraftInvoiceStatus(invoice.status)) {
       toast.error("Only draft invoices can be deleted");
       return;
     }
@@ -341,6 +350,56 @@ export default function InvoiceViewPage() {
     queue_status?: string;
     queue_error?: string;
   };
+  const isDraftInvoice = isDraftInvoiceStatus(invoice.status);
+
+  const handleGoToCart = async () => {
+    if (!invoice) return
+    const draftInvoiceId = invoice.name || invoice.id
+    if (!draftInvoiceId) {
+      toast.error("Unable to edit draft invoice: missing invoice identifier")
+      return
+    }
+
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(handleGoToCart)
+      return
+    }
+
+    try {
+      const success = await addDraftInvoiceToCart(draftInvoiceId)
+      if (success) {
+        navigate("/pos")
+      }
+    } catch (error: unknown) {
+      console.error("Error going to cart:", error)
+      toast.error(extractErrorFromException(error, "Failed to add items to cart"))
+    }
+  }
+
+  const handleSubmitDirect = async () => {
+    if (!invoice) return
+    const draftInvoiceId = invoice.name || invoice.id
+    if (!draftInvoiceId) {
+      toast.error("Unable to submit draft invoice: missing invoice identifier")
+      return
+    }
+
+    if (requiresSalespersonPin && !activeSalesperson) {
+      runWithSalespersonGate(handleSubmitDirect)
+      return
+    }
+
+    try {
+      const success = await addDraftInvoiceToCart(draftInvoiceId)
+      if (success) {
+        await loadCachedItemsToCart()
+        setShowDraftPaymentDialog(true)
+      }
+    } catch (error: unknown) {
+      console.error("Error opening payment dialog for draft invoice:", error)
+      toast.error(extractErrorFromException(error, "Failed to load invoice for payment"))
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-12">
@@ -473,16 +532,29 @@ export default function InvoiceViewPage() {
                 )}
 
                 {/* Delete Button for Draft Invoices */}
-                {invoice.status === "Pending" && (
+                {isDraftInvoice && (
                   <>
                     <div className="w-px h-6 bg-gray-300 dark:bg-gray-600"></div>
                     <button
-                      className="group relative p-2 text-red-600 hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-900 rounded-lg transition-all duration-200"
-                      onClick={handleDeleteClick}
+                      className="group relative p-2 text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900 rounded-lg transition-all duration-200"
+                      onClick={() => {
+                        void handleGoToCart()
+                      }}
                     >
-                      <FileMinus size={20} />
+                      <Edit size={20} />
                       <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">
-                        Delete Draft Invoice
+                        Edit Draft Invoice
+                      </span>
+                    </button>
+                    <button
+                      className="group relative p-2 text-green-600 hover:bg-green-100 dark:text-green-400 dark:hover:bg-green-900 rounded-lg transition-all duration-200"
+                      onClick={() => {
+                        void handleSubmitDirect()
+                      }}
+                    >
+                      <Check size={20} />
+                      <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">
+                        Submit Draft Invoice
                       </span>
                     </button>
                   </>
@@ -970,6 +1042,28 @@ export default function InvoiceViewPage() {
           isFullPage={false}
           initialSharingMode={sharingMode}
           externalInvoiceData={invoice}
+        />
+      )}
+
+      {showDraftPaymentDialog && (
+        <PaymentDialog
+          isOpen={showDraftPaymentDialog}
+          onClose={(paymentCompleted) => {
+            setShowDraftPaymentDialog(false)
+            if (paymentCompleted) {
+              void refetch()
+            }
+          }}
+          cartItems={cartItems}
+          appliedCoupons={[]}
+          selectedCustomer={cartCustomer}
+          onCompletePayment={() => {
+            setShowDraftPaymentDialog(false)
+            void refetch()
+          }}
+          onHoldOrder={() => setShowDraftPaymentDialog(false)}
+          isMobile={false}
+          isFullPage={false}
         />
       )}
 

@@ -87,7 +87,7 @@ export default function OrderSummary({
   }, [posDetails?.custom_sales_person_pin_required, ensureInitialized]);
 
   useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
+    const handleDocumentClick = (event: MouseEvent) => {
       setExpandedItems((prev) => {
         if (prev.size === 0) return prev;
 
@@ -112,9 +112,9 @@ export default function OrderSummary({
       });
     };
 
-    document.addEventListener("mousedown", handlePointerDown, true);
+    document.addEventListener("click", handleDocumentClick, true);
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown, true);
+      document.removeEventListener("click", handleDocumentClick, true);
     };
   }, []);
 

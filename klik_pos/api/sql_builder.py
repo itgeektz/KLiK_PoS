@@ -38,7 +38,7 @@ def _find_clause_positions(sql_upper: str):
     return positions
 
 
-def _extract_doctype_aliases(sql: str):
+def _extract_doctype_aliases(sql: str, primary_only: bool = False):
     """Extract DocTypes and aliases from SQL query. Returns dict {doctype: alias}."""
     aliases = {}
 
@@ -57,13 +57,17 @@ def _extract_doctype_aliases(sql: str):
 
         aliases[doctype] = alias or f"`tab{doctype}`"
 
+        if primary_only:
+            break
+
     return aliases
 
 
 def apply_sql_permissions(sql: str):
     """Automatically inject Frappe permission conditions into SQL query."""
     try:
-        doctype_aliases = _extract_doctype_aliases(sql)
+        # Only apply permissions to the primary table, not subquery tables
+        doctype_aliases = _extract_doctype_aliases(sql, primary_only=True)
 
         if not doctype_aliases:
             return sql
@@ -77,6 +81,9 @@ def apply_sql_permissions(sql: str):
                 if rule:
                     if alias != f"`tab{doctype}`":
                         rule = rule.replace(f"`tab{doctype}`", alias)
+
+                    rule = rule.replace("%", "%%")
+
                     permission_conditions.append(f"({rule})")
 
             except frappe.PermissionError:

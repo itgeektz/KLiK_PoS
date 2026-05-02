@@ -897,7 +897,8 @@ def _get_invoice_items_with_returns(invoice_id, customer):
 	"""
 	# Batch fetch all items for this invoice
 	items_query = """
-		SELECT name, item_code, item_name, qty, rate, amount, description, uom
+		SELECT name, item_code, item_name, qty, rate, amount, description, uom,
+			price_list_rate, discount_amount, discount_percentage
 		FROM `tabSales Invoice Item`
 		WHERE parent = %s
 	"""
@@ -936,6 +937,9 @@ def _get_invoice_items_with_returns(invoice_id, customer):
 				"item_name": item.item_name,
 				"qty": item.qty,
 				"rate": item.rate,
+				"price_list_rate": item.price_list_rate,
+				"discount_amount": item.discount_amount,
+				"discount_percentage": item.discount_percentage,
 				"amount": item.amount,
 				"description": item.description,
 				"uom": item.uom,
@@ -1381,8 +1385,9 @@ def parse_invoice_data(data):
 	for item in data.get("items", []):
 		# Draft edit flows can send a unique cart-line id and the actual item code separately.
 		item_code = item.get("item_code") or item.get("id")
+		line_id = item.get("id")
 
-		discount_data = item_discounts.get(item_code, {})
+		discount_data = item_discounts.get(item_code) or item_discounts.get(line_id) or {}
 		if isinstance(discount_data, str):
 			try:
 				discount_data = json.loads(discount_data)

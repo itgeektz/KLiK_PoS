@@ -58,13 +58,23 @@ export default function OrderSummary({
   const [itemDiscounts, setItemDiscounts] = useState<Record<string, any>>(() => {
     const saved: Record<string, any> = {};
     cartItems.forEach(item => {
+      const persistedDiscountAmount = Number((item as CartItem & { discount_amount?: number }).discount_amount) || 0;
+      const persistedDiscountPercentage = Number((item as CartItem & { discount_percentage?: number }).discount_percentage) || 0;
+      const persistedCustomRate = (item as CartItem & { custom_rate?: number }).custom_rate;
       const serialBatchBundle = (item as CartItem & { serial_batch_bundle?: unknown }).serial_batch_bundle;
       if (serialBatchBundle || item.bundle_entries) {
         saved[item.id] = {
-          discountPercentage: 0,
-          discountAmount: 0,
+          discountPercentage: persistedDiscountPercentage,
+          discountAmount: persistedDiscountAmount,
+          customRate: persistedCustomRate,
           serial_batch_bundle: serialBatchBundle,
           bundle_entries: item.bundle_entries,
+        };
+      } else if (persistedDiscountAmount > 0 || persistedDiscountPercentage > 0 || persistedCustomRate !== undefined && persistedCustomRate !== null) {
+        saved[item.id] = {
+          discountPercentage: persistedDiscountPercentage,
+          discountAmount: persistedDiscountAmount,
+          customRate: persistedCustomRate,
         };
       }
     });
@@ -77,7 +87,54 @@ export default function OrderSummary({
   const autoFetchBatch = (posDetails as any)?.custom_autofetch_batchserial_ === 1;
 
   useEffect(() => {
+    // When a held invoice is loaded back into cart, restore per-line discounts from persisted draft fields.
+    setItemDiscounts((prev) => {
+      const next: Record<string, any> = {};
+
+      cartItems.forEach((item) => {
+        const existing = prev[item.id];
+        const persistedDiscountAmount = Number((item as CartItem & { discount_amount?: number }).discount_amount) || 0;
+        const persistedDiscountPercentage = Number((item as CartItem & { discount_percentage?: number }).discount_percentage) || 0;
+        const persistedCustomRate = (item as CartItem & { custom_rate?: number }).custom_rate;
+        const serialBatchBundle = (item as CartItem & { serial_batch_bundle?: unknown }).serial_batch_bundle;
+        const bundleEntries = item.bundle_entries;
+
+        if (existing) {
+          next[item.id] = {
+            ...existing,
+            serial_batch_bundle: existing.serial_batch_bundle ?? serialBatchBundle,
+            bundle_entries: existing.bundle_entries ?? bundleEntries,
+          };
+          return;
+        }
+
+        if (
+          persistedDiscountAmount > 0
+          || persistedDiscountPercentage > 0
+          || (persistedCustomRate !== undefined && persistedCustomRate !== null)
+          || serialBatchBundle
+          || bundleEntries
+        ) {
+          next[item.id] = {
+            discountPercentage: persistedDiscountPercentage,
+            discountAmount: persistedDiscountAmount,
+            customRate: persistedCustomRate,
+            serial_batch_bundle: serialBatchBundle,
+            bundle_entries: bundleEntries,
+          };
+        }
+      });
+
+      return next;
+    });
+  }, [cartItems]);
+
+  useEffect(() => {
     if (selectedCustomer && cartItems.length > 0) {
+      // Keep saved draft pricing stable while editing a held invoice.
+      if (getOriginalDraftInvoiceId()) {
+        return;
+      }
       refreshCartPricing();
     }
   }, [selectedCustomer?.id, cartItems.length, refreshCartPricing]);

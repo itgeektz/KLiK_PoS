@@ -1261,6 +1261,10 @@ def retry_failed_sales_invoice(invoice_name):
 @frappe.whitelist()
 def create_draft_invoice(data):
 	try:
+		if isinstance(data, str):
+			data = json.loads(data)
+
+		target_draft_invoice_id = data.get("draft_invoice_id") if isinstance(data, dict) else None
 		(
 			customer,
 			items,
@@ -1277,27 +1281,54 @@ def create_draft_invoice(data):
 			tax_id,
 			enable_background_submission,
 		) = parse_invoice_data(data)
-		
-		doc = build_sales_invoice_doc(
-			customer,
-			items,
-			amount_paid,
-			sales_and_tax_charges,
-			mode_of_payment,
-			business_type,
-			roundoff_amount,
-			include_payments=True,
-			delivery_personnel=delivery_personnel,
-			is_credit_sale=is_credit_sale,
-			allow_partial_payment=allow_partial_payment,
-			due_date=due_date,
-			salesperson=salesperson,
-			tax_id=tax_id,
-			enable_background_submission=enable_background_submission,
-		)
 
-		validate_required_salesperson(doc)
-		doc.insert(ignore_permissions=True)
+		if target_draft_invoice_id:
+			doc = frappe.get_doc("Sales Invoice", target_draft_invoice_id)
+			if doc.docstatus != 0 or doc.status != "Draft":
+				frappe.throw(
+					_("Cannot update invoice {0}. Only Draft invoices can be held again.").format(
+						target_draft_invoice_id
+					)
+				)
+
+			_update_existing_draft_invoice(
+				doc,
+				customer,
+				items,
+				amount_paid,
+				sales_and_tax_charges,
+				mode_of_payment,
+				business_type,
+				roundoff_amount,
+				delivery_personnel=delivery_personnel,
+				is_credit_sale=is_credit_sale,
+				allow_partial_payment=allow_partial_payment,
+				due_date=due_date,
+				salesperson=salesperson,
+				tax_id=tax_id,
+				enable_background_submission=enable_background_submission,
+			)
+		else:
+			doc = build_sales_invoice_doc(
+				customer,
+				items,
+				amount_paid,
+				sales_and_tax_charges,
+				mode_of_payment,
+				business_type,
+				roundoff_amount,
+				include_payments=True,
+				delivery_personnel=delivery_personnel,
+				is_credit_sale=is_credit_sale,
+				allow_partial_payment=allow_partial_payment,
+				due_date=due_date,
+				salesperson=salesperson,
+				tax_id=tax_id,
+				enable_background_submission=enable_background_submission,
+			)
+
+			validate_required_salesperson(doc)
+			doc.insert(ignore_permissions=True)
 
 		if tax_id:
 			doc.db_set("tax_id", tax_id)
@@ -1478,8 +1509,6 @@ def build_sales_invoice_doc(
 	# Configure POS profile and company settings
 	pos_profile = _get_active_pos_profile()
 	_set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid, allow_partial_payment)
-	if allow_partial_payment:
-		doc.custom_allow_partial_payment = 1
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
 	_validate_and_autofetch_batch_and_serial(items, pos_profile)
@@ -1518,6 +1547,83 @@ def build_sales_invoice_doc(
 		doc.due_date = due_date
 
 	return doc
+
+
+def _update_existing_draft_invoice(
+	invoice_doc,
+	customer,
+	items,
+	amount_paid,
+	sales_and_tax_charges,
+	mode_of_payment,
+	business_type,
+	roundoff_amount,
+	delivery_personnel=None,
+	is_credit_sale=False,
+	allow_partial_payment=False,
+	due_date=None,
+	salesperson=None,
+	tax_id=None,
+	enable_background_submission=False,
+):
+	rebuilt_doc = build_sales_invoice_doc(
+		customer,
+		items,
+		amount_paid,
+		sales_and_tax_charges,
+		mode_of_payment,
+		business_type,
+		roundoff_amount,
+		include_payments=True,
+		delivery_personnel=delivery_personnel,
+		is_credit_sale=is_credit_sale,
+		allow_partial_payment=allow_partial_payment,
+		due_date=due_date,
+		salesperson=salesperson,
+		tax_id=tax_id,
+		create_batch_and_serial_bundle=False,
+		enable_background_submission=enable_background_submission,
+	)
+
+	invoice_doc.customer = rebuilt_doc.customer
+	invoice_doc.due_date = rebuilt_doc.due_date
+	invoice_doc.custom_delivery_date = rebuilt_doc.custom_delivery_date
+	invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
+	invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
+	invoice_doc.tax_id = rebuilt_doc.tax_id
+	invoice_doc.pos_profile = rebuilt_doc.pos_profile
+	invoice_doc.company = rebuilt_doc.company
+	invoice_doc.currency = rebuilt_doc.currency
+	invoice_doc.selling_price_list = rebuilt_doc.selling_price_list
+	invoice_doc.conversion_rate = rebuilt_doc.conversion_rate
+	invoice_doc.update_stock = rebuilt_doc.update_stock
+	invoice_doc.warehouse = rebuilt_doc.warehouse
+	invoice_doc.cost_center = rebuilt_doc.cost_center
+	invoice_doc.is_pos = rebuilt_doc.is_pos
+	invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+	invoice_doc.set("items", [])
+	for item_row in rebuilt_doc.get("items", []):
+		invoice_doc.append("items", item_row.as_dict())
+	invoice_doc.set("taxes", [])
+	for tax_row in rebuilt_doc.get("taxes", []):
+		invoice_doc.append("taxes", tax_row.as_dict())
+	invoice_doc.set("sales_team", [])
+	for sales_person_row in rebuilt_doc.get("sales_team", []):
+		invoice_doc.append("sales_team", sales_person_row.as_dict())
+
+	if items:
+		_create_batch_and_serial_bundle(items, invoice_doc)
+
+	invoice_doc.set_taxes()
+	invoice_doc.set_missing_values()
+	invoice_doc.calculate_taxes_and_totals()
+
+	# Payments must be applied AFTER calculate_taxes_and_totals to preserve entered amounts.
+	invoice_doc.set("payments", [])
+	_add_payment_entries(invoice_doc, mode_of_payment)
+
+	validate_required_salesperson(invoice_doc)
+	invoice_doc.save(ignore_permissions=True)
 
 
 def _select_invoice_row_for_bundle(doc, item_code, preferred_index, used_rows):
@@ -3304,7 +3410,6 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.cost_center = rebuilt_doc.cost_center
 			invoice_doc.is_pos = rebuilt_doc.is_pos
 			invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
-			invoice_doc.custom_allow_partial_payment = rebuilt_doc.custom_allow_partial_payment
 			invoice_doc.set("items", [])
 			for item_row in rebuilt_doc.get("items", []):
 				invoice_doc.append("items", item_row.as_dict())

@@ -13,6 +13,7 @@ import ProductDetailsModal from "../ProductDetailsModal";
 
 interface CartItemRowProps {
   item: CartItem;
+  itemId: string;
   isExpanded: boolean;
   onToggleExpand: () => void;
   itemDiscount: any;
@@ -84,6 +85,7 @@ interface ItemFullData {
 
 export const CartItemRow = ({
   item,
+  itemId,
   isExpanded,
   onToggleExpand,
   itemDiscount,
@@ -356,7 +358,10 @@ export const CartItemRow = ({
 
   return (
     <>
-      <div className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : ""}>
+      <div
+        data-cart-item-id={itemId}
+        className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : ""}
+      >
         <div className={`flex items-center ${isMobile ? "p-3" : "py-2"}`}>
           <div className="flex-shrink-0 mr-2">
             <button

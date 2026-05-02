@@ -47,6 +47,44 @@ import { exportInvoicesToCSV, getExportFilename, type ExportableInvoice } from "
 // import InvoiceViewPage from "./InvoiceViewPage";
 
 const INVOICE_HISTORY_VIEW_MODE_KEY = "invoice-history-view-mode";
+const INVOICE_HISTORY_FILTERS_KEY = "invoice-history-filters";
+
+interface InvoiceHistoryFiltersState {
+  activeTab: string;
+  searchTerm: string;
+  dateFilter: string;
+  paymentFilter: string;
+  cashierFilter: string;
+}
+
+const DEFAULT_INVOICE_HISTORY_FILTERS: InvoiceHistoryFiltersState = {
+  activeTab: "all",
+  searchTerm: "",
+  dateFilter: "all",
+  paymentFilter: "all",
+  cashierFilter: "all",
+};
+
+const getInitialInvoiceHistoryFilters = (): InvoiceHistoryFiltersState => {
+  if (typeof window === "undefined") {
+    return DEFAULT_INVOICE_HISTORY_FILTERS;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(INVOICE_HISTORY_FILTERS_KEY);
+    if (!raw) {
+      return DEFAULT_INVOICE_HISTORY_FILTERS;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<InvoiceHistoryFiltersState>;
+    return {
+      ...DEFAULT_INVOICE_HISTORY_FILTERS,
+      ...parsed,
+    };
+  } catch {
+    return DEFAULT_INVOICE_HISTORY_FILTERS;
+  }
+};
 
 const getInitialViewMode = (): "cards" | "list" => {
   if (typeof window === "undefined") {
@@ -59,13 +97,14 @@ const getInitialViewMode = (): "cards" | "list" => {
 };
 
 export default function InvoiceHistoryPage() {
+  const initialFilters = getInitialInvoiceHistoryFilters();
   const navigate = useNavigate();
   const isMobile = useMediaQuery("(max-width: 1024px)");
-  const [activeTab, setActiveTab] = useState("all");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [dateFilter, setDateFilter] = useState("all");
-  const [paymentFilter, setPaymentFilter] = useState("all");
-  const [cashierFilter, setCashierFilter] = useState("all");
+  const [activeTab, setActiveTab] = useState(initialFilters.activeTab);
+  const [searchTerm, setSearchTerm] = useState(initialFilters.searchTerm);
+  const [dateFilter, setDateFilter] = useState(initialFilters.dateFilter);
+  const [paymentFilter, setPaymentFilter] = useState(initialFilters.paymentFilter);
+  const [cashierFilter, setCashierFilter] = useState(initialFilters.cashierFilter);
   const [viewMode, setViewMode] = useState<"cards" | "list">(getInitialViewMode);
   const [selectedInvoice] = useState<SalesInvoice | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -138,6 +177,19 @@ export default function InvoiceHistoryPage() {
   useEffect(() => {
     window.localStorage.setItem(INVOICE_HISTORY_VIEW_MODE_KEY, viewMode);
   }, [viewMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      INVOICE_HISTORY_FILTERS_KEY,
+      JSON.stringify({
+        activeTab,
+        searchTerm,
+        dateFilter,
+        paymentFilter,
+        cashierFilter,
+      })
+    );
+  }, [activeTab, searchTerm, dateFilter, paymentFilter, cashierFilter]);
 
   // Keyboard event handler for Escape key
   useEffect(() => {

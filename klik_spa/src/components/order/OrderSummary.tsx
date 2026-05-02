@@ -87,6 +87,38 @@ export default function OrderSummary({
   }, [posDetails?.custom_sales_person_pin_required, ensureInitialized]);
 
   useEffect(() => {
+    const handleDocumentClick = (event: MouseEvent) => {
+      setExpandedItems((prev) => {
+        if (prev.size === 0) return prev;
+
+        const target = event.target as HTMLElement | null;
+        if (!target) return prev;
+
+        const clickedRow = target.closest("[data-cart-item-id]") as HTMLElement | null;
+        if (!clickedRow) {
+          return new Set();
+        }
+
+        const clickedItemId = clickedRow.dataset.cartItemId;
+        if (!clickedItemId || !prev.has(clickedItemId)) {
+          return new Set();
+        }
+
+        if (prev.size === 1) {
+          return prev;
+        }
+
+        return new Set([clickedItemId]);
+      });
+    };
+
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => {
+      document.removeEventListener("click", handleDocumentClick, true);
+    };
+  }, []);
+
+  useEffect(() => {
     const fetchData = async () => {
       const newBatches = { ...itemBatches };
       const newSerials = { ...itemSerials };
@@ -336,10 +368,13 @@ export default function OrderSummary({
   };
 
   const toggleItemExpansion = (itemId: string) => {
-    const newExpanded = new Set(expandedItems);
-    if (newExpanded.has(itemId)) newExpanded.delete(itemId);
-    else newExpanded.add(itemId);
-    setExpandedItems(newExpanded);
+    setExpandedItems((prev) => {
+      if (prev.has(itemId)) {
+        return new Set();
+      }
+
+      return new Set([itemId]);
+    });
   };
 
   return (
@@ -391,6 +426,7 @@ export default function OrderSummary({
                 <CartItemRow
                   key={item.id}
                   item={item}
+                  itemId={item.id}
                   isExpanded={expandedItems.has(item.id)}
                   onToggleExpand={() => toggleItemExpansion(item.id)}
                   itemDiscount={itemDiscount}

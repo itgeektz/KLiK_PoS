@@ -13,6 +13,7 @@ import ProductDetailsModal from "../ProductDetailsModal";
 
 interface CartItemRowProps {
   item: CartItem;
+  itemId: string;
   isExpanded: boolean;
   onToggleExpand: () => void;
   itemDiscount: any;
@@ -84,6 +85,7 @@ interface ItemFullData {
 
 export const CartItemRow = ({
   item,
+  itemId,
   isExpanded,
   onToggleExpand,
   itemDiscount,
@@ -356,7 +358,10 @@ export const CartItemRow = ({
 
   return (
     <>
-      <div className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : ""}>
+      <div
+        data-cart-item-id={itemId}
+        className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : ""}
+      >
         <div className={`flex items-center ${isMobile ? "p-3" : "py-2"}`}>
           <div className="flex-shrink-0 mr-2">
             <button
@@ -474,14 +479,18 @@ export const CartItemRow = ({
             </button>
           </div>
 
-          <div className="flex-shrink-0 text-right min-w-[80px] px-2">
+          <div
+            className={`flex-shrink-0 text-right px-2 font-mono tabular-nums ${
+              isMobile ? "w-[110px]" : "w-[132px]"
+            }`}
+          >
             {discountedTotal !== originalTotal ? (
               <div>
-                <p className="text-gray-400 line-through text-xs">
+                <p className="text-gray-400 line-through text-xs whitespace-nowrap">
                   {formatCurrencyWithSymbol(originalTotal, currency_symbol)}
                 </p>
                 <p
-                  className={`text-beveren-600 dark:text-beveren-400 font-semibold ${
+                  className={`text-beveren-600 dark:text-beveren-400 font-semibold whitespace-nowrap ${
                     isMobile ? "text-base" : "text-sm"
                   }`}
                 >
@@ -490,7 +499,7 @@ export const CartItemRow = ({
               </div>
             ) : (
               <p
-                className={`text-beveren-600 dark:text-beveren-400 font-semibold ${
+                className={`text-beveren-600 dark:text-beveren-400 font-semibold whitespace-nowrap ${
                   isMobile ? "text-base" : "text-sm"
                 }`}
               >

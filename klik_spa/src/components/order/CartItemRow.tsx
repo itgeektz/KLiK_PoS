@@ -479,14 +479,18 @@ export const CartItemRow = ({
             </button>
           </div>
 
-          <div className="flex-shrink-0 text-right min-w-[80px] px-2">
+          <div
+            className={`flex-shrink-0 text-right px-2 font-mono tabular-nums ${
+              isMobile ? "w-[110px]" : "w-[132px]"
+            }`}
+          >
             {discountedTotal !== originalTotal ? (
               <div>
-                <p className="text-gray-400 line-through text-xs">
+                <p className="text-gray-400 line-through text-xs whitespace-nowrap">
                   {formatCurrencyWithSymbol(originalTotal, currency_symbol)}
                 </p>
                 <p
-                  className={`text-beveren-600 dark:text-beveren-400 font-semibold ${
+                  className={`text-beveren-600 dark:text-beveren-400 font-semibold whitespace-nowrap ${
                     isMobile ? "text-base" : "text-sm"
                   }`}
                 >
@@ -495,7 +499,7 @@ export const CartItemRow = ({
               </div>
             ) : (
               <p
-                className={`text-beveren-600 dark:text-beveren-400 font-semibold ${
+                className={`text-beveren-600 dark:text-beveren-400 font-semibold whitespace-nowrap ${
                   isMobile ? "text-base" : "text-sm"
                 }`}
               >

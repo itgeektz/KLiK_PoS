@@ -47,7 +47,7 @@ export default function TaxSection({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Tax Configuration</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="md:col-span-2">
-          {selectedCustomer?.is_walkin === 1 && (
+          {selectedCustomer?.isWalkin === 1 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 {invoiceSubmitted ? "Customer Tax ID" : "Customer Tax ID (optional)"}

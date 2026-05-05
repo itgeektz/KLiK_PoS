@@ -440,7 +440,7 @@ export default function InvoiceViewPage() {
                 <button
                   className="group relative p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
                   // @ts-expect-error just ignore
-                  onClick={() => handlePrintInvoice(invoice, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting), onAfterMark: refetch })}
+                  onClick={() => handlePrintInvoice(invoice, { preventReprint: Boolean(posDetails?.custom_prevent_invoice_reprinting), onAfterMark: refetch, posDetails })}
                 >
                   <Printer size={20} />
                   <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-0.5 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">

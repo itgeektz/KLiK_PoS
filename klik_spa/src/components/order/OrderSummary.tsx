@@ -15,6 +15,7 @@ import {
   createDraftSalesInvoice,
   validateCheckoutInvoice,
 } from "../../services/salesInvoice";
+import { getOriginalDraftInvoiceId } from "../../utils/draftInvoiceCache";
 import { CustomerSearchSection } from "./CustomerSearchSection";
 import { CartItemRow } from "./CartItemRow";
 import { OrderSummaryFooter } from "./OrderSummaryFooter";
@@ -44,6 +45,7 @@ export default function OrderSummary({
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false);
   const [isValidatingCheckout, setIsValidatingCheckout] = useState(false);
+  const [isHoldingOrder, setIsHoldingOrder] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [pendingSalespersonAction, setPendingSalespersonAction] = useState<
     "checkout" | "hold" | null
@@ -56,12 +58,23 @@ export default function OrderSummary({
   const [itemDiscounts, setItemDiscounts] = useState<Record<string, any>>(() => {
     const saved: Record<string, any> = {};
     cartItems.forEach(item => {
-      if (item.serial_batch_bundle || item.bundle_entries) {
+      const persistedDiscountAmount = Number((item as CartItem & { discount_amount?: number }).discount_amount) || 0;
+      const persistedDiscountPercentage = Number((item as CartItem & { discount_percentage?: number }).discount_percentage) || 0;
+      const persistedCustomRate = (item as CartItem & { custom_rate?: number }).custom_rate;
+      const serialBatchBundle = (item as CartItem & { serial_batch_bundle?: unknown }).serial_batch_bundle;
+      if (serialBatchBundle || item.bundle_entries) {
         saved[item.id] = {
-          discountPercentage: 0,
-          discountAmount: 0,
-          serial_batch_bundle: item.serial_batch_bundle,
+          discountPercentage: persistedDiscountPercentage,
+          discountAmount: persistedDiscountAmount,
+          customRate: persistedCustomRate,
+          serial_batch_bundle: serialBatchBundle,
           bundle_entries: item.bundle_entries,
+        };
+      } else if (persistedDiscountAmount > 0 || persistedDiscountPercentage > 0 || persistedCustomRate !== undefined && persistedCustomRate !== null) {
+        saved[item.id] = {
+          discountPercentage: persistedDiscountPercentage,
+          discountAmount: persistedDiscountAmount,
+          customRate: persistedCustomRate,
         };
       }
     });
@@ -74,7 +87,54 @@ export default function OrderSummary({
   const autoFetchBatch = (posDetails as any)?.custom_autofetch_batchserial_ === 1;
 
   useEffect(() => {
+    // When a held invoice is loaded back into cart, restore per-line discounts from persisted draft fields.
+    setItemDiscounts((prev) => {
+      const next: Record<string, any> = {};
+
+      cartItems.forEach((item) => {
+        const existing = prev[item.id];
+        const persistedDiscountAmount = Number((item as CartItem & { discount_amount?: number }).discount_amount) || 0;
+        const persistedDiscountPercentage = Number((item as CartItem & { discount_percentage?: number }).discount_percentage) || 0;
+        const persistedCustomRate = (item as CartItem & { custom_rate?: number }).custom_rate;
+        const serialBatchBundle = (item as CartItem & { serial_batch_bundle?: unknown }).serial_batch_bundle;
+        const bundleEntries = item.bundle_entries;
+
+        if (existing) {
+          next[item.id] = {
+            ...existing,
+            serial_batch_bundle: existing.serial_batch_bundle ?? serialBatchBundle,
+            bundle_entries: existing.bundle_entries ?? bundleEntries,
+          };
+          return;
+        }
+
+        if (
+          persistedDiscountAmount > 0
+          || persistedDiscountPercentage > 0
+          || (persistedCustomRate !== undefined && persistedCustomRate !== null)
+          || serialBatchBundle
+          || bundleEntries
+        ) {
+          next[item.id] = {
+            discountPercentage: persistedDiscountPercentage,
+            discountAmount: persistedDiscountAmount,
+            customRate: persistedCustomRate,
+            serial_batch_bundle: serialBatchBundle,
+            bundle_entries: bundleEntries,
+          };
+        }
+      });
+
+      return next;
+    });
+  }, [cartItems]);
+
+  useEffect(() => {
     if (selectedCustomer && cartItems.length > 0) {
+      // Keep saved draft pricing stable while editing a held invoice.
+      if (getOriginalDraftInvoiceId()) {
+        return;
+      }
       refreshCartPricing();
     }
   }, [selectedCustomer?.id, cartItems.length, refreshCartPricing]);
@@ -84,6 +144,42 @@ export default function OrderSummary({
       void ensureInitialized();
     }
   }, [posDetails?.custom_sales_person_pin_required, ensureInitialized]);
+
+  useEffect(() => {
+    const handleDocumentClick = (event: MouseEvent) => {
+      setExpandedItems((prev) => {
+        if (prev.size === 0) return prev;
+
+        const target = event.target as HTMLElement | null;
+        if (!target) return prev;
+
+        const clickedRow = target.closest("[data-cart-item-id]") as HTMLElement | null;
+        const clickedItemId = clickedRow?.dataset.cartItemId;
+        const activeElement = document.activeElement as HTMLElement | null;
+        const activeRow = activeElement?.closest("[data-cart-item-id]") as HTMLElement | null;
+        const activeItemId = activeRow?.dataset.cartItemId;
+        const itemToKeepOpen =
+          (clickedItemId && prev.has(clickedItemId) && clickedItemId) ||
+          (activeItemId && prev.has(activeItemId) && activeItemId) ||
+          null;
+
+        if (!itemToKeepOpen) {
+          return new Set();
+        }
+
+        if (prev.size === 1) {
+          return prev;
+        }
+
+        return new Set([itemToKeepOpen]);
+      });
+    };
+
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => {
+      document.removeEventListener("click", handleDocumentClick, true);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -225,8 +321,11 @@ export default function OrderSummary({
       toast.error("Kindly select a customer");
       return;
     }
+    if (isHoldingOrder) return;
 
+    setIsHoldingOrder(true);
     try {
+      const originalDraftInvoiceId = getOriginalDraftInvoiceId();
       const result = await createDraftSalesInvoice({
         items: cartItems.map((item) => ({
           ...item,
@@ -241,13 +340,16 @@ export default function OrderSummary({
         totalSavings: totalItemDiscount + couponDiscount,
         status: "held",
         salesperson: activeSalesperson?.name || null,
+        draft_invoice_id: originalDraftInvoiceId,
       });
       if (result?.success) {
         handleClearCart();
-        toast.success("Draft invoice created and order held successfully!");
+        toast.success(originalDraftInvoiceId ? "Draft invoice updated and order held successfully!" : "Draft invoice created and order held successfully!");
       }
     } catch (error) {
       toast.error(extractErrorFromException(error, "Failed to create draft invoice"));
+    } finally {
+      setIsHoldingOrder(false);
     }
   };
 
@@ -275,21 +377,6 @@ export default function OrderSummary({
     clearCart();
     setItemDiscounts({});
     onClearCart?.();
-  };
-
-  const handleHoldOrder = async (orderData: any) => {
-    try {
-      const result = await createDraftSalesInvoice({
-        ...orderData,
-        salesperson: activeSalesperson?.name || null,
-      });
-      if (result?.success) {
-        handleClearCart();
-        toast.success("Draft invoice created and order held successfully!");
-      }
-    } catch (error) {
-      toast.error(extractErrorFromException(error, "Failed to create draft invoice"));
-    }
   };
 
   const handleSalespersonAuthenticated = () => {
@@ -327,10 +414,13 @@ export default function OrderSummary({
   };
 
   const toggleItemExpansion = (itemId: string) => {
-    const newExpanded = new Set(expandedItems);
-    if (newExpanded.has(itemId)) newExpanded.delete(itemId);
-    else newExpanded.add(itemId);
-    setExpandedItems(newExpanded);
+    setExpandedItems((prev) => {
+      if (prev.has(itemId)) {
+        return new Set();
+      }
+
+      return new Set([itemId]);
+    });
   };
 
   return (
@@ -382,6 +472,7 @@ export default function OrderSummary({
                 <CartItemRow
                   key={item.id}
                   item={item}
+                  itemId={item.id}
                   isExpanded={expandedItems.has(item.id)}
                   onToggleExpand={() => toggleItemExpansion(item.id)}
                   itemDiscount={itemDiscount}
@@ -418,6 +509,7 @@ export default function OrderSummary({
             if (!validateCustomer()) return;
             void requireSalespersonAndRun("hold");
           }}
+          isHoldingOrder={isHoldingOrder}
           isValidating={isValidatingCheckout}
           isMobile={isMobile}
           currency_symbol={currency_symbol}
@@ -439,7 +531,7 @@ export default function OrderSummary({
           appliedCoupons={[]}
           selectedCustomer={selectedCustomer}
           onCompletePayment={handleCompletePayment}
-          onHoldOrder={handleHoldOrder}
+          onHoldOrder={() => setShowPaymentDialog(false)}
           isMobile={isMobile}
           itemDiscounts={itemDiscounts}
           totalItemDiscount={totalItemDiscount}

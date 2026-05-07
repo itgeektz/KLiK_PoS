@@ -39,6 +39,7 @@ export default function ProductGrid({
 
   const defaultView = posDetails?.custom_default_view || "Grid View";
   const viewMode = propViewMode || (defaultView === "List View" ? "list" : "grid");
+  const showItemCode = !!posDetails?.custom_show_item_code_in_product_list;
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const isSalespersonLockActive = requiresSalespersonPin && !activeSalesperson && !isRestoring;
 
@@ -154,6 +155,7 @@ export default function ProductGrid({
         <ProductLineView
           items={inStockItems}
           onAddToCart={handleAddToCart}
+          showItemCode={showItemCode}
           scannerOnly={scannerOnly}
         />
 
@@ -246,6 +248,7 @@ export default function ProductGrid({
             key={item.id}
             item={item}
             onAddToCart={handleAddToCart}
+            showItemCode={showItemCode}
             scannerOnly={scannerOnly}
           />
         ))}

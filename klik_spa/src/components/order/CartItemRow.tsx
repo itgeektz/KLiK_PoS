@@ -13,6 +13,7 @@ import ProductDetailsModal from "../ProductDetailsModal";
 
 interface CartItemRowProps {
   item: CartItem;
+  itemId: string;
   isExpanded: boolean;
   onToggleExpand: () => void;
   itemDiscount: any;
@@ -84,6 +85,7 @@ interface ItemFullData {
 
 export const CartItemRow = ({
   item,
+  itemId,
   isExpanded,
   onToggleExpand,
   itemDiscount,
@@ -336,8 +338,8 @@ export const CartItemRow = ({
   })();
   const originalTotal = item.price * item.quantity;
   const discountedTotal = discountedPrice * item.quantity;
-  const amount = (itemDiscount.customRate !== undefined && itemDiscount.customRate !== null ? itemDiscount.customRate : item.price) * item.quantity;
-  const displayRate = itemDiscount.customRate ?? (item.price > 0 ? item.price : "");
+  const amount = discountedTotal;
+  const displayRate = itemDiscount.customRate ?? (discountedPrice > 0 ? discountedPrice : "");
 
   const hasBundleEntries = bundleEntries.length > 0;
 
@@ -356,7 +358,10 @@ export const CartItemRow = ({
 
   return (
     <>
-      <div className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : ""}>
+      <div
+        data-cart-item-id={itemId}
+        className={isMobile ? "bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden" : ""}
+      >
         <div className={`flex items-center ${isMobile ? "p-3" : "py-2"}`}>
           <div className="flex-shrink-0 mr-2">
             <button
@@ -392,7 +397,7 @@ export const CartItemRow = ({
                 src={item.image}
                 alt={item.name}
                 className={`${
-                  isMobile ? "w-16 h-16" : "w-12 h-12"
+                  isMobile ? "w-12 h-12" : "w-12 h-12"
                 } rounded-lg object-cover`}
                 crossOrigin="anonymous"
               />
@@ -402,13 +407,21 @@ export const CartItemRow = ({
           )}
 
           <div className="flex-1 min-w-0 px-3">
-            <h4
-              className={`font-semibold text-gray-900 dark:text-white ${
-                isMobile ? "text-base" : "text-sm"
-              } truncate`}
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              title="Show/Hide Details"
+              className={`w-full text-left font-semibold text-gray-900 dark:text-white cursor-pointer ${
+                isMobile ? "text-sm" : "text-sm"
+              } leading-tight whitespace-normal break-words`}
             >
               {item.name}
-            </h4>
+            </button>
+            {(item.item_code || item.id) && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 font-mono leading-tight">
+                {item.item_code || item.id}
+              </p>
+            )}
             <p
               className={`text-gray-500 dark:text-gray-400 capitalize font-medium ${
                 isMobile ? "text-sm" : "text-xs"
@@ -434,7 +447,7 @@ export const CartItemRow = ({
             </div>
           </div>
 
-          <div className="flex-shrink-0 flex items-center ml-10 space-x-1 min-w-[70px] justify-center">
+          <div className={`flex-shrink-0 flex items-center space-x-1 min-w-[70px] justify-center ${isMobile ? "ml-1" : "ml-6"}`}>
             <button
               onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
               className={`${
@@ -466,14 +479,18 @@ export const CartItemRow = ({
             </button>
           </div>
 
-          <div className="flex-shrink-0 text-right min-w-[80px] px-2">
+          <div
+            className={`flex-shrink-0 text-right px-2 font-mono tabular-nums ${
+              isMobile ? "w-[110px]" : "w-[132px]"
+            }`}
+          >
             {discountedTotal !== originalTotal ? (
               <div>
-                <p className="text-gray-400 line-through text-xs">
+                <p className="text-gray-400 line-through text-xs whitespace-nowrap">
                   {formatCurrencyWithSymbol(originalTotal, currency_symbol)}
                 </p>
                 <p
-                  className={`text-beveren-600 dark:text-beveren-400 font-semibold ${
+                  className={`text-beveren-600 dark:text-beveren-400 font-semibold whitespace-nowrap ${
                     isMobile ? "text-base" : "text-sm"
                   }`}
                 >
@@ -482,7 +499,7 @@ export const CartItemRow = ({
               </div>
             ) : (
               <p
-                className={`text-beveren-600 dark:text-beveren-400 font-semibold ${
+                className={`text-beveren-600 dark:text-beveren-400 font-semibold whitespace-nowrap ${
                   isMobile ? "text-base" : "text-sm"
                 }`}
               >

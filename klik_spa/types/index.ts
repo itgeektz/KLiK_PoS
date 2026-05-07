@@ -15,6 +15,10 @@ export interface CartItem {
   name: string
   category: string
   price: number
+  original_price?: number
+  discount_amount?: number
+  discount_percentage?: number
+  custom_rate?: number
   image: string
   quantity: number
   available?: number
@@ -43,6 +47,7 @@ export interface PriceListRate {
 
 export interface MenuItem {
   id: string
+  item_code?: string
   name: string
   category: string
   price: number

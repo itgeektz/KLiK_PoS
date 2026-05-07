@@ -540,47 +540,47 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 
 		if not skip_opening_entry_filter:
 			if is_admin_user:
-				conditions.append("custom_pos_opening_entry != ''")
+				conditions.append("si.custom_pos_opening_entry != ''")
 			elif current_opening_entry:
-				conditions.append("custom_pos_opening_entry = %s")
+				conditions.append("si.custom_pos_opening_entry = %s")
 				params.append(current_opening_entry)
 			else:
-				conditions.append("custom_pos_opening_entry != ''")
+				conditions.append("si.custom_pos_opening_entry != ''")
 
 		if submitted_only:
-			conditions.append("docstatus = 1")
+			conditions.append("si.docstatus = 1")
 
 		if cashier_user_ids:
 			if len(cashier_user_ids) == 1:
-				conditions.append("owner = %s")
+				conditions.append("si.owner = %s")
 				params.append(cashier_user_ids[0])
 			else:
 				placeholders = ", ".join(["%s"] * len(cashier_user_ids))
-				conditions.append(f"owner IN ({placeholders})")
+				conditions.append(f"si.owner IN ({placeholders})")
 				params.extend(cashier_user_ids)
 
 		if current_pos_profile and not is_admin_user:
-			conditions.append("pos_profile = %s")
+			conditions.append("si.pos_profile = %s")
 			params.append(current_pos_profile)
 
 		if search and search.strip():
 			search_term = f"%{search.strip()}%"
-			conditions.append("(name LIKE %s OR customer_name LIKE %s OR customer LIKE %s)")
+			conditions.append("(si.name LIKE %s OR si.customer_name LIKE %s OR si.customer LIKE %s)")
 			params.extend([search_term, search_term, search_term])
 
 		where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
 		count_sql = apply_sql_permissions(
-			f"SELECT COUNT(*) as total FROM `tabSales Invoice` {where_clause}"
+			f"SELECT COUNT(*) as total FROM `tabSales Invoice` si {where_clause}"
 		)
 		count_result = frappe.db.sql(count_sql, tuple(params), as_dict=True)
 		total_count = count_result[0]["total"] if count_result else 0
 
 		main_sql = apply_sql_permissions(f"""
 			SELECT {select_fields}
-			FROM `tabSales Invoice`
+			FROM `tabSales Invoice` si
 			{where_clause}
-			ORDER BY modified DESC
+			ORDER BY si.modified DESC
 			LIMIT %s OFFSET %s
 		""")
 		invoices = frappe.db.sql(main_sql, (*params, limit, start), as_dict=True)
@@ -897,7 +897,8 @@ def _get_invoice_items_with_returns(invoice_id, customer):
 	"""
 	# Batch fetch all items for this invoice
 	items_query = """
-		SELECT item_code, item_name, qty, rate, amount, description
+		SELECT name, item_code, item_name, qty, rate, amount, description, uom,
+			price_list_rate, discount_amount, discount_percentage
 		FROM `tabSales Invoice Item`
 		WHERE parent = %s
 	"""
@@ -931,12 +932,17 @@ def _get_invoice_items_with_returns(invoice_id, customer):
 
 		items.append(
 			{
+				"name": item.name,
 				"item_code": item.item_code,
 				"item_name": item.item_name,
 				"qty": item.qty,
 				"rate": item.rate,
+				"price_list_rate": item.price_list_rate,
+				"discount_amount": item.discount_amount,
+				"discount_percentage": item.discount_percentage,
 				"amount": item.amount,
 				"description": item.description,
+				"uom": item.uom,
 				"returned_qty": returned_qty_value,
 				"available_qty": available_qty,
 			}
@@ -1261,6 +1267,10 @@ def retry_failed_sales_invoice(invoice_name):
 @frappe.whitelist()
 def create_draft_invoice(data):
 	try:
+		if isinstance(data, str):
+			data = json.loads(data)
+
+		target_draft_invoice_id = data.get("draft_invoice_id") if isinstance(data, dict) else None
 		(
 			customer,
 			items,
@@ -1277,27 +1287,54 @@ def create_draft_invoice(data):
 			tax_id,
 			enable_background_submission,
 		) = parse_invoice_data(data)
-		
-		doc = build_sales_invoice_doc(
-			customer,
-			items,
-			amount_paid,
-			sales_and_tax_charges,
-			mode_of_payment,
-			business_type,
-			roundoff_amount,
-			include_payments=True,
-			delivery_personnel=delivery_personnel,
-			is_credit_sale=is_credit_sale,
-			allow_partial_payment=allow_partial_payment,
-			due_date=due_date,
-			salesperson=salesperson,
-			tax_id=tax_id,
-			enable_background_submission=enable_background_submission,
-		)
 
-		validate_required_salesperson(doc)
-		doc.insert(ignore_permissions=True)
+		if target_draft_invoice_id:
+			doc = frappe.get_doc("Sales Invoice", target_draft_invoice_id)
+			if doc.docstatus != 0 or doc.status != "Draft":
+				frappe.throw(
+					_("Cannot update invoice {0}. Only Draft invoices can be held again.").format(
+						target_draft_invoice_id
+					)
+				)
+
+			_update_existing_draft_invoice(
+				doc,
+				customer,
+				items,
+				amount_paid,
+				sales_and_tax_charges,
+				mode_of_payment,
+				business_type,
+				roundoff_amount,
+				delivery_personnel=delivery_personnel,
+				is_credit_sale=is_credit_sale,
+				allow_partial_payment=allow_partial_payment,
+				due_date=due_date,
+				salesperson=salesperson,
+				tax_id=tax_id,
+				enable_background_submission=enable_background_submission,
+			)
+		else:
+			doc = build_sales_invoice_doc(
+				customer,
+				items,
+				amount_paid,
+				sales_and_tax_charges,
+				mode_of_payment,
+				business_type,
+				roundoff_amount,
+				include_payments=True,
+				delivery_personnel=delivery_personnel,
+				is_credit_sale=is_credit_sale,
+				allow_partial_payment=allow_partial_payment,
+				due_date=due_date,
+				salesperson=salesperson,
+				tax_id=tax_id,
+				enable_background_submission=enable_background_submission,
+			)
+
+			validate_required_salesperson(doc)
+			doc.insert(ignore_permissions=True)
 
 		if tax_id:
 			doc.db_set("tax_id", tax_id)
@@ -1346,9 +1383,11 @@ def parse_invoice_data(data):
 	default_payment_mode = None
 
 	for item in data.get("items", []):
-		item_code = item.get("id")
+		# Draft edit flows can send a unique cart-line id and the actual item code separately.
+		item_code = item.get("item_code") or item.get("id")
+		line_id = item.get("id")
 
-		discount_data = item_discounts.get(item_code, {})
+		discount_data = item_discounts.get(item_code) or item_discounts.get(line_id) or {}
 		if isinstance(discount_data, str):
 			try:
 				discount_data = json.loads(discount_data)
@@ -1478,8 +1517,6 @@ def build_sales_invoice_doc(
 	# Configure POS profile and company settings
 	pos_profile = _get_active_pos_profile()
 	_set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid, allow_partial_payment)
-	if allow_partial_payment:
-		doc.custom_allow_partial_payment = 1
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
 	_validate_and_autofetch_batch_and_serial(items, pos_profile)
@@ -1499,9 +1536,6 @@ def build_sales_invoice_doc(
 	# Add items to invoice
 	_populate_invoice_items(doc, items, pos_profile)
 
-	if create_batch_and_serial_bundle:
-		_create_batch_and_serial_bundle(items, doc)
-
 	# Populate tax details
 	_populate_tax_details(doc)
 
@@ -1509,8 +1543,12 @@ def build_sales_invoice_doc(
 	doc.set_missing_values()
 	doc.calculate_taxes_and_totals()
 
+	if create_batch_and_serial_bundle:
+		_create_batch_and_serial_bundle(items, doc)
+
 	# Add payment information
 	if include_payments:
+		doc.is_pos = 1
 		_add_payment_entries(doc, mode_of_payment)
 
 	if is_credit_sale and due_date:
@@ -1518,8 +1556,154 @@ def build_sales_invoice_doc(
 
 	return doc
 
+
+def _update_existing_draft_invoice(
+	invoice_doc,
+	customer,
+	items,
+	amount_paid,
+	sales_and_tax_charges,
+	mode_of_payment,
+	business_type,
+	roundoff_amount,
+	delivery_personnel=None,
+	is_credit_sale=False,
+	allow_partial_payment=False,
+	due_date=None,
+	salesperson=None,
+	tax_id=None,
+	enable_background_submission=False,
+):
+	rebuilt_doc = build_sales_invoice_doc(
+		customer,
+		items,
+		amount_paid,
+		sales_and_tax_charges,
+		mode_of_payment,
+		business_type,
+		roundoff_amount,
+		include_payments=True,
+		delivery_personnel=delivery_personnel,
+		is_credit_sale=is_credit_sale,
+		allow_partial_payment=allow_partial_payment,
+		due_date=due_date,
+		salesperson=salesperson,
+		tax_id=tax_id,
+		create_batch_and_serial_bundle=False,
+		enable_background_submission=enable_background_submission,
+	)
+
+	invoice_doc.customer = rebuilt_doc.customer
+	invoice_doc.due_date = rebuilt_doc.due_date
+	invoice_doc.custom_delivery_date = rebuilt_doc.custom_delivery_date
+	invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
+	invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
+	invoice_doc.tax_id = rebuilt_doc.tax_id
+	invoice_doc.pos_profile = rebuilt_doc.pos_profile
+	invoice_doc.company = rebuilt_doc.company
+	invoice_doc.currency = rebuilt_doc.currency
+	invoice_doc.selling_price_list = rebuilt_doc.selling_price_list
+	invoice_doc.conversion_rate = rebuilt_doc.conversion_rate
+	invoice_doc.update_stock = rebuilt_doc.update_stock
+	invoice_doc.warehouse = rebuilt_doc.warehouse
+	invoice_doc.cost_center = rebuilt_doc.cost_center
+	invoice_doc.is_pos = rebuilt_doc.is_pos
+	invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+	invoice_doc.set("items", [])
+	for item_row in rebuilt_doc.get("items", []):
+		invoice_doc.append("items", item_row.as_dict())
+	invoice_doc.set("taxes", [])
+	for tax_row in rebuilt_doc.get("taxes", []):
+		invoice_doc.append("taxes", tax_row.as_dict())
+	invoice_doc.set("sales_team", [])
+	for sales_person_row in rebuilt_doc.get("sales_team", []):
+		invoice_doc.append("sales_team", sales_person_row.as_dict())
+
+	if items:
+		_create_batch_and_serial_bundle(items, invoice_doc)
+
+	invoice_doc.set_taxes()
+	invoice_doc.set_missing_values()
+	invoice_doc.calculate_taxes_and_totals()
+
+	# Payments must be applied AFTER calculate_taxes_and_totals to preserve entered amounts.
+	invoice_doc.set("payments", [])
+	_add_payment_entries(invoice_doc, mode_of_payment)
+
+	validate_required_salesperson(invoice_doc)
+	invoice_doc.save(ignore_permissions=True)
+
+
+def _select_invoice_row_for_bundle(doc, item_code, preferred_index, used_rows):
+	if preferred_index < len(doc.items):
+		candidate = doc.items[preferred_index]
+		if candidate.item_code == item_code and candidate.name not in used_rows:
+			return candidate
+
+	for row in doc.items:
+		if row.item_code == item_code and row.name not in used_rows:
+			return row
+
+	return None
+
+
+def _normalize_bundle_qty_entries(row, entries, item_meta, item_code):
+	cleaned_entries = []
+	for entry in entries:
+		if not isinstance(entry, dict):
+			continue
+		batch_no = entry.get("batch_no")
+		serial_no = entry.get("serial_no")
+		if not batch_no and not serial_no:
+			continue
+		cleaned_entries.append({"batch_no": batch_no, "serial_no": serial_no, "qty": flt(entry.get("qty") or 0)})
+
+	if not cleaned_entries:
+		return []
+
+	target_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
+	if target_qty <= 0:
+		target_qty = flt(abs(getattr(row, "qty", 0) or 0))
+
+	if target_qty <= 0:
+		return cleaned_entries
+
+	target_precision = row.precision("stock_qty") if hasattr(row, "precision") else 6
+
+	if item_meta.has_serial_no:
+		serial_entries = [entry for entry in cleaned_entries if entry.get("serial_no")]
+		if serial_entries and flt(len(serial_entries), target_precision) != flt(target_qty, target_precision):
+			frappe.throw(
+				_(
+					"Serial count for Item {0} is {1} but required quantity is {2}. Please reselect serial numbers."
+				).format(item_code, len(serial_entries), target_qty)
+			)
+		for entry in cleaned_entries:
+			entry["qty"] = 1 if entry.get("serial_no") else flt(abs(entry.get("qty") or 0))
+		return cleaned_entries
+
+	if len(cleaned_entries) == 1:
+		cleaned_entries[0]["qty"] = target_qty
+		return cleaned_entries
+
+	current_total = flt(sum(abs(flt(entry.get("qty") or 0)) for entry in cleaned_entries))
+	if flt(current_total, target_precision) != flt(target_qty, target_precision):
+		frappe.throw(
+			_(
+				"Batch quantity for Item {0} is {1} but required quantity is {2}. Please reselect batch quantities."
+			).format(item_code, current_total, target_qty)
+		)
+
+	for entry in cleaned_entries:
+		entry["qty"] = flt(abs(entry.get("qty") or 0))
+
+	return cleaned_entries
+
 def _create_batch_and_serial_bundle(items, doc):
-	for item_data in items:
+	used_rows = set()
+
+
+	for idx, item_data in enumerate(items):
 		item_code = item_data.get("item_code") or item_data.get("id")
 		serial_batch_bundle = item_data.get("bundle_entries")
 
@@ -1531,26 +1715,36 @@ def _create_batch_and_serial_bundle(items, doc):
 		if not item_meta or not (item_meta.has_batch_no or item_meta.has_serial_no):
 			continue
 
-		for row in doc.items:
-			if row.item_code == item_code:
-				bundle = frappe.new_doc("Serial and Batch Bundle")
-				bundle.item_code = item_code
-				bundle.company = doc.company
-				bundle.warehouse =  row.warehouse
-				bundle.has_batch_no = item_meta.has_batch_no
-				bundle.has_serial_no = item_meta.has_serial_no
-				bundle.type_of_transaction = "Outward"
-				bundle.voucher_type = doc.doctype
+		row = _select_invoice_row_for_bundle(doc, item_code, idx, used_rows)
+		if not row:
+			continue
 
-				for entry in serial_batch_bundle:
-					bundle.append("entries", {
-						"batch_no": entry.get("batch_no"),
-						"serial_no": entry.get("serial_no"),
-						"qty": -abs(float(entry.get("qty") or 0)),
-					})
-				bundle.insert()
-				row.serial_and_batch_bundle = bundle.name
-				break
+		normalized_entries = _normalize_bundle_qty_entries(row, serial_batch_bundle, item_meta, item_code)
+		if not normalized_entries:
+			continue
+
+		bundle = frappe.new_doc("Serial and Batch Bundle")
+		bundle.item_code = item_code
+		bundle.company = doc.company
+		bundle.warehouse = row.warehouse
+		bundle.has_batch_no = item_meta.has_batch_no
+		bundle.has_serial_no = item_meta.has_serial_no
+		bundle.type_of_transaction = "Outward"
+		bundle.voucher_type = doc.doctype
+
+		for entry in normalized_entries:
+			bundle.append(
+				"entries",
+				{
+					"batch_no": entry.get("batch_no"),
+					"serial_no": entry.get("serial_no"),
+					"qty": -abs(flt(entry.get("qty") or 0)),
+				},
+			)
+
+		bundle.insert()
+		row.serial_and_batch_bundle = bundle.name
+		used_rows.add(row.name)
 
 
 def _get_active_pos_profile():
@@ -1686,8 +1880,9 @@ def _autofetch_batch_fifo(item_code, warehouse, qty):
 		if available_qty >= required_qty:
 			return batch.name
 
+	item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
 	frappe.throw(
-		f"No batch with sufficient stock found for item {item_code} "
+		f"No batch with sufficient stock found for item {item_name} ({item_code}) "
 		f"in warehouse {warehouse}. Required: {qty}"
 	)
 
@@ -1932,10 +2127,21 @@ def _add_payment_entries(doc, mode_of_payment):
 		return
 
 	for payment in mode_of_payment:
-		doc.append(
-			"payments",
-			{"mode_of_payment": payment["method"], "amount": payment["amount"]},
-		)
+		payment_row = {
+			"mode_of_payment": payment.get("method"),
+			"amount": payment.get("amount"),
+		}
+
+		if payment.get("reference_no"):
+			payment_row["reference_no"] = payment.get("reference_no")
+		if payment.get("phone_number"):
+			payment_row["phone_number"] = payment.get("phone_number")
+		if payment.get("type"):
+			payment_row["type"] = payment.get("type")
+		if payment.get("custom_reference_text"):
+			payment_row["custom_reference_text"] = payment.get("custom_reference_text")
+
+		doc.append("payments", payment_row)
 
 
 def _get_default_payment_mode():
@@ -3145,7 +3351,7 @@ def delete_draft_invoice(invoice_id):
 
 
 @frappe.whitelist()
-def submit_draft_invoice(invoice_id):
+def submit_draft_invoice(invoice_id, data=None):
 	"""
 	Submit a draft sales invoice directly without payment dialog.
 	This converts a draft invoice to submitted status.
@@ -3159,23 +3365,127 @@ def submit_draft_invoice(invoice_id):
 				"error": f"Cannot submit invoice {invoice_id}. Only Draft invoices can be submitted. Current status: {invoice_doc.status}",
 			}
 
-		validate_required_salesperson(invoice_doc)
+		if data:
+			(
+				customer,
+				items,
+				amount_paid,
+				sales_and_tax_charges,
+				mode_of_payment,
+				business_type,
+				roundoff_amount,
+				delivery_personnel,
+				is_credit_sale,
+				allow_partial_payment,
+				due_date,
+				salesperson,
+				tax_id,
+				enable_background_submission,
+			) = parse_invoice_data(data)
 
-		invoice_doc.submit()
-		try:
-			_cancel_sales_invoice_reservations(invoice_doc.name)
-		except Exception:
-			frappe.log_error(
-				frappe.get_traceback(),
-				f"Failed to cancel reservations after submit for {invoice_doc.name}",
+			rebuilt_doc = build_sales_invoice_doc(
+				customer,
+				items,
+				amount_paid,
+				sales_and_tax_charges,
+				mode_of_payment,
+				business_type,
+				roundoff_amount,
+				include_payments=True,
+				delivery_personnel=delivery_personnel,
+				is_credit_sale=is_credit_sale,
+				allow_partial_payment=allow_partial_payment,
+				due_date=due_date,
+				salesperson=salesperson,
+				tax_id=tax_id,
+				create_batch_and_serial_bundle=False,
+				enable_background_submission=enable_background_submission,
 			)
 
-		return {
-			"success": True,
-			"message": f"Draft invoice {invoice_id} submitted successfully",
-			"invoice_name": invoice_doc.name,
-			"invoice": invoice_doc,
-		}
+			invoice_doc.customer = rebuilt_doc.customer
+			invoice_doc.due_date = rebuilt_doc.due_date
+			invoice_doc.custom_delivery_date = rebuilt_doc.custom_delivery_date
+			invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
+			invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
+			invoice_doc.tax_id = rebuilt_doc.tax_id
+			invoice_doc.pos_profile = rebuilt_doc.pos_profile
+			invoice_doc.company = rebuilt_doc.company
+			invoice_doc.currency = rebuilt_doc.currency
+			invoice_doc.selling_price_list = rebuilt_doc.selling_price_list
+			invoice_doc.conversion_rate = rebuilt_doc.conversion_rate
+			invoice_doc.update_stock = rebuilt_doc.update_stock
+			invoice_doc.warehouse = rebuilt_doc.warehouse
+			invoice_doc.cost_center = rebuilt_doc.cost_center
+			invoice_doc.is_pos = rebuilt_doc.is_pos
+			invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+			invoice_doc.set("items", [])
+			for item_row in rebuilt_doc.get("items", []):
+				invoice_doc.append("items", item_row.as_dict())
+			invoice_doc.set("taxes", [])
+			for tax_row in rebuilt_doc.get("taxes", []):
+				invoice_doc.append("taxes", tax_row.as_dict())
+			invoice_doc.set("sales_team", [])
+			for sales_person_row in rebuilt_doc.get("sales_team", []):
+				invoice_doc.append("sales_team", sales_person_row.as_dict())
+
+			if items:
+				_create_batch_and_serial_bundle(items, invoice_doc)
+
+			invoice_doc.set_taxes()
+			invoice_doc.set_missing_values()
+			invoice_doc.calculate_taxes_and_totals()
+
+			# Payments must be applied AFTER calculate_taxes_and_totals to prevent
+			# ERPNext's set_payments() from overwriting the user-entered amounts.
+			invoice_doc.set("payments", [])
+			_add_payment_entries(invoice_doc, mode_of_payment)
+
+			invoice_doc.save(ignore_permissions=True)
+
+		validate_required_salesperson(invoice_doc)
+
+		if enable_background_submission:
+			_mark_invoice_queued(invoice_doc, frappe.session.user)
+			invoice_doc.save(ignore_permissions=True)
+
+			try:
+				_reserve_stock_for_queued_invoice(invoice_doc)
+			except Exception as reserve_error:
+				_update_queue_fields(invoice_doc, QUEUE_STATUSES["failed"], error_message=str(reserve_error))
+				invoice_doc.save(ignore_permissions=True)
+				return {"success": False, "error": str(reserve_error)}
+
+			frappe.enqueue(
+				"klik_pos.api.sales_invoice.process_queued_sales_invoice",
+				queue="long",
+				enqueue_after_commit=True,
+				invoice_name=invoice_doc.name,
+				requested_by=frappe.session.user,
+			)
+
+			return {
+				"success": True,
+				"message": f"Draft invoice {invoice_id} queued for background submission",
+				"queue_status": invoice_doc.queue_status,
+				"invoice_name": invoice_doc.name,
+				"invoice": invoice_doc,
+			}
+		else:
+			invoice_doc.submit()
+			try:
+				_cancel_sales_invoice_reservations(invoice_doc.name)
+			except Exception:
+				frappe.log_error(
+					frappe.get_traceback(),
+					f"Failed to cancel reservations after submit for {invoice_doc.name}",
+				)
+
+			return {
+				"success": True,
+				"message": f"Draft invoice {invoice_id} submitted successfully",
+				"invoice_name": invoice_doc.name,
+				"invoice": invoice_doc,
+			}
 
 	except frappe.DoesNotExistError:
 		return {"success": False, "error": f"Invoice {invoice_id} not found"}

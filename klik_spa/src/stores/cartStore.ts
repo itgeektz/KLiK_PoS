@@ -5,6 +5,7 @@ import type { CartItem, GiftCoupon } from '../../types'
 import type { Customer } from '../types/customer'
 import { toast } from 'react-toastify'
 import { clearDraftInvoiceCache } from '../utils/draftInvoiceCache'
+import { usePOSProfileStore } from './posProfileStore'
 
 interface SerialBatchEntry {
   serial_no?: string;
@@ -31,6 +32,11 @@ interface CartState {
   refreshCartPricing: () => Promise<void>
   updateItemBundleEntries: (id: string, entries: SerialBatchEntry[]) => void
 }
+
+const shouldInsertNewItemsAtTop = (): boolean => {
+  const position = usePOSProfileStore.getState().posDetails?.custom_cart_item_insertion_position;
+  return position === 'Top';
+};
 
 export const useCartStore = create<CartState>()(
   persist(
@@ -107,7 +113,13 @@ export const useCartStore = create<CartState>()(
 
       addToCart: async (item) => {
         const state = get();
-        const existingItem = state.cartItems.find((cartItem) => cartItem.id === item.id);
+        const incomingCode = item.item_code || item.id;
+        const existingItem = state.cartItems.find((cartItem) =>
+          cartItem.id === item.id || (cartItem.item_code || cartItem.id) === incomingCode
+        );
+        const totalMatchingQty = state.cartItems
+          .filter((cartItem) => (cartItem.item_code || cartItem.id) === incomingCode)
+          .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
 
         if (item.available !== undefined && item.available <= 0) {
           toast.error(`${item.name} is out of stock`);
@@ -115,24 +127,28 @@ export const useCartStore = create<CartState>()(
         }
 
         if (existingItem) {
-          if (item.available !== undefined && existingItem.quantity >= item.available) {
+          if (item.available !== undefined && totalMatchingQty >= item.available) {
             toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
             return;
           }
 
+          const targetId = existingItem.id;
           set((state) => ({
             cartItems: state.cartItems.map((cartItem) =>
-              cartItem.id === item.id
+              cartItem.id === targetId
                 ? { ...cartItem, quantity: cartItem.quantity + 1 }
                 : cartItem
             )
           }));
         } else {
-          const newCartItems = [...state.cartItems, { 
+          const newItem = {
             ...item, 
             quantity: 1,
             bundle_entries: []
-          }];
+          };
+          const newCartItems = shouldInsertNewItemsAtTop()
+            ? [newItem, ...state.cartItems]
+            : [...state.cartItems, newItem];
           set({ cartItems: newCartItems });
         }
 
@@ -141,7 +157,13 @@ export const useCartStore = create<CartState>()(
 
       addToCartWithQuantity: async (item, quantity) => {
         const state = get();
-        const existingItem = state.cartItems.find((cartItem) => cartItem.id === item.id);
+        const incomingCode = item.item_code || item.id;
+        const existingItem = state.cartItems.find((cartItem) =>
+          cartItem.id === item.id || (cartItem.item_code || cartItem.id) === incomingCode
+        );
+        const totalMatchingQty = state.cartItems
+          .filter((cartItem) => (cartItem.item_code || cartItem.id) === incomingCode)
+          .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
 
         if (item.available !== undefined && item.available < quantity) {
           toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
@@ -149,24 +171,28 @@ export const useCartStore = create<CartState>()(
         }
 
         if (existingItem) {
-          if (item.available !== undefined && (existingItem.quantity + quantity) > item.available) {
+          if (item.available !== undefined && (totalMatchingQty + quantity) > item.available) {
             toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
             return;
           }
 
+          const targetId = existingItem.id;
           set((state) => ({
             cartItems: state.cartItems.map((cartItem) =>
-              cartItem.id === item.id
+              cartItem.id === targetId
                 ? { ...cartItem, quantity: cartItem.quantity + quantity }
                 : cartItem
             )
           }));
         } else {
-          const newCartItems = [...state.cartItems, { 
+          const newItem = {
             ...item, 
             quantity,
             bundle_entries: []
-          }];
+          };
+          const newCartItems = shouldInsertNewItemsAtTop()
+            ? [newItem, ...state.cartItems]
+            : [...state.cartItems, newItem];
           set({ cartItems: newCartItems });
         }
 

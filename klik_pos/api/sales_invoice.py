@@ -25,6 +25,27 @@ QUEUE_STATUSES = {
 }
 
 
+def _set_checkbox_field_value(doc, fieldname, value):
+	"""Safely set checkbox fields only when present on the document."""
+	if not doc or not hasattr(doc, fieldname):
+		return
+	setattr(doc, fieldname, cint(bool(value)))
+
+
+def _apply_klik_invoice_flags(doc, is_held=None, is_submitted=None):
+	"""Track Klik-origin invoices and hold/submission state using custom checkbox fields."""
+	if not doc:
+		return
+
+	_set_checkbox_field_value(doc, "custom_is_created_from_klik", 1)
+
+	if is_held is not None:
+		_set_checkbox_field_value(doc, "custom_is_held", is_held)
+
+	if is_submitted is not None:
+		_set_checkbox_field_value(doc, "custom_is_submitted", is_submitted)
+
+
 def validate_required_salesperson(doc):
 	"""Enforce salesperson presence for POS flows when the POS profile requires it."""
 	if not doc or not getattr(doc, "is_pos", 0):
@@ -353,6 +374,8 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 
 def _update_queue_fields(doc, status, error_message=None, attempts=None):
 	doc.queue_status = _coerce_queue_status(status)
+	# Keep held flag unchanged for audit history; only update submitted state here.
+	_apply_klik_invoice_flags(doc, is_submitted=(doc.queue_status == QUEUE_STATUSES["submitted"]))
 	if hasattr(doc, "queue_error"):
 		doc.queue_error = _truncate_queue_error(error_message) if error_message else ""
 	if hasattr(doc, "queue_attempts") and attempts is not None:
@@ -418,6 +441,8 @@ def _notify_queue_failure(invoice_doc, requested_by, error_message):
 
 def _mark_invoice_queued(doc, requested_by=None):
 	_update_queue_fields(doc, QUEUE_STATUSES["queued"], attempts=0)
+	# Preserve held state if this queue action came from a held draft invoice.
+	_apply_klik_invoice_flags(doc, is_submitted=False)
 	if hasattr(doc, "queue_error"):
 		doc.queue_error = ""
 	if hasattr(doc, "queue_last_attempt_at"):
@@ -527,6 +552,11 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 
 		sales_invoice_meta = frappe.get_meta("Sales Invoice")
 		has_zatca_status = any(df.fieldname == "custom_zatca_submit_status" for df in sales_invoice_meta.fields)
+		has_custom_is_held = any(df.fieldname == "custom_is_held" for df in sales_invoice_meta.fields)
+		has_custom_is_submitted = any(df.fieldname == "custom_is_submitted" for df in sales_invoice_meta.fields)
+		has_custom_is_created_from_klik = any(
+			df.fieldname == "custom_is_created_from_klik" for df in sales_invoice_meta.fields
+		)
 
 		select_fields = """name, posting_date, posting_time, owner, customer, customer_name,
 			base_grand_total, base_rounded_total, status, discount_amount,
@@ -534,6 +564,12 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 			queue_error, queue_attempts, queue_last_attempt_at, pos_profile, currency, custom_is_printed"""
 		if has_zatca_status:
 			select_fields += ", custom_zatca_submit_status"
+		if has_custom_is_held:
+			select_fields += ", custom_is_held"
+		if has_custom_is_submitted:
+			select_fields += ", custom_is_submitted"
+		if has_custom_is_created_from_klik:
+			select_fields += ", custom_is_created_from_klik"
 
 		conditions = []
 		params = []
@@ -1076,6 +1112,7 @@ def queue_sales_invoice(data):
 		doc.paid_amount = amount_paid
 		doc.outstanding_amount = max(flt(doc.grand_total) - flt(amount_paid), 0)
 		doc.reserve_stock = 1
+		_apply_klik_invoice_flags(doc, is_held=False, is_submitted=False)
 
 		_validate_reserved_stock_for_items(doc)
 
@@ -1133,6 +1170,7 @@ def queue_sales_invoice(data):
 			if tax_id:
 				doc.db_set("tax_id", tax_id)
 
+			_apply_klik_invoice_flags(doc, is_submitted=True)
 			doc.submit()
 			doc.reload()
 
@@ -1187,6 +1225,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 	try:
 		doc = frappe.get_doc("Sales Invoice", invoice_name)
 		if doc.docstatus != 0:
+			_apply_klik_invoice_flags(doc, is_submitted=True)
 			_update_queue_fields(doc, QUEUE_STATUSES["submitted"], None)
 			doc.save(ignore_permissions=True)
 			return {"success": True, "message": "Invoice already submitted"}
@@ -1194,6 +1233,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 		attempts = int(getattr(doc, "queue_attempts", 0) or 0) + 1
 		_update_queue_fields(doc, QUEUE_STATUSES["processing"], attempts=attempts)
 		doc.save(ignore_permissions=True)
+		_apply_klik_invoice_flags(doc, is_submitted=True)
 		doc.submit()
 		doc.reload()
 		try:
@@ -1334,6 +1374,7 @@ def create_draft_invoice(data):
 			)
 
 			validate_required_salesperson(doc)
+			_apply_klik_invoice_flags(doc, is_held=True, is_submitted=False)
 			doc.insert(ignore_permissions=True)
 
 		if tax_id:
@@ -1494,6 +1535,7 @@ def build_sales_invoice_doc(
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
+	_apply_klik_invoice_flags(doc, is_held=False, is_submitted=False)
 	doc.customer = customer
 	doc.due_date = due_date or frappe.utils.nowdate()
 	doc.custom_delivery_date = frappe.utils.nowdate()
@@ -1631,6 +1673,7 @@ def _update_existing_draft_invoice(
 	_add_payment_entries(invoice_doc, mode_of_payment)
 
 	validate_required_salesperson(invoice_doc)
+	_apply_klik_invoice_flags(invoice_doc, is_held=True, is_submitted=False)
 	invoice_doc.save(ignore_permissions=True)
 
 
@@ -2323,6 +2366,7 @@ def return_sales_invoice(invoice_name):
 
 		return_doc.is_return = 1
 		return_doc.posting_date = frappe.utils.nowdate()
+		_apply_klik_invoice_flags(return_doc, is_held=False, is_submitted=True)
 
 		for item in return_doc.items:
 			item.qty = -abs(item.qty)
@@ -3127,6 +3171,7 @@ def create_partial_return(
 		return_doc.is_return = 1
 		return_doc.posting_date = frappe.utils.nowdate()
 		return_doc.custom_delivery_date = frappe.utils.nowdate()
+		_apply_klik_invoice_flags(return_doc, is_held=False, is_submitted=True)
 
 		# Set the current POS opening entry
 		current_opening_entry = get_current_pos_opening_entry()
@@ -3446,6 +3491,7 @@ def submit_draft_invoice(invoice_id, data=None):
 
 		if enable_background_submission:
 			_mark_invoice_queued(invoice_doc, frappe.session.user)
+			_apply_klik_invoice_flags(invoice_doc, is_submitted=False)
 			invoice_doc.save(ignore_permissions=True)
 
 			try:
@@ -3471,6 +3517,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				"invoice": invoice_doc,
 			}
 		else:
+			_apply_klik_invoice_flags(invoice_doc, is_submitted=True)
 			invoice_doc.submit()
 			try:
 				_cancel_sales_invoice_reservations(invoice_doc.name)

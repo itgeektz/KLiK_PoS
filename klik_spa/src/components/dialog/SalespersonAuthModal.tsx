@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Lock, Unlock, UserRound, X } from "lucide-react";
+import { Loader2, Lock, Search, Unlock, UserRound, X } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { useSalespersonStore } from "../../stores/salespersonStore";
@@ -38,6 +38,7 @@ export default function SalespersonAuthModal({
   const [selectedSalesperson, setSelectedSalesperson] = useState<string>("");
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -64,6 +65,16 @@ export default function SalespersonAuthModal({
     () => salespeople.find((entry) => entry.salesperson === selectedSalesperson) || null,
     [salespeople, selectedSalesperson]
   );
+
+  const filteredSalespeople = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return salespeople;
+    return salespeople.filter(
+      (entry) =>
+        entry.salesperson_name.toLowerCase().includes(q) ||
+        entry.salesperson.toLowerCase().includes(q)
+    );
+  }, [salespeople, search]);
 
   if (!isOpen) {
     return null;
@@ -123,25 +134,39 @@ export default function SalespersonAuthModal({
               <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Salespeople</p>
               <button
                 type="button"
-                onClick={() => void loadSalespeople(true)}
+                onClick={() => {
+                  setSearch("");
+                  void loadSalespeople(true)}
+                }
                 className="text-sm font-medium text-beveren-600 transition-colors hover:text-beveren-700"
               >
                 Refresh
               </button>
             </div>
 
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search salespeople..."
+                className="w-full rounded-xl border border-gray-300 bg-white py-2 pl-9 pr-4 text-sm text-gray-900 outline-none transition-colors focus:border-beveren-500 focus:ring-2 focus:ring-beveren-200 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder-gray-500"
+              />
+            </div>
+
+            <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
               {isLoadingSalespeople || isRestoring ? (
                 <div className="flex items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-300">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span>Loading salespeople...</span>
                 </div>
-              ) : salespeople.length === 0 ? (
+              ) : filteredSalespeople.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-300">
-                  No active salespeople found.
+                  {search.trim() ? "No salespeople match your search." : "No active salespeople found."}
                 </div>
               ) : (
-                salespeople.map((entry) => {
+                filteredSalespeople.map((entry) => {
                   const isSelected = entry.salesperson === selectedSalesperson;
                   const isActive = activeSalesperson?.name === entry.salesperson;
                   const isSelectable = entry.has_pin;

@@ -540,6 +540,9 @@ const getStatusBadge = (status: string) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Invoice
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                  Date
+                </th>
                 <th className="px-6 py-3 w-48 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Customer
                 </th>
@@ -569,12 +572,11 @@ const getStatusBadge = (status: string) => {
               {filteredInvoices.map((invoice) => (
                 <tr key={`${activeTab}-${invoice.id}`} className="group hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {invoice.date} {invoice.time}
-                      </div>
-                    </div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900 dark:text-white">{invoice.date}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{invoice.time}</div>
                   </td>
                   <td className="px-6 py-4 max-w-[12rem]">
                     <div title={invoice.customer} className="block truncate text-sm text-gray-900 dark:text-white">{invoice.customer}</div>

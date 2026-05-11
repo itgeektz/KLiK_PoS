@@ -7,6 +7,7 @@ from klik_pos.klik_pos.utils import get_current_pos_profile
 from ..sql_builder import apply_sql_permissions
 from .item_price import fetch_item_price
 from .item_stock import apply_queue_reservations_to_stock_map, fetch_item_balance
+from .search_utils import build_item_search_conditions
 
 
 @frappe.whitelist(allow_guest=True)
@@ -92,24 +93,14 @@ def get_items(
             params_list.append(category)
             count_params.append(category)
 
-        search_term = None
-        if search and search.strip():
-            search_term = f"%{search.strip()}%"
-            search_condition = """
-                AND (
-                    i.name LIKE %s
-                    OR i.item_name LIKE %s
-                    OR i.description LIKE %s
-                    OR EXISTS (
-                        SELECT 1 FROM `tabItem Barcode` ib
-                        WHERE ib.parent = i.name AND ib.barcode LIKE %s
-                    )
-                )
-            """
-            base_query.append(search_condition)
-            count_query.append(search_condition)
-            params_list.extend([search_term, search_term, search_term, search_term])
-            count_params.extend([search_term, search_term, search_term, search_term])
+        enhanced_search = bool(getattr(pos_doc, "custom_enhanced_search", False))
+        search_clauses, search_params = build_item_search_conditions(search or "", enhanced_search)
+        base_query.extend(search_clauses)
+        count_query.extend(search_clauses)
+        params_list.extend(search_params)
+        count_params.extend(search_params)
+        # pass raw search string to category-count helper so it applies the same logic
+        search_term = search.strip() if search and search.strip() else None
 
         count_sql = "\n".join(count_query)
         count_sql = apply_sql_permissions(count_sql)
@@ -163,7 +154,7 @@ def get_items(
         )
 
         item_groups_data = _get_item_groups_with_counts(
-            pos_doc, warehouse, hide_unavailable, search_term, category
+            pos_doc, warehouse, hide_unavailable, search_term, category, enhanced_search
         )
 
         if not items:
@@ -320,7 +311,7 @@ def _get_conversion_factor_sql(item_code, uom):
         return 1
 
 
-def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_term=None, selected_category=None):
+def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_term=None, selected_category=None, enhanced_search=False):
     try:
         item_groups = []
 
@@ -363,18 +354,9 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
                 group_query_params = []
             
             if search_term:
-                group_query += """
-                    AND (
-                        i.name LIKE %s
-                        OR i.item_name LIKE %s
-                        OR i.description LIKE %s
-                        OR EXISTS (
-                            SELECT 1 FROM `tabItem Barcode` ib
-                            WHERE ib.parent = i.name AND ib.barcode LIKE %s
-                        )
-                    )
-                """
-                group_query_params.extend([search_term, search_term, search_term, search_term])
+                s_clauses, s_params = build_item_search_conditions(search_term, enhanced_search)
+                group_query += " " + " ".join(s_clauses)
+                group_query_params.extend(s_params)
             
             group_query = apply_sql_permissions(group_query)
             args = _prepare_sql_args(group_query, group_query_params)
@@ -403,18 +385,9 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
                 params.append(warehouse)
             
             if search_term:
-                count_query += """
-                    AND (
-                        i.name LIKE %s
-                        OR i.item_name LIKE %s
-                        OR i.description LIKE %s
-                        OR EXISTS (
-                            SELECT 1 FROM `tabItem Barcode` ib
-                            WHERE ib.parent = i.name AND ib.barcode LIKE %s
-                        )
-                    )
-                """
-                params.extend([search_term, search_term, search_term, search_term])
+                s_clauses, s_params = build_item_search_conditions(search_term, enhanced_search)
+                count_query += " " + " ".join(s_clauses)
+                params.extend(s_params)
             
             count_sql = apply_sql_permissions(count_query)
             args = _prepare_sql_args(count_sql, params)

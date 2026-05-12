@@ -205,10 +205,18 @@ export default function OrderSummary({
   }, [cartItems]);
 
   const getDiscountedPrice = (item: CartItem) => {
+    const taxTemplates = item.tax_templates || [];
+    const totalTaxRate = Number(item.total_tax_rate || 0);
+    const hasExclusiveTax = taxTemplates.length > 0 && taxTemplates.some((tax) => !tax.is_inclusive);
+    const toExclusiveRate = (rateValue: number) => {
+      if (!hasExclusiveTax || totalTaxRate <= 0) return rateValue;
+      return rateValue / (1 + totalTaxRate / 100);
+    };
+
     const discount = itemDiscounts[item.id] || { discountPercentage: 0, discountAmount: 0 };
     const customRate = discount.customRate;
     if (customRate !== undefined && customRate !== null) {
-      return Math.max(0, customRate);
+      return Math.max(0, toExclusiveRate(Number(customRate) || 0));
     }
     let price = item.price;
     if (discount.discountPercentage > 0) price = price * (1 - discount.discountPercentage / 100);
@@ -216,10 +224,28 @@ export default function OrderSummary({
     return Math.max(0, price);
   };
 
-  const subtotal = cartItems.reduce((sum, item) => sum + getDiscountedPrice(item) * item.quantity, 0);
+  const getDisplayPriceInclusive = (item: CartItem) => {
+    const basePrice = getDiscountedPrice(item);
+    const taxTemplates = item.tax_templates || [];
+    const totalTaxRate = Number(item.total_tax_rate || 0);
+    const hasExclusiveTax = taxTemplates.length > 0 && taxTemplates.some((tax) => !tax.is_inclusive);
+    if (!hasExclusiveTax || totalTaxRate <= 0) return basePrice;
+    return basePrice * (1 + totalTaxRate / 100);
+  };
+
+  const getOriginalDisplayPriceInclusive = (item: CartItem) => {
+    const basePrice = Math.max(0, Number(item.price || 0));
+    const taxTemplates = item.tax_templates || [];
+    const totalTaxRate = Number(item.total_tax_rate || 0);
+    const hasExclusiveTax = taxTemplates.length > 0 && taxTemplates.some((tax) => !tax.is_inclusive);
+    if (!hasExclusiveTax || totalTaxRate <= 0) return basePrice;
+    return basePrice * (1 + totalTaxRate / 100);
+  };
+
+  const subtotal = cartItems.reduce((sum, item) => sum + getDisplayPriceInclusive(item) * item.quantity, 0);
   const totalItemDiscount = cartItems.reduce((sum, item) => {
-    const original = item.price * item.quantity;
-    const discounted = getDiscountedPrice(item) * item.quantity;
+    const original = getOriginalDisplayPriceInclusive(item) * item.quantity;
+    const discounted = getDisplayPriceInclusive(item) * item.quantity;
     return sum + (original - discounted);
   }, 0);
   const couponDiscount = 0;
@@ -523,10 +549,12 @@ export default function OrderSummary({
           onClose={handleClosePaymentDialog}
           cartItems={cartItems.map((item) => ({
             ...item,
-            discountedPrice: getDiscountedPrice(item),
+            discountedPriceExcl: getDiscountedPrice(item),
+            discountedPriceIncl: getDisplayPriceInclusive(item),
+            discountedPrice: getDisplayPriceInclusive(item),
             itemDiscount: itemDiscounts[item.id] || {},
             originalPrice: item.price,
-            finalAmount: getDiscountedPrice(item) * item.quantity,
+            finalAmount: getDisplayPriceInclusive(item) * item.quantity,
           }))}
           appliedCoupons={[]}
           selectedCustomer={selectedCustomer}

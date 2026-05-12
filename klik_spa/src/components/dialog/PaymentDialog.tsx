@@ -71,6 +71,25 @@ interface FrappeRealtimeClient {
   off?: (event: string, handler: (data: MpesaRealtimeEvent) => void) => void;
 }
 
+interface CachedTaxPreviewEntry {
+  taxPreview: BackendTaxPreview;
+  timestamp: number;
+}
+
+interface TemplateAwareCartItem {
+  id?: string;
+  item_code?: string;
+  price?: number;
+  quantity: number;
+  item_tax_rate?: string | Record<string, number>;
+  tax_templates?: Array<{ is_inclusive?: boolean }>;
+  total_tax_rate?: number;
+}
+
+const TAX_PREVIEW_DEBOUNCE_MS = 350;
+const TAX_PREVIEW_CACHE_TTL_MS = 15000;
+const TAX_PREVIEW_CACHE_MAX_ENTRIES = 100;
+
 function normalizeMpesaStatus(status?: string) {
   const normalized = (status || "").toLowerCase();
   if (["completed", "success", "successful"].includes(normalized)) return "completed" as const;
@@ -145,6 +164,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [isLoadingMpesaRegisterPayments, setIsLoadingMpesaRegisterPayments] = useState(false);
   const backendTaxPreviewRef = useRef<BackendTaxPreview | null>(null);
   const taxPreviewRequestIdRef = useRef(0);
+  const taxPreviewCacheRef = useRef<Map<string, CachedTaxPreviewEntry>>(new Map());
 
   const { posDetails } = usePOSProfileStore();
   const posLoading = false;
@@ -208,14 +228,114 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     return "$";
   }, [invoiceData, externalInvoiceData, posDetails]);
 
+  const selectedTaxTemplate = useMemo(
+    () => salesTaxCharges.find((tax) => tax.id === selectedSalesTaxCharges) || null,
+    [salesTaxCharges, selectedSalesTaxCharges]
+  );
+
+  const selectedTaxLineMap = useMemo(() => {
+    const map = new Map<string, { charge_type?: string; rate?: number; included_in_print_rate?: boolean }>();
+    for (const line of selectedTaxTemplate?.tax_lines || []) {
+      if (!line.account_head) continue;
+      map.set(line.account_head, line);
+    }
+    return map;
+  }, [selectedTaxTemplate]);
+
+  const getLegacyExclusiveTaxRate = useCallback((item: TemplateAwareCartItem) => {
+    const taxTemplates = Array.isArray(item?.tax_templates) ? item.tax_templates : [];
+    const hasExclusiveTax = taxTemplates.some((tax: { is_inclusive?: boolean }) => !tax.is_inclusive);
+    if (!hasExclusiveTax) return 0;
+    return Number(item?.total_tax_rate || 0);
+  }, []);
+
+  const getExclusiveTaxRateForItem = useCallback((item: TemplateAwareCartItem) => {
+    const rawItemTaxRate = item?.item_tax_rate || {};
+    const itemTaxRate =
+      typeof rawItemTaxRate === "string"
+        ? (() => {
+            try {
+              return JSON.parse(rawItemTaxRate);
+            } catch {
+              return {};
+            }
+          })()
+        : rawItemTaxRate;
+
+    let exclusiveRate = 0;
+    let matchedSelectedTemplate = false;
+
+    for (const [accountHead, itemRate] of Object.entries(itemTaxRate || {})) {
+      const taxLine = selectedTaxLineMap.get(accountHead);
+      if (!taxLine) continue;
+      matchedSelectedTemplate = true;
+      if (taxLine.charge_type !== "On Net Total" || taxLine.included_in_print_rate) continue;
+      exclusiveRate += Number(itemRate || taxLine.rate || 0);
+    }
+
+    if (matchedSelectedTemplate) {
+      return exclusiveRate;
+    }
+
+    if (selectedTaxTemplate?.tax_lines?.length) {
+      return selectedTaxTemplate.tax_lines.reduce((total, line) => {
+        if (line.charge_type !== "On Net Total" || line.included_in_print_rate) {
+          return total;
+        }
+        return total + Number(line.rate || 0);
+      }, 0);
+    }
+
+    return getLegacyExclusiveTaxRate(item);
+  }, [getLegacyExclusiveTaxRate, selectedTaxLineMap, selectedTaxTemplate]);
+
+  const getEffectiveItemRate = useCallback((item: TemplateAwareCartItem) => {
+    const codeKey = typeof item?.item_code === "string" ? item.item_code : undefined;
+    const itemIdKey = typeof item?.id === "string" ? item.id : undefined;
+    const discountData =
+      (codeKey ? itemDiscounts[codeKey] : undefined)
+      || (itemIdKey ? itemDiscounts[itemIdKey] : undefined)
+      || {};
+    const discountPercentage = Number(discountData.discountPercentage || 0);
+    const discountAmount = Number(discountData.discountAmount || 0);
+    const customRate = discountData.customRate;
+
+    if (customRate !== undefined && customRate !== null) {
+      const enteredRate = Math.max(0, Number(customRate) || 0);
+      const exclusiveTaxRate = getExclusiveTaxRateForItem(item);
+      if (exclusiveTaxRate > 0) {
+        return enteredRate / (1 + exclusiveTaxRate / 100);
+      }
+      return enteredRate;
+    }
+
+    let rate = Number(item?.price || 0);
+    if (discountPercentage > 0) {
+      rate = rate * (1 - discountPercentage / 100);
+    }
+    if (discountAmount > 0) {
+      rate = Math.max(0, rate - discountAmount);
+    }
+    return Math.max(0, rate);
+  }, [getExclusiveTaxRateForItem, itemDiscounts]);
+
+  const getEffectiveDisplayRate = useCallback((item: TemplateAwareCartItem) => {
+    const baseRate = getEffectiveItemRate(item);
+    const exclusiveTaxRate = getExclusiveTaxRateForItem(item);
+    if (exclusiveTaxRate > 0) {
+      return baseRate * (1 + exclusiveTaxRate / 100);
+    }
+    return baseRate;
+  }, [getEffectiveItemRate, getExclusiveTaxRateForItem]);
+
   const calculations: Calculations = useMemo(() => {
+    // subtotal uses exclusive (pre-tax) prices so the tax line is separately visible
     const subtotal = cartItems.reduce((sum, item) => {
-      const itemPrice = (item as any).discountedPrice || item.price;
-      return sum + itemPrice * item.quantity;
+      return sum + getEffectiveItemRate(item) * item.quantity;
     }, 0);
     const couponDiscount = appliedCoupons.reduce((sum, coupon) => sum + coupon.value, 0);
     const taxableAmount = Math.max(0, subtotal - couponDiscount);
-    const selectedTax = salesTaxCharges.find((tax) => tax.id === selectedSalesTaxCharges);
+    const selectedTax = selectedTaxTemplate;
     const taxRate = selectedTax?.rate || 0;
     const isInclusive = selectedTax?.is_inclusive || false;
     let taxAmount: number;
@@ -238,19 +358,39 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       selectedTax,
       isInclusive,
     };
-  }, [cartItems, appliedCoupons, selectedSalesTaxCharges, salesTaxCharges, roundOffAmount]);
+  }, [cartItems, appliedCoupons, getEffectiveItemRate, roundOffAmount, selectedTaxTemplate]);
+
+  // Inclusive grand total: sum of discountedPriceIncl (already computed correctly in OrderSummary mapping)
+  // This is reliable regardless of whether items have ERPNext Item Tax Templates
+  const inclGrandTotal = useMemo(() => {
+    return cartItems.reduce((sum, item) => {
+      return sum + getEffectiveDisplayRate(item) * item.quantity;
+    }, 0) + roundOffAmount;
+  }, [cartItems, getEffectiveDisplayRate, roundOffAmount]);
 
   const totalPaidAmount = calculateTotalPayments(Object.values(paymentAmounts));
-  const outstandingAmount = calculateRemainingAmount(calculations.grandTotal, Object.values(paymentAmounts));
   const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
   const hasBackendTaxPreview = backendTaxPreview !== null;
   const hasBackendTaxBreakdown = backendTaxLines.length > 0;
+  const checkoutGrandTotal = hasBackendTaxPreview
+    ? Number(backendTaxPreview?.grand_total || inclGrandTotal)
+    : inclGrandTotal;
+  const outstandingAmount = calculateRemainingAmount(checkoutGrandTotal, Object.values(paymentAmounts));
+
+  // Tax amount = inclusive grand total minus exclusive subtotal (works for both item templates and global taxes)
+  const localTaxTotal = parseFloat((checkoutGrandTotal - calculations.subtotal - (calculations.couponDiscount > 0 ? 0 : 0)).toFixed(2));
+
+  const displaySubtotal = hasBackendTaxPreview
+    ? Number(backendTaxPreview?.net_total || calculations.subtotal)
+    : calculations.subtotal;
   const displayTaxIsIncluded = hasBackendTaxBreakdown
     ? backendTaxLines.some((line) => Number(line.included_in_print_rate) === 1)
     : calculations.isInclusive;
   const displayTaxTotal = hasBackendTaxPreview
     ? backendTaxPreview?.total_taxes_and_charges || 0
-    : calculations.taxAmount;
+    : calculations.taxAmount > 0 ? calculations.taxAmount : Math.max(0, localTaxTotal);
+  
+  const previousCheckoutGrandTotalRef = useRef(checkoutGrandTotal);
 
   const roundOffEnabled = (() => {
     if (!posDetails?.custom_allow_write_off) return false;
@@ -355,7 +495,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     deliveryPersonnel: string | null = null,
     options?: { excludeActiveMpesa?: boolean }
   ) => {
-    const netAmountToSend = isB2B ? totalPaidAmount : calculations.grandTotal;
+    const netAmountToSend = isB2B ? totalPaidAmount : checkoutGrandTotal;
     const activeMpesaPayment = options?.excludeActiveMpesa ? getActiveMpesaPayment() : null;
     const adjustedPaymentMethods = isB2B
       ? Object.entries(paymentAmounts).filter(([, amount]) => amount > 0)
@@ -363,8 +503,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           const validPayments = Object.entries(paymentAmounts).filter(([, amount]) => amount > 0);
           if (validPayments.length === 0) return [];
           const totalPaymentAmount = validPayments.reduce((sum, [, amount]) => sum + amount, 0);
-          if (totalPaymentAmount > calculations.grandTotal) {
-            const excess = totalPaymentAmount - calculations.grandTotal;
+          if (totalPaymentAmount > checkoutGrandTotal) {
+            const excess = totalPaymentAmount - checkoutGrandTotal;
             const lastPaymentIndex = validPayments.length - 1;
             const lastPayment = validPayments[lastPaymentIndex];
             if (!lastPayment) return [];
@@ -386,7 +526,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           ...item,
           id: item.item_code || item.id,
           item_code: item.item_code || item.id,
-          price: (item as any).discountedPrice || item.price,
+          price: getEffectiveItemRate(item),
           uom: item.uom || "Nos",
           discountPercentage: discountData.discountPercentage || 0,
           discountAmount: discountData.discountAmount || 0,
@@ -418,13 +558,13 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
         return paymentLine;
       }),
-      subtotal: calculations.subtotal,
+      subtotal: displaySubtotal,
       SalesTaxCharges: selectedSalesTaxCharges,
-      taxAmount: calculations.taxAmount,
-      taxType: calculations.isInclusive ? "inclusive" : "exclusive",
+      taxAmount: displayTaxTotal,
+      taxType: displayTaxIsIncluded ? "inclusive" : "exclusive",
       couponDiscount: calculations.couponDiscount,
       roundOffAmount,
-      grandTotal: calculations.grandTotal,
+      grandTotal: checkoutGrandTotal,
       amountPaid: netAmountToSend,
       outstandingAmount: outstandingAmount,
       appliedCoupons,
@@ -640,7 +780,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     });
 
     const remaining = roundCurrency(
-      calculations.grandTotal - calculateTotalPayments(Object.values(updatedAmounts)),
+      checkoutGrandTotal - calculateTotalPayments(Object.values(updatedAmounts)),
     );
 
     if (remaining > 0) {
@@ -678,7 +818,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (invoiceSubmitted || isProcessingPayment) return;
     const newPaymentAmounts: PaymentAmount = {};
     paymentMethods.forEach((method) => { newPaymentAmounts[method.id] = 0; });
-    newPaymentAmounts[methodId] = calculations.grandTotal;
+    newPaymentAmounts[methodId] = checkoutGrandTotal;
     setLastModifiedMethodId(methodId);
     setPaymentAmounts(newPaymentAmounts);
     setActiveMethodId(methodId);
@@ -777,6 +917,38 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     const requestId = taxPreviewRequestIdRef.current + 1;
     taxPreviewRequestIdRef.current = requestId;
 
+    const previewPayload = {
+      customer: { id: selectedCustomer?.id },
+      items: cartItems.map((item) => {
+        const code = item.item_code || item.id;
+        const discountData = itemDiscounts[code] || itemDiscounts[item.id] || {};
+        const rawItemTaxRate = (item.item_tax_rate || {}) as Record<string, number>;
+        const normalizedItemTaxRate: Record<string, number> = {};
+        Object.keys(rawItemTaxRate)
+          .sort()
+          .forEach((key) => {
+            normalizedItemTaxRate[key] = Number(rawItemTaxRate[key] || 0);
+          });
+
+        return {
+          id: code,
+          quantity: Number(item.quantity || 0),
+          price: Number(getEffectiveItemRate(item) || 0),
+          uom: item.uom || "Nos",
+          discountPercentage: Number(discountData.discountPercentage || 0),
+          discountAmount: Number(discountData.discountAmount || 0),
+          bundle_entries: discountData.bundle_entries || [],
+          item_tax_template: item.item_tax_template || "",
+          item_tax_rate: normalizedItemTaxRate,
+        };
+      }),
+      SalesTaxCharges: selectedSalesTaxCharges,
+      businessType: posDetails?.business_type || "",
+      roundOffAmount: Number(roundOffAmount || 0),
+    };
+
+    const previewCacheKey = JSON.stringify(previewPayload);
+
     const fetchBackendTaxPreview = async () => {
       if (!isOpen || invoiceSubmitted || !selectedCustomer?.id || cartItems.length === 0) {
         setBackendTaxPreview(null);
@@ -793,6 +965,16 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         return;
       }
 
+      const now = Date.now();
+      const cachedEntry = taxPreviewCacheRef.current.get(previewCacheKey);
+      if (cachedEntry && now - cachedEntry.timestamp <= TAX_PREVIEW_CACHE_TTL_MS) {
+        setBackendTaxPreview(cachedEntry.taxPreview);
+        backendTaxPreviewRef.current = cachedEntry.taxPreview;
+        setTaxPreviewError(null);
+        setIsTaxPreviewLoading(false);
+        return;
+      }
+
       setIsTaxPreviewLoading(true);
       try {
         const payload = {
@@ -800,15 +982,16 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           items: cartItems.map((item) => {
             const code = item.item_code || item.id;
             const discountData = itemDiscounts[code] || itemDiscounts[item.id] || {};
-            const discountedPrice = (item as { discountedPrice?: number }).discountedPrice;
             return {
               id: code,
               quantity: item.quantity,
-              price: discountedPrice || item.price,
+              price: getEffectiveItemRate(item),
               uom: item.uom || "Nos",
               discountPercentage: discountData.discountPercentage || 0,
               discountAmount: discountData.discountAmount || 0,
               bundle_entries: discountData.bundle_entries || [],
+              item_tax_template: item.item_tax_template || "",
+              item_tax_rate: item.item_tax_rate || {},
             };
           }),
           itemDiscounts,
@@ -822,6 +1005,23 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           if (response?.tax_preview) {
             setBackendTaxPreview(response.tax_preview);
             backendTaxPreviewRef.current = response.tax_preview;
+            taxPreviewCacheRef.current.set(previewCacheKey, {
+              taxPreview: response.tax_preview,
+              timestamp: Date.now(),
+            });
+
+            if (taxPreviewCacheRef.current.size > TAX_PREVIEW_CACHE_MAX_ENTRIES) {
+              for (const [key, entry] of taxPreviewCacheRef.current.entries()) {
+                if (Date.now() - entry.timestamp > TAX_PREVIEW_CACHE_TTL_MS) {
+                  taxPreviewCacheRef.current.delete(key);
+                }
+              }
+              while (taxPreviewCacheRef.current.size > TAX_PREVIEW_CACHE_MAX_ENTRIES) {
+                const oldestKey = taxPreviewCacheRef.current.keys().next().value;
+                if (!oldestKey) break;
+                taxPreviewCacheRef.current.delete(oldestKey);
+              }
+            }
             setTaxPreviewError(null);
           } else {
             setTaxPreviewError(
@@ -849,7 +1049,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
     const timeoutId = window.setTimeout(() => {
       fetchBackendTaxPreview();
-    }, 200);
+    }, TAX_PREVIEW_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -865,6 +1065,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     salesTaxLoading,
     posDetails?.business_type,
     roundOffAmount,
+    getEffectiveItemRate,
   ]);
 
   useEffect(() => {
@@ -961,7 +1162,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     }
     if (!isCreditSale) {
       const totalPaid = calculateTotalPayments(Object.values(paymentAmounts));
-      const orderTotal = calculations.grandTotal;
+      const orderTotal = checkoutGrandTotal;
       
       if (totalPaid < orderTotal) {
         const remainingAmount = orderTotal - totalPaid;
@@ -1080,12 +1281,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       const orderItems = cartItems.map((item) => {
         const code = item.item_code || item.id;
         const discountData = itemDiscounts[code] || itemDiscounts[item.id] || {};
-        const basePrice =
-          Number((item as { originalPrice?: number }).originalPrice)
-          || Number((item as { original_price?: number }).original_price)
-          || Number(item.price)
-          || 0;
-        const customRate = discountData.customRate;
         const discountPercentage =
           Number(discountData.discountPercentage)
           || Number((item as { discount_percentage?: number }).discount_percentage)
@@ -1095,19 +1290,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           || Number((item as { discount_amount?: number }).discount_amount)
           || 0;
 
-        let heldPrice = Number((item as { discountedPrice?: number }).discountedPrice);
+        let heldPrice = Number((item as { discountedPriceExcl?: number }).discountedPriceExcl);
         if (!Number.isFinite(heldPrice)) {
-          if (customRate !== undefined && customRate !== null) {
-            heldPrice = Math.max(0, Number(customRate) || 0);
-          } else {
-            heldPrice = basePrice;
-            if (discountPercentage > 0) {
-              heldPrice = heldPrice * (1 - discountPercentage / 100);
-            }
-            if (discountAmount > 0) {
-              heldPrice = Math.max(0, heldPrice - discountAmount);
-            }
-          }
+          heldPrice = getEffectiveItemRate(item);
         }
 
         return {
@@ -1133,13 +1318,13 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         items: orderItems,
         customer: { id: selectedCustomer.id },
         subtotal: calculations.subtotal,
-        total: calculations.grandTotal,
+        total: checkoutGrandTotal,
         SalesTaxCharges: selectedSalesTaxCharges,
         taxAmount: calculations.taxAmount,
         taxType: calculations.isInclusive ? "inclusive" : "exclusive",
         couponDiscount: calculations.couponDiscount,
         roundOffAmount,
-        grandTotal: calculations.grandTotal,
+        grandTotal: checkoutGrandTotal,
         appliedCoupons,
         itemDiscounts,
         totalItemDiscount,
@@ -1226,7 +1411,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const getProcessedMessage = () => {
     const parameters: Record<string, string> = {
       customer_name: sharingData.name || "there",
-      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol),
+      invoice_total: formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol),
       invoice_number: invoiceData?.name || "",
       company_name: "KLiK PoS",
       date: new Date().toLocaleDateString(),
@@ -1243,13 +1428,13 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       address: typeof selectedCustomer?.address === "string" ? selectedCustomer.address : JSON.stringify(selectedCustomer?.address || {}),
       customer_address: typeof selectedCustomer?.address === "string" ? selectedCustomer.address : JSON.stringify(selectedCustomer?.address || {}),
       delivery_note: invoiceData?.name || "",
-      grand_total: formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol),
+      grand_total: formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol),
       departure_time: new Date().toLocaleTimeString(),
       estimated_arrival: new Date(Date.now() + 30 * 60000).toLocaleTimeString(),
       driver_name: "Delivery Driver",
       cell_number: "+1234567890",
       vehicle: "Delivery Vehicle",
-      invoice_total: formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol),
+      invoice_total: formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol),
       invoice_number: invoiceData?.name || "",
       company_name: "KLiK PoS",
       date: new Date().toLocaleDateString(),
@@ -1304,19 +1489,55 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (isOpen && modes.length > 0 && !isCreditSale) {
       const defaultMode = modes.find((mode) => mode.default === 1);
       if (defaultMode && Object.keys(paymentAmounts).length === 0) {
-        const defaultAmount = parseFloat(calculations.grandTotal.toFixed(2));
+        const defaultAmount = parseFloat(checkoutGrandTotal.toFixed(2));
         setLastModifiedMethodId(defaultMode.mode_of_payment);
         setPaymentAmounts({ [defaultMode.mode_of_payment]: defaultAmount });
       }
     }
-  }, [isOpen, modes, calculations.grandTotal, isB2B, isB2C, paymentAmounts, isCreditSale]);
+  }, [isOpen, modes, checkoutGrandTotal, isB2B, isB2C, paymentAmounts, isCreditSale]);
+
+  useEffect(() => {
+    if (!isOpen || invoiceSubmitted || isProcessingPayment || isCreditSale) {
+      previousCheckoutGrandTotalRef.current = checkoutGrandTotal;
+      return;
+    }
+
+    const previousTotal = previousCheckoutGrandTotalRef.current;
+    if (Math.abs(previousTotal - checkoutGrandTotal) < 0.0001) {
+      return;
+    }
+
+    setPaymentAmounts((prev) => {
+      const entries = Object.entries(prev);
+      if (entries.length === 0) {
+        return prev;
+      }
+
+      const currentPaid = roundCurrency(calculateTotalPayments(Object.values(prev)));
+      const previousRounded = roundCurrency(previousTotal);
+
+      // If cashier already edited amounts away from previous total, do not override.
+      if (Math.abs(currentPaid - previousRounded) > 0.01) {
+        return prev;
+      }
+
+      const defaultMode = modes.find((mode) => mode.default === 1)?.mode_of_payment;
+      if (entries.length === 1 && defaultMode && entries[0]?.[0] === defaultMode) {
+        return { [defaultMode]: roundCurrency(checkoutGrandTotal) };
+      }
+
+      return prev;
+    });
+
+    previousCheckoutGrandTotalRef.current = checkoutGrandTotal;
+  }, [checkoutGrandTotal, isOpen, invoiceSubmitted, isProcessingPayment, isCreditSale, modes]);
 
   useEffect(() => {
     if (modes.length > 0 && Object.keys(paymentAmounts).length > 0) {
       const defaultMode = modes.find((mode) => mode.default === 1);
       if (defaultMode) {
         const totalPayments = Object.values(paymentAmounts).reduce((sum, amount) => sum + (amount || 0), 0);
-        const excess = totalPayments - calculations.grandTotal;
+        const excess = totalPayments - checkoutGrandTotal;
         const paymentEntries = Object.entries(paymentAmounts);
         const highestAmountMethod = paymentEntries.reduce((max, current) => (current[1] || 0) > (max[1] || 0) ? current : max);
         const [highestMethodId, highestAmount] = highestAmountMethod;
@@ -1326,7 +1547,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         }
       }
     }
-  }, [calculations.grandTotal, modes, isB2C, isB2B, paymentAmounts]);
+  }, [checkoutGrandTotal, modes, isB2C, isB2B, paymentAmounts]);
 
   useEffect(() => {
     if (invoiceSubmitted && invoiceData && print_receipt_on_order_complete) {
@@ -1532,7 +1753,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                 <div className="flex items-center justify-center space-x-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
                   <div className="text-green-600 dark:text-green-400 text-center">
                     <p className="font-semibold">Invoice queued for background submission!</p>
-                    <p className="text-sm opacity-75">Total: {formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}</p>
+                    <p className="text-sm opacity-75">Total: {formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 justify-center">
@@ -1546,11 +1767,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     <Printer size={18} />
                     <span>Print</span>
                   </button>
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors" onClick={() => { void finalizeCompletedOrderState(() => { window.open(`mailto:${selectedCustomer?.email}?subject=Your%20Invoice&body=Dear%20${selectedCustomer?.name},%0A%0AHere%20is%20your%20invoice%20total:%20${formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}%0A%0AThank%20you.`); }); }}>
+                  <button className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors" onClick={() => { void finalizeCompletedOrderState(() => { window.open(`mailto:${selectedCustomer?.email}?subject=Your%20Invoice&body=Dear%20${selectedCustomer?.name},%0A%0AHere%20is%20your%20invoice%20total:%20${formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}%0A%0AThank%20you.`); }); }}>
                     <MailPlus size={18} />
                     <span>Email</span>
                   </button>
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-green-100 dark:bg-green-900/20 text-beveren-600 dark:text-green-400 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/30 transition-colors" onClick={() => { window.open(`https://wa.me/${selectedCustomer?.phone}?text=${encodeURIComponent(`Here is your invoice total: ${formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}`)}`, "_blank"); }}>
+                  <button className="flex items-center space-x-2 px-4 py-2 bg-green-100 dark:bg-green-900/20 text-beveren-600 dark:text-green-400 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/30 transition-colors" onClick={() => { window.open(`https://wa.me/${selectedCustomer?.phone}?text=${encodeURIComponent(`Here is your invoice total: ${formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}`)}`, "_blank"); }}>
                     <MessageCirclePlus size={18} />
                     <span>WhatsApp</span>
                   </button>
@@ -1632,7 +1853,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                 <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3">
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrencyWithSymbol(calculations.subtotal, displayCurrencySymbol)}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrencyWithSymbol(displaySubtotal, displayCurrencySymbol)}</span>
                   </div>
                   {calculations.couponDiscount > 0 && (
                     <div className="flex justify-between text-green-600 dark:text-green-400">
@@ -1677,7 +1898,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   <div className="border-t border-gray-200 dark:border-gray-600 pt-3">
                     <div className="flex justify-between">
                       <span className="text-lg font-bold text-gray-900 dark:text-white">Grand Total</span>
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}</span>
+                      <span className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}</span>
                     </div>
                   </div>
                   {(isB2C || isB2B) && (
@@ -1690,10 +1911,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                         <span className="text-gray-600 dark:text-gray-400">Outstanding</span>
                         <span className="font-medium text-red-600 dark:text-red-400">{formatCurrencyWithSymbol(outstandingAmount, displayCurrencySymbol)}</span>
                       </div>
-                      {totalPaidAmount > calculations.grandTotal && (
+                      {totalPaidAmount > checkoutGrandTotal && (
                         <div className="flex justify-between">
                           <span className="text-gray-600 dark:text-gray-400">Change</span>
-                          <span className="font-medium text-beveren-600 dark:text-beveren-400">{formatCurrencyWithSymbol(subtractCurrency(totalPaidAmount, calculations.grandTotal), displayCurrencySymbol)}</span>
+                          <span className="font-medium text-beveren-600 dark:text-beveren-400">{formatCurrencyWithSymbol(subtractCurrency(totalPaidAmount, checkoutGrandTotal), displayCurrencySymbol)}</span>
                         </div>
                       )}
                     </>
@@ -1701,7 +1922,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   {isB2B && (
                     <div className="flex justify-between">
                       <span className="text-gray-600 dark:text-gray-400">Outstanding Amount</span>
-                      <span className="font-medium text-orange-600 dark:text-orange-400">{formatCurrencyWithSymbol(calculations.grandTotal, displayCurrencySymbol)}</span>
+                      <span className="font-medium text-orange-600 dark:text-orange-400">{formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}</span>
                     </div>
                   )}
                 </div>
@@ -1914,6 +2135,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
                 <TotalsSection
                   calculations={calculations}
+                  displaySubtotal={displaySubtotal}
+                  displayTaxTotal={displayTaxTotal}
+                  displayTaxIsIncluded={displayTaxIsIncluded}
+                  checkoutGrandTotal={checkoutGrandTotal}
                   roundOffAmount={roundOffAmount}
                   roundOffInput={roundOffInput}
                   roundOffEnabled={roundOffEnabled}

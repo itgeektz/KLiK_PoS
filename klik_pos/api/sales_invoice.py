@@ -3,9 +3,10 @@ import json
 import erpnext
 import frappe
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
+from erpnext.stock.get_item_details import get_item_details
 from frappe import _
 from frappe.exceptions import ValidationError
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt, nowdate
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
@@ -1444,6 +1445,13 @@ def parse_invoice_data(data):
 			or discount_data.get("serial_batch_bundle")
 		)
 
+		item_tax_rate = item.get("item_tax_rate") or {}
+		if isinstance(item_tax_rate, str):
+			try:
+				item_tax_rate = json.loads(item_tax_rate)
+			except Exception:
+				item_tax_rate = {}
+
 		discount_percentage = flt(item.get("discountPercentage") or discount_data.get("discountPercentage") or 0)
 		discount_amount = flt(item.get("discountAmount") or discount_data.get("discountAmount") or 0)
 
@@ -1453,6 +1461,8 @@ def parse_invoice_data(data):
 			"price": item.get("price"),
 			"bundle_entries": bundle_entries,
 			"uom": item.get("uom"),
+			"item_tax_template": item.get("item_tax_template") or "",
+			"item_tax_rate": item_tax_rate,
 			"discountPercentage": discount_percentage,
 			"discountAmount": discount_amount,
 		})
@@ -1578,8 +1588,11 @@ def build_sales_invoice_doc(
 	# Add items to invoice
 	_populate_invoice_items(doc, items, pos_profile)
 
-	# Populate tax details
+	# Populate tax details from template (if any)
 	_populate_tax_details(doc)
+
+	# Build per-item taxes from item_tax_rate fields
+	_populate_per_item_taxes(doc, pos_profile)
 
 	doc.set_taxes()
 	doc.set_missing_values()
@@ -2034,7 +2047,7 @@ def _populate_invoice_items(doc, items, pos_profile):
 
 	# Add each item to the invoice
 	for item in items:
-		item_data = _prepare_item_data(item, item_data_map, pos_profile)
+		item_data = _prepare_item_data(doc, item, item_data_map, pos_profile)
 		doc.append("items", item_data)
 
 
@@ -2072,7 +2085,81 @@ def _precache_item_accounts(item_codes, company):
 		_cached_item_accounts[f"{item_code}_expense"] = expense_account
 
 
-def _prepare_item_data(item, item_data_map, pos_profile):
+def _resolve_item_tax_details_for_line(doc, item, pos_profile):
+	"""Resolve item tax template/rate using ERPNext item detail context."""
+	item_code = item.get("id")
+	if not item_code:
+		return "", {}
+
+	item_tax_template = item.get("item_tax_template") or ""
+	item_tax_rate = item.get("item_tax_rate") or {}
+
+	if isinstance(item_tax_rate, str):
+		try:
+			item_tax_rate = json.loads(item_tax_rate)
+		except Exception:
+			item_tax_rate = {}
+
+	price_list = doc.selling_price_list or pos_profile.selling_price_list
+	currency = doc.currency or frappe.get_cached_value("Company", doc.company, "default_currency")
+	price_list_currency = (
+		frappe.get_cached_value("Price List", price_list, "currency") if price_list else None
+	) or currency
+
+	tax_category = None
+	if doc.customer and doc.customer not in _cached_customer_data:
+		_cached_customer_data[doc.customer] = frappe.get_doc("Customer", doc.customer)
+	if doc.customer:
+		customer_doc = _cached_customer_data.get(doc.customer)
+		tax_category = customer_doc.tax_category if customer_doc else None
+
+	ctx = {
+		"item_code": item_code,
+		"warehouse": pos_profile.warehouse,
+		"customer": doc.customer,
+		"company": doc.company,
+		"currency": currency,
+		"conversion_rate": flt(doc.conversion_rate or 1.0),
+		"price_list": price_list,
+		"selling_price_list": price_list,
+		"price_list_currency": price_list_currency,
+		"plc_conversion_rate": 1.0,
+		"qty": flt(item.get("quantity") or 1),
+		"uom": item.get("uom") or "Nos",
+		"tax_category": tax_category,
+		"is_pos": 1,
+		"doctype": "Sales Invoice",
+		"name": "",
+		"transaction_date": doc.posting_date or nowdate(),
+		"item_tax_template": item_tax_template,
+	}
+
+	if price_list_currency != currency:
+		ctx["plc_conversion_rate"] = flt(
+			frappe.get_cached_value(
+				"Currency Exchange",
+				{"from_currency": price_list_currency, "to_currency": currency},
+				"exchange_rate",
+			)
+			or 1.0
+		)
+
+	try:
+		resolved = get_item_details(ctx=ctx)
+		item_tax_template = resolved.get("item_tax_template") or item_tax_template
+		item_tax_rate = resolved.get("item_tax_rate") or item_tax_rate
+		if isinstance(item_tax_rate, str):
+			try:
+				item_tax_rate = json.loads(item_tax_rate)
+			except Exception:
+				item_tax_rate = {}
+	except Exception:
+		pass
+
+	return item_tax_template, item_tax_rate
+
+
+def _prepare_item_data(doc, item, item_data_map, pos_profile):
 	"""Prepare item data dictionary for invoice line."""
 	item_code = item.get("id")
 
@@ -2091,6 +2178,13 @@ def _prepare_item_data(item, item_data_map, pos_profile):
 		"warehouse": pos_profile.warehouse,
 		"cost_center": pos_profile.cost_center,
 	}
+
+	# Resolve per-item tax fields using ERPNext item selection logic.
+	item_tax_template, item_tax_rate = _resolve_item_tax_details_for_line(doc, item, pos_profile)
+	if item_tax_template:
+		item_data["item_tax_template"] = item_tax_template
+	if item_tax_rate:
+		item_data["item_tax_rate"] = frappe.as_json(item_tax_rate)
 
 	# Add optional fields
 	_add_uom_to_item(item_data, item)
@@ -2163,6 +2257,81 @@ def _populate_tax_details(doc):
 			},
 		)
 
+
+def _populate_per_item_taxes(doc, pos_profile):
+	"""Build tax rows from per-item tax rates on invoice items.
+	
+	When items have item_tax_template set (e.g., from Item Tax Template),
+	ERPNext stores the tax rates in item_tax_rate but doesn't automatically
+	create tax rows. This function aggregates those per-item taxes and creates
+	proper tax rows.
+	"""
+	# Collect per-account tax rates from item_tax_rate maps.
+	# Do not pre-compute tax_amount here; ERPNext handles inclusive/exclusive
+	# math correctly during calculate_taxes_and_totals().
+	tax_aggregates = {}  # {account_head: {"rate": 0, "description": ""}}
+
+	for item in doc.items or []:
+		if not item.item_tax_rate:
+			continue
+
+		item_tax_rate = item.item_tax_rate
+		if isinstance(item_tax_rate, str):
+			try:
+				item_tax_rate = json.loads(item_tax_rate)
+			except Exception:
+				continue
+
+		for account_head, tax_rate in (item_tax_rate or {}).items():
+			tax_rate_pct = flt(tax_rate or 0)
+			if tax_rate_pct <= 0:
+				continue
+
+			if account_head not in tax_aggregates:
+				tax_aggregates[account_head] = {
+					"rate": tax_rate_pct,
+					"description": account_head,
+				}
+
+	if not tax_aggregates:
+		return
+
+	# Get included_in_print_rate settings from the active taxes template.
+	included_map = {}
+	template_name = doc.taxes_and_charges or pos_profile.taxes_and_charges
+	if template_name:
+		for row in frappe.get_all(
+			"Sales Taxes and Charges",
+			filters={
+				"parent": template_name,
+				"account_head": ["in", list(tax_aggregates.keys())],
+			},
+			fields=["account_head", "included_in_print_rate"],
+		):
+			included_map[row.account_head] = bool(row.included_in_print_rate)
+
+	# Avoid duplicating account rows if template-level taxes already populated them.
+	existing_accounts = {
+		row.account_head
+		for row in (doc.get("taxes") or [])
+		if row.account_head
+	}
+
+	# Create missing tax rows for per-item taxes.
+	for account_head, tax_data in tax_aggregates.items():
+		if account_head in existing_accounts:
+			continue
+
+		doc.append(
+			"taxes",
+			{
+				"charge_type": "On Net Total",
+				"account_head": account_head,
+				"description": tax_data["description"],
+				"rate": tax_data["rate"],
+				"included_in_print_rate": included_map.get(account_head, False),
+			},
+		)
 
 def _add_payment_entries(doc, mode_of_payment):
 	"""Add payment entries to the invoice."""

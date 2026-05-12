@@ -30,6 +30,16 @@ export interface CartItem {
   has_serial_no?: boolean
   has_batch_no?: boolean
   valuation_rate?: number
+  item_tax_template?: string
+  item_tax_rate?: Record<string, number>
+  total_tax_rate?: number
+  tax_templates?: TaxTemplate[]
+}
+
+export interface TaxTemplate {
+  account: string
+  rate: number
+  is_inclusive: boolean
 }
 
 export interface BundleEntry {

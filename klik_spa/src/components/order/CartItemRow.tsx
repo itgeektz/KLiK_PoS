@@ -347,9 +347,6 @@ export const CartItemRow = ({
   const displayRateInclTax = hasExclusiveTax && totalTaxRate > 0
     ? discountedPrice * (1 + totalTaxRate / 100)
     : discountedPrice;
-  const originalDisplayRateInclTax = hasExclusiveTax && totalTaxRate > 0
-    ? item.price * (1 + totalTaxRate / 100)
-    : item.price;
   const taxAmountPerUnit = Math.max(0, displayRateInclTax - discountedPrice);
   const originalTotal = item.price * item.quantity;
   const discountedTotal = displayRateInclTax * item.quantity;
@@ -422,27 +419,9 @@ export const CartItemRow = ({
           {/* Row 2: rate | qty pill | total */}
           <div className="flex items-center gap-2 mt-1.5 pl-4">
             <div className="text-right">
-              {discountedPrice !== item.price ? (
-                <>
-                  <p className="text-gray-400 line-through text-xs whitespace-nowrap">
-                    {formatCurrencyWithSymbol(originalDisplayRateInclTax, currency_symbol)}
-                  </p>
-                  <p className="text-gray-500 dark:text-gray-400 font-medium text-xs whitespace-nowrap">
-                    {formatCurrencyWithSymbol(displayRateInclTax, currency_symbol)}
-                  </p>
-                </>
-              ) : (
-                <div>
-                  <p className="text-gray-500 dark:text-gray-400 capitalize font-medium text-xs whitespace-nowrap">
-                    {formatCurrencyWithSymbol(displayRateInclTax, currency_symbol)}
-                  </p>
-                  {hasExclusiveTax && totalTaxRate > 0 && (
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
-                      Base {formatCurrencyWithSymbol(discountedPrice, currency_symbol)} + Tax {totalTaxRate.toFixed(2)}%
-                    </p>
-                  )}
-                </div>
-              )}
+              <p className="text-gray-500 dark:text-gray-400 capitalize font-medium text-xs whitespace-nowrap">
+                {formatCurrencyWithSymbol(displayRateInclTax, currency_symbol)}
+              </p>
             </div>
 
             <div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-full overflow-hidden">

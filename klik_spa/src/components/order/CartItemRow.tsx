@@ -313,13 +313,7 @@ export const CartItemRow = ({
     const rate = Math.max(0, value);
     onCustomRateChange(item, rate);
     onDiscountChange(item.id, "discountAmount", 0);
-
-    const diff = item.price - rate;
-    if (diff > 0) {
-      onDiscountChange(item.id, "discountAmount", diff);
-    } else {
-      setLocalDiscountPct(0);
-    }
+    setLocalDiscountPct(0);
   };
 
   const handleDiscountPercentageChange = (value: number) => {
@@ -335,16 +329,32 @@ export const CartItemRow = ({
     setLocalDiscountPct(item.price > 0 ? parseFloat(((amt / item.price) * 100).toFixed(2)) : 0);
   };
 
+  const totalTaxRate = Number(item.total_tax_rate || 0);
+  const hasExclusiveTax = Array.isArray(item.tax_templates)
+    && item.tax_templates.some((tax) => !tax.is_inclusive);
+
   const discountedPrice = (() => {
     if (itemDiscount.customRate !== undefined && itemDiscount.customRate !== null) {
-      return Math.max(0, itemDiscount.customRate);
+      const enteredRate = Math.max(0, itemDiscount.customRate);
+      if (hasExclusiveTax && totalTaxRate > 0) {
+        return enteredRate / (1 + totalTaxRate / 100);
+      }
+      return enteredRate;
     }
     return Math.max(0, item.price - (itemDiscount.discountAmount || 0));
   })();
+
+  const displayRateInclTax = hasExclusiveTax && totalTaxRate > 0
+    ? discountedPrice * (1 + totalTaxRate / 100)
+    : discountedPrice;
+  const originalDisplayRateInclTax = hasExclusiveTax && totalTaxRate > 0
+    ? item.price * (1 + totalTaxRate / 100)
+    : item.price;
+  const taxAmountPerUnit = Math.max(0, displayRateInclTax - discountedPrice);
   const originalTotal = item.price * item.quantity;
-  const discountedTotal = discountedPrice * item.quantity;
+  const discountedTotal = displayRateInclTax * item.quantity;
   const amount = discountedTotal;
-  const displayRate = itemDiscount.customRate ?? (discountedPrice > 0 ? discountedPrice : "");
+  const displayRate = itemDiscount.customRate ?? (displayRateInclTax > 0 ? displayRateInclTax : "");
 
   const hasBundleEntries = bundleEntries.length > 0;
 
@@ -415,16 +425,23 @@ export const CartItemRow = ({
               {discountedPrice !== item.price ? (
                 <>
                   <p className="text-gray-400 line-through text-xs whitespace-nowrap">
-                    {formatCurrencyWithSymbol(item.price, currency_symbol)}
+                    {formatCurrencyWithSymbol(originalDisplayRateInclTax, currency_symbol)}
                   </p>
                   <p className="text-gray-500 dark:text-gray-400 font-medium text-xs whitespace-nowrap">
-                    {formatCurrencyWithSymbol(discountedPrice, currency_symbol)}
+                    {formatCurrencyWithSymbol(displayRateInclTax, currency_symbol)}
                   </p>
                 </>
               ) : (
-                <p className="text-gray-500 dark:text-gray-400 capitalize font-medium text-xs whitespace-nowrap">
-                  {formatCurrencyWithSymbol(item.price, currency_symbol)}
-                </p>
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 capitalize font-medium text-xs whitespace-nowrap">
+                    {formatCurrencyWithSymbol(displayRateInclTax, currency_symbol)}
+                  </p>
+                  {hasExclusiveTax && totalTaxRate > 0 && (
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                      Base {formatCurrencyWithSymbol(discountedPrice, currency_symbol)} + Tax {totalTaxRate.toFixed(2)}%
+                    </p>
+                  )}
+                </div>
               )}
             </div>
 
@@ -534,7 +551,7 @@ export const CartItemRow = ({
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
-                    Rate
+                    Rate (Incl. Tax)
                   </label>
                   <input
                     type="number"
@@ -570,7 +587,7 @@ export const CartItemRow = ({
                 </div>
                 <div>
                   <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
-                    Amount
+                    Amount (Incl. Tax)
                   </label>
                   <input
                     type="number"
@@ -581,6 +598,38 @@ export const CartItemRow = ({
                   />
                 </div>
               </div>
+
+              {totalTaxRate > 0 && (
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                      Tax Rate
+                    </label>
+                    <input
+                      type="text"
+                      value={`${totalTaxRate.toFixed(2)}%`}
+                      readOnly
+                      className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-4 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white cursor-not-allowed`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                      Base Rate (Excl. Tax)
+                    </label>
+                    <input
+                      type="text"
+                      value={formatCurrencyWithSymbol(discountedPrice, currency_symbol)}
+                      readOnly
+                      className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-4 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white cursor-not-allowed`}
+                    />
+                  </div>
+                  {hasExclusiveTax && taxAmountPerUnit > 0 && (
+                    <div className="col-span-2 text-xs text-gray-500 dark:text-gray-400">
+                      Tax per unit: {formatCurrencyWithSymbol(taxAmountPerUnit, currency_symbol)}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>

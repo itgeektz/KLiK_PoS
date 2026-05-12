@@ -30,6 +30,7 @@ export default function TaxSection({
   displayCurrencySymbol,
   backendTaxPreview,
   isTaxPreviewLoading,
+  taxPreviewError,
 }: TaxSectionProps) {
   const hasBackendPreview = backendTaxPreview !== null;
   const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
@@ -79,7 +80,7 @@ export default function TaxSection({
             ))}
           </select>
         </div> */}
-        {/* <div>
+        <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Tax Amount {isIncluded && "(Included)"}
           </label>
@@ -90,8 +91,13 @@ export default function TaxSection({
               ? `(${formatCurrencyWithSymbol(taxTotal, displayCurrencySymbol)})`
               : formatCurrencyWithSymbol(taxTotal, displayCurrencySymbol)}
           </div>
-          
-        </div> */}
+          {isTaxPreviewLoading && (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Refreshing tax preview...</p>
+          )}
+          {!isTaxPreviewLoading && taxPreviewError && (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{taxPreviewError}</p>
+          )}
+        </div>
       </div>
       </div>
     </div>

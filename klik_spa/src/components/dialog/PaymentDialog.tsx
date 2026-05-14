@@ -38,6 +38,10 @@ import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { handlePrintInvoice } from "../../utils/printHandler";
 import { useSalespersonStore } from "../../stores/salespersonStore";
 import {
+  getEffectiveDisplayRate as getSharedEffectiveDisplayRate,
+  getEffectiveItemRate as getSharedEffectiveItemRate,
+} from "../../utils/cartPricing";
+import {
   fetchKlikPosStkStatus,
   fetchMpesaRegisterPayments,
   initiateKlikPosStkPush,
@@ -197,6 +201,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const allowPartialPayments = Boolean(posDetails?.allow_partial_payment);
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const allow_holding_invoices = Boolean(posDetails?.allow_holding_invoices);
+  const isTaxIncludedInBasicRate =
+    posDetails?.is_tax_included_in_basic_rate === 1
+    || posDetails?.is_tax_included_in_basic_rate === "1"
+    || posDetails?.is_tax_included_in_basic_rate === true;
   const autoAllocateRemainingPayment =
     posDetails?.custom_auto_allocate_remaining_payment === 1 ||
     posDetails?.custom_auto_allocate_remaining_payment === "1" ||
@@ -242,91 +250,23 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     return map;
   }, [selectedTaxTemplate]);
 
-  const getLegacyExclusiveTaxRate = useCallback((item: TemplateAwareCartItem) => {
-    const taxTemplates = Array.isArray(item?.tax_templates) ? item.tax_templates : [];
-    const hasExclusiveTax = taxTemplates.some((tax: { is_inclusive?: boolean }) => !tax.is_inclusive);
-    if (!hasExclusiveTax) return 0;
-    return Number(item?.total_tax_rate || 0);
-  }, []);
-
-  const getExclusiveTaxRateForItem = useCallback((item: TemplateAwareCartItem) => {
-    const rawItemTaxRate = item?.item_tax_rate || {};
-    const itemTaxRate =
-      typeof rawItemTaxRate === "string"
-        ? (() => {
-            try {
-              return JSON.parse(rawItemTaxRate);
-            } catch {
-              return {};
-            }
-          })()
-        : rawItemTaxRate;
-
-    let exclusiveRate = 0;
-    let matchedSelectedTemplate = false;
-
-    for (const [accountHead, itemRate] of Object.entries(itemTaxRate || {})) {
-      const taxLine = selectedTaxLineMap.get(accountHead);
-      if (!taxLine) continue;
-      matchedSelectedTemplate = true;
-      if (taxLine.charge_type !== "On Net Total" || taxLine.included_in_print_rate) continue;
-      exclusiveRate += Number(itemRate || taxLine.rate || 0);
-    }
-
-    if (matchedSelectedTemplate) {
-      return exclusiveRate;
-    }
-
-    if (selectedTaxTemplate?.tax_lines?.length) {
-      return selectedTaxTemplate.tax_lines.reduce((total, line) => {
-        if (line.charge_type !== "On Net Total" || line.included_in_print_rate) {
-          return total;
-        }
-        return total + Number(line.rate || 0);
-      }, 0);
-    }
-
-    return getLegacyExclusiveTaxRate(item);
-  }, [getLegacyExclusiveTaxRate, selectedTaxLineMap, selectedTaxTemplate]);
-
   const getEffectiveItemRate = useCallback((item: TemplateAwareCartItem) => {
-    const codeKey = typeof item?.item_code === "string" ? item.item_code : undefined;
-    const itemIdKey = typeof item?.id === "string" ? item.id : undefined;
-    const discountData =
-      (codeKey ? itemDiscounts[codeKey] : undefined)
-      || (itemIdKey ? itemDiscounts[itemIdKey] : undefined)
-      || {};
-    const discountPercentage = Number(discountData.discountPercentage || 0);
-    const discountAmount = Number(discountData.discountAmount || 0);
-    const customRate = discountData.customRate;
-
-    if (customRate !== undefined && customRate !== null) {
-      const enteredRate = Math.max(0, Number(customRate) || 0);
-      const exclusiveTaxRate = getExclusiveTaxRateForItem(item);
-      if (exclusiveTaxRate > 0) {
-        return enteredRate / (1 + exclusiveTaxRate / 100);
-      }
-      return enteredRate;
-    }
-
-    let rate = Number(item?.price || 0);
-    if (discountPercentage > 0) {
-      rate = rate * (1 - discountPercentage / 100);
-    }
-    if (discountAmount > 0) {
-      rate = Math.max(0, rate - discountAmount);
-    }
-    return Math.max(0, rate);
-  }, [getExclusiveTaxRateForItem, itemDiscounts]);
+    return getSharedEffectiveItemRate(item, {
+      itemDiscounts,
+      isTaxIncludedInBasicRate,
+      selectedTaxLineMap,
+      selectedTaxTemplate,
+    });
+  }, [isTaxIncludedInBasicRate, itemDiscounts, selectedTaxLineMap, selectedTaxTemplate]);
 
   const getEffectiveDisplayRate = useCallback((item: TemplateAwareCartItem) => {
-    const baseRate = getEffectiveItemRate(item);
-    const exclusiveTaxRate = getExclusiveTaxRateForItem(item);
-    if (exclusiveTaxRate > 0) {
-      return baseRate * (1 + exclusiveTaxRate / 100);
-    }
-    return baseRate;
-  }, [getEffectiveItemRate, getExclusiveTaxRateForItem]);
+    return getSharedEffectiveDisplayRate(item, {
+      itemDiscounts,
+      isTaxIncludedInBasicRate,
+      selectedTaxLineMap,
+      selectedTaxTemplate,
+    });
+  }, [isTaxIncludedInBasicRate, itemDiscounts, selectedTaxLineMap, selectedTaxTemplate]);
 
   const calculations: Calculations = useMemo(() => {
     // subtotal uses exclusive (pre-tax) prices so the tax line is separately visible
@@ -337,7 +277,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     const taxableAmount = Math.max(0, subtotal - couponDiscount);
     const selectedTax = selectedTaxTemplate;
     const taxRate = selectedTax?.rate || 0;
-    const isInclusive = selectedTax?.is_inclusive || false;
+    const isInclusive = isTaxIncludedInBasicRate || selectedTax?.is_inclusive || false;
     let taxAmount: number;
     let grandTotal: number;
     if (isInclusive) {
@@ -358,7 +298,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       selectedTax,
       isInclusive,
     };
-  }, [cartItems, appliedCoupons, getEffectiveItemRate, roundOffAmount, selectedTaxTemplate]);
+  }, [cartItems, appliedCoupons, getEffectiveItemRate, isTaxIncludedInBasicRate, roundOffAmount, selectedTaxTemplate]);
 
   // Inclusive grand total: sum of discountedPriceIncl (already computed correctly in OrderSummary mapping)
   // This is reliable regardless of whether items have ERPNext Item Tax Templates
@@ -2167,13 +2107,16 @@ export default function PaymentDialog(props: PaymentDialogProps) {
               selectedCustomer={selectedCustomer}
               cartItems={cartItems}
               calculations={calculations}
+              displaySubtotal={displaySubtotal}
+              displayTaxTotal={displayTaxTotal}
+              displayTaxIsIncluded={displayTaxIsIncluded}
+              checkoutGrandTotal={checkoutGrandTotal}
               roundOffAmount={roundOffAmount}
               paymentAmounts={paymentAmounts}
               displayCurrencySymbol={displayCurrencySymbol}
               isB2B={isB2B}
               isB2C={isB2C}
               currentDate={currentDate}
-              backendTaxPreview={backendTaxPreview}
             />
           </div>
         </div>

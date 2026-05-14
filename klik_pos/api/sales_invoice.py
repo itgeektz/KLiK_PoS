@@ -1584,15 +1584,16 @@ def build_sales_invoice_doc(
 
 	# Set taxes and charges
 	_set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile)
+	force_inclusive_tax = _is_pos_profile_tax_included_in_basic_rate(pos_profile)
 
 	# Add items to invoice
 	_populate_invoice_items(doc, items, pos_profile)
 
 	# Populate tax details from template (if any)
-	_populate_tax_details(doc)
+	_populate_tax_details(doc, force_inclusive_tax=force_inclusive_tax)
 
 	# Build per-item taxes from item_tax_rate fields
-	_populate_per_item_taxes(doc, pos_profile)
+	_populate_per_item_taxes(doc, pos_profile, force_inclusive_tax=force_inclusive_tax)
 
 	doc.set_taxes()
 	doc.set_missing_values()
@@ -2037,6 +2038,13 @@ def _set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile):
 		doc.taxes_and_charges = pos_profile.taxes_and_charges
 
 
+def _is_pos_profile_tax_included_in_basic_rate(pos_profile):
+	"""Return True when Klik POS should treat entered rates as tax-inclusive."""
+	if not pos_profile:
+		return False
+	return cint(getattr(pos_profile, "is_tax_included_in_basic_rate", 0)) == 1
+
+
 def _populate_invoice_items(doc, items, pos_profile):
 	"""Add all items to the invoice."""
 	item_codes = [item.get("id") for item in items]
@@ -2233,7 +2241,7 @@ def _add_serial_to_item(item_data, item):
 		item_data["serial_no"] = serial_number
 
 
-def _populate_tax_details(doc):
+def _populate_tax_details(doc, force_inclusive_tax=False):
 	"""Populate tax details from the taxes and charges template."""
 	if not doc.taxes_and_charges:
 		return
@@ -2243,6 +2251,10 @@ def _populate_tax_details(doc):
 		return
 
 	for tax in tax_doc.taxes:
+		included_in_print_rate = bool(tax.included_in_print_rate)
+		if force_inclusive_tax and tax.charge_type == "On Net Total":
+			included_in_print_rate = True
+
 		doc.append(
 			"taxes",
 			{
@@ -2253,12 +2265,12 @@ def _populate_tax_details(doc):
 				"rate": tax.rate,
 				"row_id": tax.row_id,
 				"tax_amount": tax.tax_amount,
-				"included_in_print_rate": tax.included_in_print_rate,
+				"included_in_print_rate": included_in_print_rate,
 			},
 		)
 
 
-def _populate_per_item_taxes(doc, pos_profile):
+def _populate_per_item_taxes(doc, pos_profile, force_inclusive_tax=False):
 	"""Build tax rows from per-item tax rates on invoice items.
 	
 	When items have item_tax_template set (e.g., from Item Tax Template),
@@ -2322,6 +2334,10 @@ def _populate_per_item_taxes(doc, pos_profile):
 		if account_head in existing_accounts:
 			continue
 
+		included_in_print_rate = included_map.get(account_head, False)
+		if force_inclusive_tax:
+			included_in_print_rate = True
+
 		doc.append(
 			"taxes",
 			{
@@ -2329,7 +2345,7 @@ def _populate_per_item_taxes(doc, pos_profile):
 				"account_head": account_head,
 				"description": tax_data["description"],
 				"rate": tax_data["rate"],
-				"included_in_print_rate": included_map.get(account_head, False),
+				"included_in_print_rate": included_in_print_rate,
 			},
 		)
 

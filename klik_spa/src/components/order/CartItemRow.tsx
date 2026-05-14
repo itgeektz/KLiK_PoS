@@ -10,6 +10,7 @@ import { UOMSelectField } from "./UOMSelectField";
 import { SerialBatchBundleModal } from "./SerialBatchBundleSelector";
 import { useCartStore } from "../../stores/cartStore";
 import ProductDetailsModal from "../ProductDetailsModal";
+import { getEffectiveDisplayRate, getEffectiveItemRate, getExclusiveTaxRateForItem } from "../../utils/cartPricing";
 
 interface CartItemRowProps {
   item: CartItem;
@@ -329,24 +330,22 @@ export const CartItemRow = ({
     setLocalDiscountPct(item.price > 0 ? parseFloat(((amt / item.price) * 100).toFixed(2)) : 0);
   };
 
-  const totalTaxRate = Number(item.total_tax_rate || 0);
-  const hasExclusiveTax = Array.isArray(item.tax_templates)
-    && item.tax_templates.some((tax) => !tax.is_inclusive);
+  const isTaxIncludedInBasicRate =
+    posDetails?.is_tax_included_in_basic_rate === 1
+    || posDetails?.is_tax_included_in_basic_rate === "1"
+    || posDetails?.is_tax_included_in_basic_rate === true;
 
-  const discountedPrice = (() => {
-    if (itemDiscount.customRate !== undefined && itemDiscount.customRate !== null) {
-      const enteredRate = Math.max(0, itemDiscount.customRate);
-      if (hasExclusiveTax && totalTaxRate > 0) {
-        return enteredRate / (1 + totalTaxRate / 100);
-      }
-      return enteredRate;
-    }
-    return Math.max(0, item.price - (itemDiscount.discountAmount || 0));
-  })();
-
-  const displayRateInclTax = hasExclusiveTax && totalTaxRate > 0
-    ? discountedPrice * (1 + totalTaxRate / 100)
-    : discountedPrice;
+  const discountedPrice = getEffectiveItemRate(item, {
+    itemDiscounts: { [item.id]: itemDiscount },
+    isTaxIncludedInBasicRate,
+  });
+  const displayRateInclTax = getEffectiveDisplayRate(item, {
+    itemDiscounts: { [item.id]: itemDiscount },
+    isTaxIncludedInBasicRate,
+  });
+  const exclusiveTaxRate = getExclusiveTaxRateForItem(item, { isTaxIncludedInBasicRate });
+  const hasExclusiveTax = exclusiveTaxRate > 0;
+  const totalTaxRate = hasExclusiveTax ? exclusiveTaxRate : Number(item.total_tax_rate || 0);
   const taxAmountPerUnit = Math.max(0, displayRateInclTax - discountedPrice);
   const originalTotal = item.price * item.quantity;
   const discountedTotal = displayRateInclTax * item.quantity;

@@ -34,6 +34,7 @@ export interface POSProfile {
   custom_show_item_code_in_product_list?: boolean | number;
   custom_enhanced_search?: boolean | number;
   custom_scale_barcodes_start_with?: string;
+  is_tax_included_in_basic_rate?: boolean | number | string;
   warehouse?: string;
   restrict_cost_visibility_in_tooltip?: boolean;
   is_default?: boolean;

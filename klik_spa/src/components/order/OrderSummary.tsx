@@ -21,6 +21,7 @@ import { CartItemRow } from "./CartItemRow";
 import { OrderSummaryFooter } from "./OrderSummaryFooter";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
 import { useSalespersonStore } from "../../stores/salespersonStore";
+import { getEffectiveDisplayRate, getEffectiveItemRate } from "../../utils/cartPricing";
 
 interface OrderSummaryProps {
   onClearCart?: () => void;
@@ -85,6 +86,10 @@ export default function OrderSummary({
 
   const currency_symbol = posDetails?.currency_symbol;
   const autoFetchBatch = (posDetails as any)?.custom_autofetch_batchserial_ === 1;
+  const isTaxIncludedInBasicRate =
+    posDetails?.is_tax_included_in_basic_rate === 1
+    || posDetails?.is_tax_included_in_basic_rate === "1"
+    || posDetails?.is_tax_included_in_basic_rate === true;
 
   useEffect(() => {
     // When a held invoice is loaded back into cart, restore per-line discounts from persisted draft fields.
@@ -205,41 +210,24 @@ export default function OrderSummary({
   }, [cartItems]);
 
   const getDiscountedPrice = (item: CartItem) => {
-    const taxTemplates = item.tax_templates || [];
-    const totalTaxRate = Number(item.total_tax_rate || 0);
-    const hasExclusiveTax = taxTemplates.length > 0 && taxTemplates.some((tax) => !tax.is_inclusive);
-    const toExclusiveRate = (rateValue: number) => {
-      if (!hasExclusiveTax || totalTaxRate <= 0) return rateValue;
-      return rateValue / (1 + totalTaxRate / 100);
-    };
-
-    const discount = itemDiscounts[item.id] || { discountPercentage: 0, discountAmount: 0 };
-    const customRate = discount.customRate;
-    if (customRate !== undefined && customRate !== null) {
-      return Math.max(0, toExclusiveRate(Number(customRate) || 0));
-    }
-    let price = item.price;
-    if (discount.discountPercentage > 0) price = price * (1 - discount.discountPercentage / 100);
-    if (discount.discountAmount > 0) price = Math.max(0, price - discount.discountAmount);
-    return Math.max(0, price);
+    return getEffectiveItemRate(item, {
+      itemDiscounts,
+      isTaxIncludedInBasicRate,
+    });
   };
 
   const getDisplayPriceInclusive = (item: CartItem) => {
-    const basePrice = getDiscountedPrice(item);
-    const taxTemplates = item.tax_templates || [];
-    const totalTaxRate = Number(item.total_tax_rate || 0);
-    const hasExclusiveTax = taxTemplates.length > 0 && taxTemplates.some((tax) => !tax.is_inclusive);
-    if (!hasExclusiveTax || totalTaxRate <= 0) return basePrice;
-    return basePrice * (1 + totalTaxRate / 100);
+    return getEffectiveDisplayRate(item, {
+      itemDiscounts,
+      isTaxIncludedInBasicRate,
+    });
   };
 
   const getOriginalDisplayPriceInclusive = (item: CartItem) => {
-    const basePrice = Math.max(0, Number(item.price || 0));
-    const taxTemplates = item.tax_templates || [];
-    const totalTaxRate = Number(item.total_tax_rate || 0);
-    const hasExclusiveTax = taxTemplates.length > 0 && taxTemplates.some((tax) => !tax.is_inclusive);
-    if (!hasExclusiveTax || totalTaxRate <= 0) return basePrice;
-    return basePrice * (1 + totalTaxRate / 100);
+    return getEffectiveDisplayRate(item, {
+      itemDiscounts: {},
+      isTaxIncludedInBasicRate,
+    });
   };
 
   const subtotal = cartItems.reduce((sum, item) => sum + getDisplayPriceInclusive(item) * item.quantity, 0);

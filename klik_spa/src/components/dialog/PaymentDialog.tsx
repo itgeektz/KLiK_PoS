@@ -927,12 +927,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           SalesTaxCharges: selectedSalesTaxCharges,
           businessType: posDetails?.business_type,
           roundOffAmount,
-          isCreditSale,
-          is_credit_sale: isCreditSale,
-          dueDate: isCreditSale ? dueDate : null,
-          due_date: isCreditSale ? dueDate : null,
-          allowPartialPayment: allowPartialPayments,
-          allow_partial_payment: allowPartialPayments,
+          // Preview-only context: avoid checkout payment validation until user submits payment.
+          status: "held",
         };
 
         const response = await validateCheckoutInvoice(payload);
@@ -2089,9 +2085,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   outstandingAmount={outstandingAmount}
                   displayCurrencySymbol={displayCurrencySymbol}
                   isB2B={isB2B}
-                  isB2C={isB2C}
                   backendTaxPreview={backendTaxPreview}
-                  taxPreviewError={taxPreviewError}
                   onRoundOffChange={handleRoundOffChange}
                   onRoundOff={handleRoundOff}
                 />

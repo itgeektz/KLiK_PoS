@@ -19,7 +19,6 @@ interface TotalsSectionProps {
   displayCurrencySymbol: string;
   isB2B: boolean;
   backendTaxPreview: BackendTaxPreview | null;
-  taxPreviewError: string | null;
   onRoundOffChange: (value: string) => void;
   onRoundOff: () => void;
 }
@@ -40,12 +39,10 @@ export default function TotalsSection({
   displayCurrencySymbol,
   isB2B,
   backendTaxPreview,
-  taxPreviewError,
   onRoundOffChange,
   onRoundOff,
 }: TotalsSectionProps) {
   const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
-  const hasBackendTaxPreview = backendTaxPreview !== null;
   const hasBackendTaxBreakdown = backendTaxLines.length > 0;
   const changeDue = totalPaidAmount > checkoutGrandTotal ? subtractCurrency(totalPaidAmount, checkoutGrandTotal) : 0;
 
@@ -117,9 +114,6 @@ export default function TotalsSection({
                 </div>
               ))}
             </div>
-          )}
-          {!hasBackendTaxPreview && taxPreviewError && (
-            <div className="text-xs text-amber-700 dark:text-amber-400">{taxPreviewError}</div>
           )}
           {roundOffAmount !== 0 && (
             <div className="flex justify-between">

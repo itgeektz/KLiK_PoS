@@ -331,6 +331,7 @@ export interface POSProfile {
   company: string
   warehouse: string
   currency: string
+  default_sales_type?: 'Cash' | 'Credit' | string
   write_off_account?: string
   write_off_cost_center?: string
   payment_methods?: PaymentMode[]

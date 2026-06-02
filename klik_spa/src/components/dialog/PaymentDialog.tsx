@@ -169,6 +169,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const backendTaxPreviewRef = useRef<BackendTaxPreview | null>(null);
   const taxPreviewRequestIdRef = useRef(0);
   const taxPreviewCacheRef = useRef<Map<string, CachedTaxPreviewEntry>>(new Map());
+  const initializedCreditDefaultRef = useRef(false);
 
   const { posDetails } = usePOSProfileStore();
   const posLoading = false;
@@ -209,6 +210,13 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     posDetails?.custom_auto_allocate_remaining_payment === 1 ||
     posDetails?.custom_auto_allocate_remaining_payment === "1" ||
     posDetails?.custom_auto_allocate_remaining_payment === true;
+
+  const defaultSalesType = useMemo(() => {
+    const rawValue = typeof posDetails?.default_sales_type === "string"
+      ? posDetails.default_sales_type
+      : "Cash";
+    return rawValue.trim().toLowerCase();
+  }, [posDetails?.default_sales_type]);
 
   const [enableBackgroundSubmission, setEnableBackgroundSubmission] = useState<boolean>(
     Boolean(posDetails?.enable_background_invoice_submission)
@@ -938,6 +946,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           SalesTaxCharges: selectedSalesTaxCharges,
           businessType: posDetails?.business_type,
           roundOffAmount,
+          isCreditSale,
+          is_credit_sale: isCreditSale,
+          dueDate: isCreditSale ? dueDate : null,
+          due_date: isCreditSale ? dueDate : null,
+          allowPartialPayment: allowPartialPayments,
+          allow_partial_payment: allowPartialPayments,
         };
 
         const response = await validateCheckoutInvoice(payload);
@@ -1005,6 +1019,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     salesTaxLoading,
     posDetails?.business_type,
     roundOffAmount,
+    isCreditSale,
+    dueDate,
+    allowPartialPayments,
     getEffectiveItemRate,
   ]);
 
@@ -1414,6 +1431,27 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       setDueDate(today);
     }
   }, [isOpen, dueDate]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      initializedCreditDefaultRef.current = false;
+      return;
+    }
+
+    if (initializedCreditDefaultRef.current) {
+      return;
+    }
+
+    const shouldDefaultToCredit = allowPartialPayments && defaultSalesType === "credit";
+    setIsCreditSale(shouldDefaultToCredit);
+
+    if (shouldDefaultToCredit) {
+      setPaymentAmounts({});
+      setLastModifiedMethodId(null);
+    }
+
+    initializedCreditDefaultRef.current = true;
+  }, [isOpen, allowPartialPayments, defaultSalesType]);
 
   useEffect(() => {
     if (isOpen) setTaxPin("");

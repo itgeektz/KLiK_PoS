@@ -18,7 +18,6 @@ interface TotalsSectionProps {
   outstandingAmount: number;
   displayCurrencySymbol: string;
   isB2B: boolean;
-  isB2C: boolean;
   backendTaxPreview: BackendTaxPreview | null;
   taxPreviewError: string | null;
   onRoundOffChange: (value: string) => void;
@@ -40,7 +39,6 @@ export default function TotalsSection({
   outstandingAmount,
   displayCurrencySymbol,
   isB2B,
-  isB2C,
   backendTaxPreview,
   taxPreviewError,
   onRoundOffChange,
@@ -49,6 +47,7 @@ export default function TotalsSection({
   const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
   const hasBackendTaxPreview = backendTaxPreview !== null;
   const hasBackendTaxBreakdown = backendTaxLines.length > 0;
+  const changeDue = totalPaidAmount > checkoutGrandTotal ? subtractCurrency(totalPaidAmount, checkoutGrandTotal) : 0;
 
   return (
     <div>
@@ -139,30 +138,24 @@ export default function TotalsSection({
             </div>
           </div>
 
-          {(isB2C || isB2B) && (
-            <>
-              <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">Total Paid</span>
-                <span className="font-medium text-blue-600 dark:text-blue-400">
-                  {formatCurrencyWithSymbol(totalPaidAmount, displayCurrencySymbol)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">Outstanding Amount</span>
-                <span className={`font-bold ${outstandingAmount > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
-                  {formatCurrencyWithSymbol(outstandingAmount, displayCurrencySymbol)}
-                </span>
-              </div>
-              {totalPaidAmount > checkoutGrandTotal && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Change</span>
-                  <span className="font-bold text-green-600 dark:text-green-400">
-                    {formatCurrencyWithSymbol(subtractCurrency(totalPaidAmount, checkoutGrandTotal), displayCurrencySymbol)}
-                  </span>
-                </div>
-              )}
-            </>
-          )}
+          <div className="flex justify-between">
+            <span className="text-gray-600 dark:text-gray-400">Cash Received</span>
+            <span className="font-medium text-blue-600 dark:text-blue-400">
+              {formatCurrencyWithSymbol(totalPaidAmount, displayCurrencySymbol)}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600 dark:text-gray-400">Change Due</span>
+            <span className={`font-bold ${changeDue > 0 ? "text-green-600 dark:text-green-400" : "text-gray-900 dark:text-white"}`}>
+              {formatCurrencyWithSymbol(changeDue, displayCurrencySymbol)}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600 dark:text-gray-400">Outstanding Amount</span>
+            <span className={`font-bold ${outstandingAmount > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+              {formatCurrencyWithSymbol(outstandingAmount, displayCurrencySymbol)}
+            </span>
+          </div>
         </div>
       </div>
     </div>

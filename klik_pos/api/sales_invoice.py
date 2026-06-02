@@ -1416,7 +1416,11 @@ def parse_invoice_data(data):
 	customer = data.get("customer", {}).get("id")
 	items = []
 	item_discounts = data.get("itemDiscounts", {})
-	is_credit_sale = _as_bool(data.get("isCreditSale") or data.get("is_credit_sale"))
+	has_positive_priced_item = False
+	raw_credit_sale_flag = data.get("isCreditSale")
+	if raw_credit_sale_flag is None:
+		raw_credit_sale_flag = data.get("is_credit_sale")
+	is_credit_sale = _as_bool(raw_credit_sale_flag)
 	allow_partial_payment = _as_bool(
 		data.get("allowPartialPayment") or data.get("allow_partial_payment")
 	)
@@ -1426,6 +1430,28 @@ def parse_invoice_data(data):
 	due_date = data.get("dueDate") or data.get("due_date")
 	mode_of_payment = None
 	default_payment_mode = None
+	checkout_status = str(data.get("status") or "").strip().lower()
+	has_payment_submission_context = any(
+		key in data
+		for key in (
+			"paymentMethods",
+			"amountPaid",
+			"isCreditSale",
+			"is_credit_sale",
+			"dueDate",
+			"due_date",
+		)
+	)
+
+	if raw_credit_sale_flag is None and has_payment_submission_context:
+		default_sales_type = (
+			getattr(get_current_pos_profile(), "default_sales_type", None) or "Cash"
+		).strip().lower()
+		is_credit_sale = default_sales_type == "credit"
+
+	allow_zero_rate_sales = cint(
+		getattr(get_current_pos_profile(), "allow_zero_rate_sales", 0) or 0
+	)
 
 	for item in data.get("items", []):
 		# Draft edit flows can send a unique cart-line id and the actual item code separately.
@@ -1471,8 +1497,23 @@ def parse_invoice_data(data):
 		})
 
 		price = flt(item.get("price") or 0)
+		quantity = flt(item.get("quantity") or 0)
+		if price > 0 and quantity > 0:
+			has_positive_priced_item = True
 
-		if price <= 0 and discount_percentage <= 0 and discount_amount <= 0:
+		if price < 0:
+			frappe.throw(
+				_("Rate cannot be negative for item {0}").format(
+					item_code or _("Unknown Item")
+				)
+			)
+
+		if (
+			price == 0
+			and discount_percentage <= 0
+			and discount_amount <= 0
+			and not allow_zero_rate_sales
+		):
 			frappe.throw(
 				_("Rate must be greater than 0 for item {0} when no discount is set").format(
 					item_code or _("Unknown Item")
@@ -1490,15 +1531,39 @@ def parse_invoice_data(data):
 
 	if data.get("amountPaid"):
 		amount_paid = data.get("amountPaid")
+	if flt(amount_paid or 0) < 0:
+		frappe.throw(_("Payment amounts cannot be negative."))
 
 	if data.get("paymentMethods"):
 		mode_of_payment = data.get("paymentMethods")
+		if isinstance(mode_of_payment, list):
+			for payment in mode_of_payment:
+				if not isinstance(payment, dict):
+					continue
+				if flt(payment.get("amount") or 0) < 0:
+					frappe.throw(_("Payment amounts cannot be negative."))
 
-	if is_credit_sale:
+	if is_credit_sale and has_payment_submission_context:
+		if not due_date:
+			frappe.throw(_("Please select a due date for this credit sale"))
+
+		if customer and _is_walkin_customer(customer):
+			frappe.throw(_("Credit sales require a non walk-in customer."))
+
+		if _has_positive_payment_amount(mode_of_payment):
+			frappe.throw(
+				_("Credit sale cannot include payment amounts. Disable Credit Sale to collect payment.")
+			)
+
+		# Trust payment rows for credit-sale validation and always persist as unpaid.
+		amount_paid = 0.0
 		default_payment_mode = _get_default_payment_mode()
 		mode_of_payment = _normalize_credit_sale_payment_methods(mode_of_payment, default_payment_mode)
-		if not _has_positive_payment_amount(mode_of_payment):
-			amount_paid = 0.0
+	elif has_payment_submission_context and checkout_status != "held" and has_positive_priced_item:
+		if flt(amount_paid or 0) <= 0 or not _has_positive_payment_amount(mode_of_payment):
+			frappe.throw(
+				_("Cash sale requires at least one payment method with a positive amount.")
+			)
 
 	if data.get("SalesTaxCharges"):
 		sales_and_tax_charges = data.get("SalesTaxCharges")
@@ -2427,6 +2492,18 @@ def _has_positive_payment_amount(payment_methods):
 		except Exception:
 			continue
 	return False
+
+
+def _is_walkin_customer(customer):
+	"""Return True when the selected customer is marked as walk-in."""
+	if not customer:
+		return False
+
+	try:
+		is_walkin = frappe.db.get_value("Customer", customer, "custom_is_walkin")
+		return cint(is_walkin or 0) == 1
+	except Exception:
+		return False
 
 
 def get_tax_template(template_name):

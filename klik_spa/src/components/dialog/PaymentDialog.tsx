@@ -169,6 +169,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const backendTaxPreviewRef = useRef<BackendTaxPreview | null>(null);
   const taxPreviewRequestIdRef = useRef(0);
   const taxPreviewCacheRef = useRef<Map<string, CachedTaxPreviewEntry>>(new Map());
+  const initializedCreditDefaultRef = useRef(false);
 
   const { posDetails } = usePOSProfileStore();
   const posLoading = false;
@@ -209,6 +210,13 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     posDetails?.custom_auto_allocate_remaining_payment === 1 ||
     posDetails?.custom_auto_allocate_remaining_payment === "1" ||
     posDetails?.custom_auto_allocate_remaining_payment === true;
+
+  const defaultSalesType = useMemo(() => {
+    const rawValue = typeof posDetails?.default_sales_type === "string"
+      ? posDetails.default_sales_type
+      : "Cash";
+    return rawValue.trim().toLowerCase();
+  }, [posDetails?.default_sales_type]);
 
   const [enableBackgroundSubmission, setEnableBackgroundSubmission] = useState<boolean>(
     Boolean(posDetails?.enable_background_invoice_submission)
@@ -309,6 +317,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   }, [cartItems, getEffectiveDisplayRate, roundOffAmount]);
 
   const totalPaidAmount = calculateTotalPayments(Object.values(paymentAmounts));
+  const hasNegativePaymentAmount = Object.values(paymentAmounts).some((amount) => amount < 0);
   const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
   const hasBackendTaxPreview = backendTaxPreview !== null;
   const hasBackendTaxBreakdown = backendTaxLines.length > 0;
@@ -435,28 +444,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     deliveryPersonnel: string | null = null,
     options?: { excludeActiveMpesa?: boolean }
   ) => {
-    const netAmountToSend = isB2B ? totalPaidAmount : checkoutGrandTotal;
     const activeMpesaPayment = options?.excludeActiveMpesa ? getActiveMpesaPayment() : null;
-    const adjustedPaymentMethods = isB2B
-      ? Object.entries(paymentAmounts).filter(([, amount]) => amount > 0)
-      : (() => {
-          const validPayments = Object.entries(paymentAmounts).filter(([, amount]) => amount > 0);
-          if (validPayments.length === 0) return [];
-          const totalPaymentAmount = validPayments.reduce((sum, [, amount]) => sum + amount, 0);
-          if (totalPaymentAmount > checkoutGrandTotal) {
-            const excess = totalPaymentAmount - checkoutGrandTotal;
-            const lastPaymentIndex = validPayments.length - 1;
-            const lastPayment = validPayments[lastPaymentIndex];
-            if (!lastPayment) return [];
-            const [, lastAmount] = lastPayment;
-            const adjustedLastAmount = parseFloat(Math.max(0, lastAmount - excess).toFixed(2));
-            return validPayments.map(([method, amount], index) => {
-              if (index === lastPaymentIndex) return [method, adjustedLastAmount];
-              return [method, amount];
-            });
-          }
-          return validPayments;
-        })();
+    const adjustedPaymentMethods = Object.entries(paymentAmounts).filter(([, amount]) => amount > 0);
 
     return {
       items: cartItems.map((item) => {
@@ -505,7 +494,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       couponDiscount: calculations.couponDiscount,
       roundOffAmount,
       grandTotal: checkoutGrandTotal,
-      amountPaid: netAmountToSend,
+      amountPaid: totalPaidAmount,
       outstandingAmount: outstandingAmount,
       appliedCoupons,
       businessType: posDetails?.business_type,
@@ -938,6 +927,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           SalesTaxCharges: selectedSalesTaxCharges,
           businessType: posDetails?.business_type,
           roundOffAmount,
+          isCreditSale,
+          is_credit_sale: isCreditSale,
+          dueDate: isCreditSale ? dueDate : null,
+          due_date: isCreditSale ? dueDate : null,
+          allowPartialPayment: allowPartialPayments,
+          allow_partial_payment: allowPartialPayments,
         };
 
         const response = await validateCheckoutInvoice(payload);
@@ -1005,6 +1000,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     salesTaxLoading,
     posDetails?.business_type,
     roundOffAmount,
+    isCreditSale,
+    dueDate,
+    allowPartialPayments,
     getEffectiveItemRate,
   ]);
 
@@ -1100,6 +1098,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       toast.error("Kindly select a customer");
       return;
     }
+    if (hasNegativePaymentAmount) {
+      toast.error("Payment amounts cannot be negative.");
+      return;
+    }
     if (!isCreditSale) {
       const totalPaid = calculateTotalPayments(Object.values(paymentAmounts));
       const orderTotal = checkoutGrandTotal;
@@ -1110,11 +1112,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         return;
       }
       
-      if (totalPaid > orderTotal && !posDetails?.allow_overpayment) {
-        const overpayAmount = totalPaid - orderTotal;
-        toast.error(`Overpayment not allowed. Please adjust payment amounts. Overpayment: ${formatCurrencyWithSymbol(overpayAmount, displayCurrencySymbol)}`);
-        return;
-      }
     }
     if (isCreditSale && !dueDate) {
       toast.error("Please select a due date for this credit sale");
@@ -1416,6 +1413,27 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   }, [isOpen, dueDate]);
 
   useEffect(() => {
+    if (!isOpen) {
+      initializedCreditDefaultRef.current = false;
+      return;
+    }
+
+    if (initializedCreditDefaultRef.current) {
+      return;
+    }
+
+    const shouldDefaultToCredit = allowPartialPayments && defaultSalesType === "credit";
+    setIsCreditSale(shouldDefaultToCredit);
+
+    if (shouldDefaultToCredit) {
+      setPaymentAmounts({});
+      setLastModifiedMethodId(null);
+    }
+
+    initializedCreditDefaultRef.current = true;
+  }, [isOpen, allowPartialPayments, defaultSalesType]);
+
+  useEffect(() => {
     if (isOpen) setTaxPin("");
   }, [isOpen]);
 
@@ -1471,23 +1489,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
     previousCheckoutGrandTotalRef.current = checkoutGrandTotal;
   }, [checkoutGrandTotal, isOpen, invoiceSubmitted, isProcessingPayment, isCreditSale, modes]);
-
-  useEffect(() => {
-    if (modes.length > 0 && Object.keys(paymentAmounts).length > 0) {
-      const defaultMode = modes.find((mode) => mode.default === 1);
-      if (defaultMode) {
-        const totalPayments = Object.values(paymentAmounts).reduce((sum, amount) => sum + (amount || 0), 0);
-        const excess = totalPayments - checkoutGrandTotal;
-        const paymentEntries = Object.entries(paymentAmounts);
-        const highestAmountMethod = paymentEntries.reduce((max, current) => (current[1] || 0) > (max[1] || 0) ? current : max);
-        const [highestMethodId, highestAmount] = highestAmountMethod;
-        if (highestAmount > 0 && excess > 0) {
-          const newAmount = Math.max(0, highestAmount - excess);
-          setPaymentAmounts((prev) => ({ ...prev, [highestMethodId]: newAmount }));
-        }
-      }
-    }
-  }, [checkoutGrandTotal, modes, isB2C, isB2B, paymentAmounts]);
 
   useEffect(() => {
     if (invoiceSubmitted && invoiceData && print_receipt_on_order_complete) {

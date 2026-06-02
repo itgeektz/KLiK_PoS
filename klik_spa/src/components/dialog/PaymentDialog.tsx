@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { Calculator, ChevronDown, Eye, Loader2, MailPlus, MessageCirclePlus, MessageSquarePlus, Printer } from "lucide-react";
+import { ChevronDown, Eye, Loader2, MailPlus, MessageCirclePlus, MessageSquarePlus, Printer } from "lucide-react";
 import { useCartStore } from "../../stores/cartStore";
 import { usePaymentModes } from "../../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../../hooks/useSalesTaxCharges";
@@ -16,7 +16,7 @@ import {
 } from "../../services/salesInvoice";
 import { clearDraftInvoiceCache, getOriginalDraftInvoiceId } from "../../utils/draftInvoiceCache";
 import { formatCurrencyWithSymbol, getCurrencySymbol } from "../../utils/currency";
-import { calculateRemainingAmount, calculateTotalPayments, roundCurrency, subtractCurrency } from "../../utils/currencyMath";
+import { calculateRemainingAmount, calculateTotalPayments, roundCurrency } from "../../utils/currencyMath";
 import { extractErrorFromException } from "../../utils/errorExtraction";
 import { fetchWhatsAppTemplates, getDefaultWhatsAppTemplate, processTemplate, getDefaultMessageTemplate } from "../../services/whatsappTemplateService";
 import { fetchEmailTemplates, getDefaultEmailTemplate, processEmailTemplate, getDefaultEmailMessageTemplate } from "../../services/emailTemplateService";
@@ -835,11 +835,6 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         setPaymentAmounts((prev) => ({ ...prev, [targetId]: newTargetAmount }));
       }
     }
-  };
-
-  const handleSalesTaxChange = (value: string) => {
-    if (invoiceSubmitted || isProcessingPayment) return;
-    setSelectedSalesTaxCharges(value);
   };
 
   useEffect(() => {
@@ -1675,16 +1670,16 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
   if (isMobile) {
     return (
-      <div className={isFullPage ? "h-full bg-white dark:bg-gray-900 overflow-y-auto custom-scrollbar" : "fixed inset-0 bg-white dark:bg-gray-900 z-50 overflow-y-auto custom-scrollbar"}>
-        <div className="min-h-screen">
-          {!isFullPage && (
-            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between">
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {invoiceSubmitted ? "Invoice Queued" : isB2B ? "Submit Invoice" : "Payment"}
-              </h1>
-            </div>
-          )}
-          <div className="p-4 space-y-6">
+      <div className={isFullPage ? "h-full bg-white dark:bg-gray-900 flex flex-col overflow-hidden" : "fixed inset-0 bg-white dark:bg-gray-900 z-50 flex flex-col overflow-hidden"}>
+        {!isFullPage && (
+          <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between z-10">
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
+              {invoiceSubmitted ? "Invoice Queued" : isB2B ? "Submit Invoice" : "Payment"}
+            </h1>
+          </div>
+        )}
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+          <div className="p-4 space-y-6 [padding-bottom:calc(8rem+env(safe-area-inset-bottom))]">
             {invoiceSubmitted ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-center space-x-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
@@ -1774,95 +1769,35 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     )}
                   </div>
                 )}
-                <div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Round Off</label>
-                      <div className="flex space-x-2">
-                        <input type="number" value={roundOffInput} onChange={(e) => handleRoundOffChange(e.target.value)} disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled} placeholder="-0.00" className={`flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment || !roundOffEnabled ? "cursor-not-allowed opacity-50" : ""}`} />
-                        <button onClick={handleRoundOff} disabled={invoiceSubmitted || isProcessingPayment || !roundOffEnabled} className={`px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors ${invoiceSubmitted || isProcessingPayment || !roundOffEnabled ? "cursor-not-allowed opacity-50" : ""}`} title="Auto Round">
-                          <Calculator size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{formatCurrencyWithSymbol(displaySubtotal, displayCurrencySymbol)}</span>
-                  </div>
-                  {calculations.couponDiscount > 0 && (
-                    <div className="flex justify-between text-green-600 dark:text-green-400">
-                      <span>Discount</span>
-                      <span>-{formatCurrencyWithSymbol(calculations.couponDiscount, displayCurrencySymbol)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Tax ({calculations.selectedTax?.rate}% {displayTaxIsIncluded ? "Incl." : "Excl."})</span>
-                    <span className={`font-medium ${displayTaxIsIncluded ? "text-beveren-600 dark:text-beveren-400" : "text-gray-900 dark:text-white"}`}>
-                      {displayTaxIsIncluded
-                        ? `(${formatCurrencyWithSymbol(displayTaxTotal, displayCurrencySymbol)})`
-                        : formatCurrencyWithSymbol(displayTaxTotal, displayCurrencySymbol)}
-                    </span>
-                  </div>
-                  {(isTaxPreviewLoading || hasBackendTaxPreview) && (
-                    <div className="rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 p-2 space-y-1">
-                      {isTaxPreviewLoading ? (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">Calculating tax breakdown...</div>
-                      ) : !hasBackendTaxBreakdown ? (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">ERPNext returned a tax total for this checkout, but no line-level breakdown rows were provided.</div>
-                      ) : (
-                        backendTaxLines.map((taxLine, index) => (
-                          <div key={`${taxLine.account_head || taxLine.description || "tax"}-${index}`} className="flex justify-between text-xs">
-                            <span className="text-gray-600 dark:text-gray-300">{taxLine.description || taxLine.account_head || "Tax"}</span>
-                            <span className="text-gray-900 dark:text-white">
-                              {Number(taxLine.included_in_print_rate) === 1
-                                ? `(${formatCurrencyWithSymbol(Number(taxLine.tax_amount) || 0, displayCurrencySymbol)})`
-                                : formatCurrencyWithSymbol(Number(taxLine.tax_amount) || 0, displayCurrencySymbol)}
-                            </span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                  {roundOffAmount !== 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Round Off</span>
-                      <span className="font-medium text-gray-900 dark:text-white">{formatCurrencyWithSymbol(roundOffAmount, displayCurrencySymbol)}</span>
-                    </div>
-                  )}
-                  <div className="border-t border-gray-200 dark:border-gray-600 pt-3">
-                    <div className="flex justify-between">
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">Grand Total</span>
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}</span>
-                    </div>
-                  </div>
-                  {(isB2C || isB2B) && (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">Total Paid</span>
-                        <span className="font-medium text-beveren-600 dark:text-blue-400">{formatCurrencyWithSymbol(totalPaidAmount, displayCurrencySymbol)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">Outstanding</span>
-                        <span className="font-medium text-red-600 dark:text-red-400">{formatCurrencyWithSymbol(outstandingAmount, displayCurrencySymbol)}</span>
-                      </div>
-                      {totalPaidAmount > checkoutGrandTotal && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-600 dark:text-gray-400">Change</span>
-                          <span className="font-medium text-beveren-600 dark:text-beveren-400">{formatCurrencyWithSymbol(subtractCurrency(totalPaidAmount, checkoutGrandTotal), displayCurrencySymbol)}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {isB2B && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Outstanding Amount</span>
-                      <span className="font-medium text-orange-600 dark:text-orange-400">{formatCurrencyWithSymbol(checkoutGrandTotal, displayCurrencySymbol)}</span>
-                    </div>
-                  )}
-                </div>
+                <TaxSection
+                  selectedCustomer={selectedCustomer}
+                  invoiceSubmitted={invoiceSubmitted}
+                  isProcessingPayment={isProcessingPayment}
+                  taxPin={taxPin}
+                  onTaxPinChange={setTaxPin}
+                  calculations={calculations}
+                  displayCurrencySymbol={displayCurrencySymbol}
+                  backendTaxPreview={backendTaxPreview}
+                  isTaxPreviewLoading={isTaxPreviewLoading}
+                  taxPreviewError={taxPreviewError}
+                  roundOffInput={roundOffInput}
+                  roundOffEnabled={roundOffEnabled}
+                  onRoundOffChange={handleRoundOffChange}
+                  onRoundOff={handleRoundOff}
+                />
+
+                <TotalsSection
+                  calculations={calculations}
+                  displaySubtotal={displaySubtotal}
+                  displayTaxTotal={displayTaxTotal}
+                  displayTaxIsIncluded={displayTaxIsIncluded}
+                  checkoutGrandTotal={checkoutGrandTotal}
+                  totalPaidAmount={totalPaidAmount}
+                  outstandingAmount={outstandingAmount}
+                  displayCurrencySymbol={displayCurrencySymbol}
+                  isB2B={isB2B}
+                  backendTaxPreview={backendTaxPreview}
+                />
                 <div className="space-y-3 pt-6">
                   <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
                     <label className="flex items-center gap-3 cursor-pointer group">
@@ -2045,14 +1980,15 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   isProcessingPayment={isProcessingPayment}
                   taxPin={taxPin}
                   onTaxPinChange={setTaxPin}
-                  selectedSalesTaxCharges={selectedSalesTaxCharges}
-                  onTaxChange={handleSalesTaxChange}
-                  salesTaxCharges={salesTaxCharges}
                   calculations={calculations}
                   displayCurrencySymbol={displayCurrencySymbol}
                   backendTaxPreview={backendTaxPreview}
                   isTaxPreviewLoading={isTaxPreviewLoading}
                   taxPreviewError={taxPreviewError}
+                  roundOffInput={roundOffInput}
+                  roundOffEnabled={roundOffEnabled}
+                  onRoundOffChange={handleRoundOffChange}
+                  onRoundOff={handleRoundOff}
                 />
 
                 <SalesPersonSection
@@ -2076,18 +2012,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   displayTaxTotal={displayTaxTotal}
                   displayTaxIsIncluded={displayTaxIsIncluded}
                   checkoutGrandTotal={checkoutGrandTotal}
-                  roundOffAmount={roundOffAmount}
-                  roundOffInput={roundOffInput}
-                  roundOffEnabled={roundOffEnabled}
-                  invoiceSubmitted={invoiceSubmitted}
-                  isProcessingPayment={isProcessingPayment}
                   totalPaidAmount={totalPaidAmount}
                   outstandingAmount={outstandingAmount}
                   displayCurrencySymbol={displayCurrencySymbol}
                   isB2B={isB2B}
                   backendTaxPreview={backendTaxPreview}
-                  onRoundOffChange={handleRoundOffChange}
-                  onRoundOff={handleRoundOff}
                 />
               </>
             )}

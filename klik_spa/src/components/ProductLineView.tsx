@@ -58,13 +58,15 @@ export default function ProductLineView({
     <>
       <div className={`${isMobile ? "p-4" : "p-2"} bg-gray-50 dark:bg-gray-900`}>
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4 overflow-visible">
-          <div className={`${isMobile ? "grid grid-cols-8 gap-2 px-3 py-3" : "grid grid-cols-12 gap-4 px-4 py-3"} bg-gray-50 dark:bg-gray-700 border-b`}>
-            <div className="col-span-4 text-xs font-semibold text-gray-900 dark:text-white">Product</div>
-            <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">Rate</div>
-            <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">Qty</div>
-            {!isMobile && <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">UOM</div>}
-            <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">Action</div>
-          </div>
+          {!isMobile && (
+            <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b">
+              <div className="col-span-4 text-xs font-semibold text-gray-900 dark:text-white">Product</div>
+              <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">Rate</div>
+              <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">Qty</div>
+              <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">UOM</div>
+              <div className="col-span-2 text-xs font-semibold text-center text-gray-900 dark:text-white">Action</div>
+            </div>
+          )}
 
           <div className="divide-y divide-gray-200 dark:divide-gray-600">
             {items.map((item) => {
@@ -75,12 +77,12 @@ export default function ProductLineView({
               return (
                 <div
                   key={item.id}
-                  className={`grid ${isMobile ? "grid-cols-8" : "grid-cols-12"} gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                  className={`${isMobile ? "px-3 py-3" : "grid grid-cols-12 gap-4 px-4 py-3"} hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
                     !isDisabled && "cursor-pointer"
                   }`}
                   onClick={() => !isDisabled && onAddToCart(item)}
                 >
-                  <div className={`${isMobile ? "col-span-3" : "col-span-4"} flex items-center gap-2`}>
+                  <div className={`${isMobile ? "flex items-center gap-2" : "col-span-4 flex items-center gap-2"}`}>
                     {item.image ? (
                       <img
                         src={item.image}
@@ -131,48 +133,83 @@ export default function ProductLineView({
                     </div>
                   </div>
 
+                  {isMobile ? (
+                    <div className="mt-2 grid grid-cols-12 gap-2 items-end">
+                      <div className={`col-span-4 ${isDisabled ? "opacity-60" : ""}`}>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">Rate</p>
+                        <p className="font-semibold text-beveren-600 dark:text-beveren-400 text-xs">
+                          {formattedPrice}
+                        </p>
+                      </div>
 
-                  <div className={`${isMobile ? "col-span-2" : "col-span-2"} flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
-                    <span className={`font-semibold text-beveren-600 dark:text-beveren-400 ${isMobile ? "text-xs" : "text-sm"}`}>
-                      {formattedPrice}
-                    </span>
-                  </div>
+                      <div className={`col-span-3 text-center ${isDisabled ? "opacity-60" : ""}`}>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">Qty</p>
+                        <p className={`font-medium text-xs ${
+                          isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
+                        }`}>
+                          {isOutOfStock ? "0" : item.available}
+                        </p>
+                      </div>
 
-                  <div className={`${isMobile ? "col-span-2" : "col-span-2"} flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
-                    <span className={`font-medium ${isMobile ? "text-xs" : "text-sm"} ${
-                      isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
-                    }`}>
-                      {isOutOfStock ? "0" : item.available}
-                    </span>
-                  </div>
-
-                  {!isMobile && (
-                    <div className={`col-span-2 flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
-                      <span className="text-sm text-gray-500 dark:text-gray-400">
-                        {item.uom || "Nos"}
-                      </span>
+                      <div className="col-span-5 flex justify-end">
+                        {isDisabled ? (
+                          <span className="text-gray-400 dark:text-gray-500 text-xs opacity-60">
+                            {isOutOfStock ? "Out" : "Scan"}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onAddToCart(item)
+                            }}
+                            className="bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium rounded-md transition-colors hover:bg-slate-200 dark:hover:bg-slate-600 hover:border-slate-400 dark:hover:border-slate-500 px-3 py-1.5 text-xs"
+                          >
+                            Add
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  ) : (
+                    <>
+                      <div className={`col-span-2 flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
+                        <span className="font-semibold text-beveren-600 dark:text-beveren-400 text-sm">
+                          {formattedPrice}
+                        </span>
+                      </div>
 
-                  <div className={`${isMobile ? "col-span-1" : "col-span-2"} flex items-center justify-center`}>
-                    {isDisabled ? (
-                      <span className={`text-gray-400 dark:text-gray-500 ${isMobile ? "text-xs" : "text-xs"} opacity-60`}>
-                        {isOutOfStock ? "Out" : "Scan"}
-                      </span>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onAddToCart(item)
-                        }}
-                        className={`bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium rounded-md transition-colors hover:bg-slate-200 dark:hover:bg-slate-600 hover:border-slate-400 dark:hover:border-slate-500 ${
-                          isMobile ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
-                        }`}
-                      >
-                        {isMobile ? "+" : "Add"}
-                      </button>
-                    )}
-                  </div>
+                      <div className={`col-span-2 flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
+                        <span className={`font-medium text-sm ${
+                          isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
+                        }`}>
+                          {isOutOfStock ? "0" : item.available}
+                        </span>
+                      </div>
+
+                      <div className={`col-span-2 flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          {item.uom || "Nos"}
+                        </span>
+                      </div>
+
+                      <div className="col-span-2 flex items-center justify-center">
+                        {isDisabled ? (
+                          <span className="text-gray-400 dark:text-gray-500 text-xs opacity-60">
+                            {isOutOfStock ? "Out" : "Scan"}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onAddToCart(item)
+                            }}
+                            className="bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium rounded-md transition-colors hover:bg-slate-200 dark:hover:bg-slate-600 hover:border-slate-400 dark:hover:border-slate-500 px-3 py-1.5 text-sm"
+                          >
+                            Add
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )
             })}

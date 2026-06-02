@@ -20,6 +20,7 @@ export interface POSProfile {
   is_zatca_enabled?: boolean;
   business_type?: "B2B" | "B2C" | "B2B & B2C";
   default_sales_type?: "Cash" | "Credit" | string;
+  allow_zero_rate_sales?: boolean | number;
   hide_unavailable_items?: boolean;
   custom_use_scanner_fully?: boolean;
   custom_hide_expected_amount?: boolean;

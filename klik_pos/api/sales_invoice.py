@@ -1413,6 +1413,7 @@ def parse_invoice_data(data):
 	customer = data.get("customer", {}).get("id")
 	items = []
 	item_discounts = data.get("itemDiscounts", {})
+	has_positive_priced_item = False
 	raw_credit_sale_flag = data.get("isCreditSale")
 	if raw_credit_sale_flag is None:
 		raw_credit_sale_flag = data.get("is_credit_sale")
@@ -1444,6 +1445,10 @@ def parse_invoice_data(data):
 			getattr(get_current_pos_profile(), "default_sales_type", None) or "Cash"
 		).strip().lower()
 		is_credit_sale = default_sales_type == "credit"
+
+	allow_zero_rate_sales = cint(
+		getattr(get_current_pos_profile(), "allow_zero_rate_sales", 0) or 0
+	)
 
 	for item in data.get("items", []):
 		# Draft edit flows can send a unique cart-line id and the actual item code separately.
@@ -1489,8 +1494,23 @@ def parse_invoice_data(data):
 		})
 
 		price = flt(item.get("price") or 0)
+		quantity = flt(item.get("quantity") or 0)
+		if price > 0 and quantity > 0:
+			has_positive_priced_item = True
 
-		if price <= 0 and discount_percentage <= 0 and discount_amount <= 0:
+		if price < 0:
+			frappe.throw(
+				_("Rate cannot be negative for item {0}").format(
+					item_code or _("Unknown Item")
+				)
+			)
+
+		if (
+			price == 0
+			and discount_percentage <= 0
+			and discount_amount <= 0
+			and not allow_zero_rate_sales
+		):
 			frappe.throw(
 				_("Rate must be greater than 0 for item {0} when no discount is set").format(
 					item_code or _("Unknown Item")
@@ -1528,7 +1548,7 @@ def parse_invoice_data(data):
 		amount_paid = 0.0
 		default_payment_mode = _get_default_payment_mode()
 		mode_of_payment = _normalize_credit_sale_payment_methods(mode_of_payment, default_payment_mode)
-	elif has_payment_submission_context and checkout_status != "held":
+	elif has_payment_submission_context and checkout_status != "held" and has_positive_priced_item:
 		if flt(amount_paid or 0) <= 0 or not _has_positive_payment_amount(mode_of_payment):
 			frappe.throw(
 				_("Cash sale requires at least one payment method with a positive amount.")

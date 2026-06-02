@@ -13,10 +13,7 @@ export default function MobilePaymentPage() {
   const { cartItems, appliedCoupons, selectedCustomer, clearCart } = useCartStore()
   const { refreshStockOnly, updateBatchQuantitiesForItems } = useProducts();
 
-  const handleClose = () => {
-    // Note: paymentCompleted flag removed to match onClick signature
-    // Only clear cart if payment was completed
-    const paymentCompleted = false; // This should be tracked elsewhere
+  const handleClose = (paymentCompleted?: boolean) => {
     if (paymentCompleted) {
       // console.log("MobilePaymentPage: Payment was completed - clearing cart for next order");
       clearCart();
@@ -43,6 +40,11 @@ export default function MobilePaymentPage() {
         console.error("Failed to refresh stock:", error);
       }
     })();
+    if (paymentCompleted) {
+      navigate('/pos', { replace: true })
+      return
+    }
+
     navigate(-1)
   }
 //eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -128,11 +128,11 @@ export default function ProductCard({
         </div>
 
         <div
-          className={`${isMobile ? "p-2 h-12" : "p-3 h-16"} flex flex-col justify-between ${isDisabled ? "opacity-70" : ""}`}
+          className={`${isMobile ? "p-2 min-h-[4.5rem]" : "p-2 h-16"} flex flex-col justify-between ${isDisabled ? "opacity-70" : ""}`}
         >
           <div>
             <h3
-              className={`font-semibold text-gray-900 dark:text-white truncate ${isMobile ? "text-xs" : "text-sm"}`}
+              className={`font-semibold text-gray-900 dark:text-white ${isMobile ? "text-xs leading-tight break-words whitespace-normal" : "text-sm truncate"}`}
             >
               {item.name}
             </h3>

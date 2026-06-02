@@ -26,11 +26,13 @@ import { getEffectiveDisplayRate, getEffectiveItemRate } from "../../utils/cartP
 interface OrderSummaryProps {
   onClearCart?: () => void;
   isMobile?: boolean;
+  onPaymentCompleted?: () => void;
 }
 
 export default function OrderSummary({
   onClearCart,
   isMobile = false,
+  onPaymentCompleted,
 }: OrderSummaryProps) {
   const {
     cartItems,
@@ -413,7 +415,10 @@ export default function OrderSummary({
 
   const handleClosePaymentDialog = async (paymentCompleted?: boolean) => {
     setShowPaymentDialog(false);
-    if (paymentCompleted) handleClearCart();
+    if (paymentCompleted) {
+      handleClearCart();
+      onPaymentCompleted?.();
+    }
 
     try {
       await refreshStockOnly();

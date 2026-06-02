@@ -12,6 +12,7 @@ import { useSalespersonStore } from "../stores/salespersonStore";
 
 
 interface ProductGridProps {
+  isMobile?: boolean;
   scannerOnly?: boolean;
   viewMode?: "grid" | "list";
   hasMore?: boolean;
@@ -22,6 +23,7 @@ interface ProductGridProps {
 }
 
 export default function ProductGrid({
+  isMobile = false,
   scannerOnly = false,
   viewMode: propViewMode,
   hasMore = false,
@@ -155,6 +157,7 @@ export default function ProductGrid({
         <ProductLineView
           items={inStockItems}
           onAddToCart={handleAddToCart}
+          isMobile={isMobile}
           showItemCode={showItemCode}
           scannerOnly={scannerOnly}
         />
@@ -236,18 +239,19 @@ export default function ProductGrid({
 
   return (
     <>
-      <div className="p-6 bg-gray-50 dark:bg-gray-900 relative">
+      <div className={`${isMobile ? "p-3" : "p-6"} bg-gray-50 dark:bg-gray-900 relative`}>
       {isSearching && (
         <div className="absolute inset-0 bg-white/50 dark:bg-gray-900/50 z-10 flex items-center justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-beveren-600"></div>
         </div>
       )}
-      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4">
+      <div className={`grid ${isMobile ? "gap-3 grid-cols-2 sm:grid-cols-2" : "gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4"}`}>
         {inStockItems.map((item) => (
           <ProductCard
             key={item.id}
             item={item}
             onAddToCart={handleAddToCart}
+            isMobile={isMobile}
             showItemCode={showItemCode}
             scannerOnly={scannerOnly}
           />

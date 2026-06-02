@@ -1528,9 +1528,17 @@ def parse_invoice_data(data):
 
 	if data.get("amountPaid"):
 		amount_paid = data.get("amountPaid")
+	if flt(amount_paid or 0) < 0:
+		frappe.throw(_("Payment amounts cannot be negative."))
 
 	if data.get("paymentMethods"):
 		mode_of_payment = data.get("paymentMethods")
+		if isinstance(mode_of_payment, list):
+			for payment in mode_of_payment:
+				if not isinstance(payment, dict):
+					continue
+				if flt(payment.get("amount") or 0) < 0:
+					frappe.throw(_("Payment amounts cannot be negative."))
 
 	if is_credit_sale and has_payment_submission_context:
 		if not due_date:

@@ -8,6 +8,8 @@ interface TotalsSectionProps {
   displayTaxTotal: number;
   displayTaxIsIncluded: boolean;
   checkoutGrandTotal: number;
+  loyaltyAmount?: number;
+  checkoutPayableTotal?: number;
   totalPaidAmount: number;
   outstandingAmount: number;
   displayCurrencySymbol: string;
@@ -21,6 +23,8 @@ export default function TotalsSection({
   displayTaxTotal,
   displayTaxIsIncluded,
   checkoutGrandTotal,
+  loyaltyAmount = 0,
+  checkoutPayableTotal,
   totalPaidAmount,
   outstandingAmount,
   displayCurrencySymbol,
@@ -29,7 +33,8 @@ export default function TotalsSection({
 }: TotalsSectionProps) {
   const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
   const hasBackendTaxBreakdown = backendTaxLines.length > 0;
-  const changeDue = totalPaidAmount > checkoutGrandTotal ? subtractCurrency(totalPaidAmount, checkoutGrandTotal) : 0;
+  const amountDue = checkoutPayableTotal ?? checkoutGrandTotal;
+  const changeDue = totalPaidAmount > amountDue ? subtractCurrency(totalPaidAmount, amountDue) : 0;
 
   return (
     <div>
@@ -88,6 +93,20 @@ export default function TotalsSection({
                 </span>
               </div>
             </div>
+            {loyaltyAmount > 0 && (
+              <>
+                <div className="flex justify-between text-amber-700 dark:text-amber-300">
+                  <span>Loyalty Redeemed</span>
+                  <span className="font-medium">-{formatCurrencyWithSymbol(loyaltyAmount, displayCurrencySymbol)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-gray-900 dark:text-white">Amount Due</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">
+                    {formatCurrencyWithSymbol(amountDue, displayCurrencySymbol)}
+                  </span>
+                </div>
+              </>
+            )}
 
             <div className="flex justify-between">
               <span className="text-gray-600 dark:text-gray-400">Cash Received</span>

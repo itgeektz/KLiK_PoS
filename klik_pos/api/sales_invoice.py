@@ -304,6 +304,18 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 	if not getattr(doc, "items", None):
 		return
 
+	item_codes_in_doc = list({row.item_code for row in doc.items if row.item_code})
+	item_stock_flag_map = {}
+	if item_codes_in_doc:
+		item_stock_flag_map = {
+			row.name: int(row.is_stock_item or 0)
+			for row in frappe.get_all(
+				"Item",
+				filters={"name": ["in", item_codes_in_doc]},
+				fields=["name", "is_stock_item"],
+			)
+		}
+
 	required_qty_map = {}
 	item_codes = set()
 	warehouses = set()
@@ -311,7 +323,7 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 	for row in doc.items:
 		if not row.item_code or not row.warehouse:
 			continue
-		if hasattr(row, "is_stock_item") and int(row.is_stock_item or 0) == 0:
+		if item_stock_flag_map.get(row.item_code, 1) == 0:
 			continue
 
 		required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
@@ -864,6 +876,7 @@ def validate_checkout_invoice(data):
 			mode_of_payment,
 			business_type,
 			roundoff_amount,
+			delivery_charge,
 			delivery_personnel,
 			is_credit_sale,
 			allow_partial_payment,
@@ -881,6 +894,7 @@ def validate_checkout_invoice(data):
 			mode_of_payment,
 			business_type,
 			roundoff_amount,
+			delivery_charge,
 			include_payments=False,
 			delivery_personnel=delivery_personnel,
 			is_credit_sale=is_credit_sale,
@@ -1075,6 +1089,7 @@ def queue_sales_invoice(data):
 			mode_of_payment,
 			business_type,
 			roundoff_amount,
+			delivery_charge,
 			delivery_personnel,
 			is_credit_sale,
 			allow_partial_payment,
@@ -1097,6 +1112,7 @@ def queue_sales_invoice(data):
 			mode_of_payment,
 			business_type,
 			roundoff_amount,
+			delivery_charge,
 			include_payments=True,
 			delivery_personnel=delivery_personnel,
 			is_credit_sale=is_credit_sale,
@@ -1320,6 +1336,7 @@ def create_draft_invoice(data):
 			mode_of_payment,
 			business_type,
 			roundoff_amount,
+			delivery_charge,
 			delivery_personnel,
 			is_credit_sale,
 			allow_partial_payment,
@@ -1347,6 +1364,7 @@ def create_draft_invoice(data):
 				mode_of_payment,
 				business_type,
 				roundoff_amount,
+				delivery_charge,
 				delivery_personnel=delivery_personnel,
 				is_credit_sale=is_credit_sale,
 				allow_partial_payment=allow_partial_payment,
@@ -1364,6 +1382,7 @@ def create_draft_invoice(data):
 				mode_of_payment,
 				business_type,
 				roundoff_amount,
+				delivery_charge,
 				include_payments=True,
 				delivery_personnel=delivery_personnel,
 				is_credit_sale=is_credit_sale,
@@ -1518,10 +1537,52 @@ def parse_invoice_data(data):
 			)
 
 	amount_paid = 0.0
-	sales_and_tax_charges = get_current_pos_profile().taxes_and_charges
+	pos_profile = get_current_pos_profile()
+	sales_and_tax_charges = pos_profile.taxes_and_charges
 	business_type = data.get("businessType")
 
 	roundoff_amount = data.get("roundOffAmount", 0.0)
+	delivery_charge = flt(data.get("deliveryCharge") or data.get("delivery_charge") or 0.0)
+	if delivery_charge < 0:
+		frappe.throw(_("Delivery charge cannot be negative."))
+
+	if delivery_charge > 0:
+		allow_delivery_charge = cint(getattr(pos_profile, "custom_enable_delivery_charge", 0) or 0)
+		if allow_delivery_charge != 1:
+			frappe.throw(_("Delivery charge is not enabled for this POS Profile."))
+
+		delivery_item_code = (getattr(pos_profile, "custom_delivery_charge_item", None) or "").strip()
+		if not delivery_item_code:
+			frappe.throw(
+				_("Set Delivery Charge Item on POS Profile to use delivery charges.")
+			)
+
+		delivery_item = frappe.db.get_value(
+			"Item",
+			delivery_item_code,
+			["name", "disabled", "is_sales_item", "is_stock_item"],
+			as_dict=1,
+		)
+		if not delivery_item or cint(delivery_item.get("disabled") or 0) == 1:
+			frappe.throw(
+				_("Delivery Charge Item {0} is missing or disabled.").format(
+					frappe.bold(delivery_item_code)
+				)
+			)
+
+		if cint(delivery_item.get("is_sales_item") or 0) != 1:
+			frappe.throw(
+				_("Delivery Charge Item {0} must be allowed in sales.").format(
+					frappe.bold(delivery_item_code)
+				)
+			)
+
+		if cint(delivery_item.get("is_stock_item") or 0) == 1:
+			frappe.throw(
+				_("Delivery Charge Item {0} must be a non-stock service item.").format(
+					frappe.bold(delivery_item_code)
+				)
+			)
 
 	if roundoff_amount != 0:
 		_roundoff_account = get_writeoff_account()
@@ -1580,6 +1641,7 @@ def parse_invoice_data(data):
 		mode_of_payment,
 		business_type,
 		roundoff_amount,
+		delivery_charge,
 		delivery_personnel,
 		is_credit_sale,
 		allow_partial_payment,
@@ -1598,6 +1660,7 @@ def build_sales_invoice_doc(
 	mode_of_payment,
 	business_type,
 	roundoff_amount=0.0,
+	delivery_charge=0.0,
 	include_payments=False,
 	delivery_personnel=None,
 	is_credit_sale=False,
@@ -1659,6 +1722,7 @@ def build_sales_invoice_doc(
 
 	# Build per-item taxes from item_tax_rate fields
 	_populate_per_item_taxes(doc, pos_profile, force_inclusive_tax=force_inclusive_tax)
+	_upsert_delivery_charge_service_item(doc, pos_profile, delivery_charge)
 
 	doc.set_taxes()
 	doc.set_missing_values()
@@ -1687,6 +1751,7 @@ def _update_existing_draft_invoice(
 	mode_of_payment,
 	business_type,
 	roundoff_amount,
+	delivery_charge=0.0,
 	delivery_personnel=None,
 	is_credit_sale=False,
 	allow_partial_payment=False,
@@ -1703,6 +1768,7 @@ def _update_existing_draft_invoice(
 		mode_of_payment,
 		business_type,
 		roundoff_amount,
+		delivery_charge,
 		include_payments=True,
 		delivery_personnel=delivery_personnel,
 		is_credit_sale=is_credit_sale,
@@ -1832,9 +1898,17 @@ def _create_batch_and_serial_bundle(items, doc):
 		if not item_code or not serial_batch_bundle:
 			continue
 
-		item_meta = frappe.db.get_value("Item", item_code, ["has_batch_no", "has_serial_no"], as_dict=1)
+		item_meta = frappe.db.get_value(
+			"Item",
+			item_code,
+			["has_batch_no", "has_serial_no", "is_stock_item"],
+			as_dict=1,
+		)
 
-		if not item_meta or not (item_meta.has_batch_no or item_meta.has_serial_no):
+		if not item_meta or int(item_meta.get("is_stock_item") or 0) == 0:
+			continue
+
+		if not (item_meta.has_batch_no or item_meta.has_serial_no):
 			continue
 
 		row = _select_invoice_row_for_bundle(doc, item_code, idx, used_rows)
@@ -1940,6 +2014,10 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 			continue
 
 		item_db_data = item_data_map.get(item_code, {}) or {}
+		is_stock_item = int(item_db_data.get("is_stock_item") or 0)
+		if not is_stock_item:
+			continue
+
 		has_batch_no = int(item_db_data.get("has_batch_no") or 0)
 		has_serial_no = int(item_db_data.get("has_serial_no") or 0)
 		bundle_entries = item.get("bundle_entries") or item.get("serial_batch_bundle") or []
@@ -2103,6 +2181,78 @@ def _set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile):
 		doc.taxes_and_charges = pos_profile.taxes_and_charges
 
 
+def _upsert_delivery_charge_service_item(doc, pos_profile, delivery_charge):
+	"""Create or update a configured delivery service item row using checkout delivery charge."""
+	charge = flt(delivery_charge or 0)
+	if charge <= 0:
+		return
+
+	enabled = cint(getattr(pos_profile, "custom_enable_delivery_charge", 0) or 0) == 1
+	if not enabled:
+		return
+
+	delivery_item_code = (getattr(pos_profile, "custom_delivery_charge_item", None) or "").strip()
+	if not delivery_item_code:
+		frappe.throw(_("Set Delivery Charge Item on POS Profile to use delivery charges."))
+
+	delivery_item = frappe.db.get_value(
+		"Item",
+		delivery_item_code,
+		["name", "item_name", "disabled", "is_sales_item", "is_stock_item", "stock_uom"],
+		as_dict=1,
+	)
+	if not delivery_item or cint(delivery_item.get("disabled") or 0) == 1:
+		frappe.throw(
+			_("Delivery Charge Item {0} is missing or disabled.").format(
+				frappe.bold(delivery_item_code)
+			)
+		)
+
+	if cint(delivery_item.get("is_sales_item") or 0) != 1:
+		frappe.throw(
+			_("Delivery Charge Item {0} must be allowed in sales.").format(
+				frappe.bold(delivery_item_code)
+			)
+		)
+
+	if cint(delivery_item.get("is_stock_item") or 0) == 1:
+		frappe.throw(
+			_("Delivery Charge Item {0} must be a non-stock service item.").format(
+				frappe.bold(delivery_item_code)
+			)
+		)
+
+	delivery_row = None
+	for row in getattr(doc, "items", []) or []:
+		if row.item_code == delivery_item_code:
+			delivery_row = row
+			break
+
+	if delivery_row:
+		delivery_row.qty = 1
+		delivery_row.uom = delivery_row.uom or delivery_item.get("stock_uom") or "Nos"
+		delivery_row.rate = charge
+		delivery_row.price_list_rate = charge
+		delivery_row.amount = charge
+		delivery_row.base_rate = charge
+		delivery_row.base_amount = charge
+		return
+
+	item_data_map = _batch_fetch_item_data([delivery_item_code])
+	_precache_item_accounts([delivery_item_code], pos_profile.company)
+	delivery_item_payload = {
+		"id": delivery_item_code,
+		"quantity": 1,
+		"price": charge,
+		"uom": delivery_item.get("stock_uom") or "Nos",
+		"item_tax_template": "",
+		"item_tax_rate": {},
+		"discountPercentage": 0,
+		"discountAmount": 0,
+	}
+	doc.append("items", _prepare_item_data(doc, delivery_item_payload, item_data_map, pos_profile))
+
+
 def _is_pos_profile_tax_included_in_basic_rate(pos_profile):
 	"""Return True when Klik POS should treat entered rates as tax-inclusive."""
 	if not pos_profile:
@@ -2130,7 +2280,7 @@ def _batch_fetch_item_data(item_codes):
 		return {}
 
 	item_query = """
-		SELECT name, has_batch_no, has_serial_no
+		SELECT name, has_batch_no, has_serial_no, is_stock_item
 		FROM `tabItem`
 		WHERE name IN ({})
 	""".format(",".join([f"'{code}'" for code in item_codes]))
@@ -2290,6 +2440,10 @@ def _add_uom_to_item(item_data, item):
 
 def _add_batch_to_item(item_data, item, item_db_data):
 	"""Add batch information if item has batch tracking."""
+	is_stock_item = int(item_db_data.get("is_stock_item") or 0)
+	if not is_stock_item:
+		return
+
 	has_batch_no = item_db_data.get("has_batch_no", 0)
 	batch_number = item.get("batchNumber")
 
@@ -2896,12 +3050,24 @@ class CustomSalesInvoice(SalesInvoice):
 		if not self.update_stock or getattr(self, "is_return", 0):
 			return
 
+		item_codes = list({row.item_code for row in self.items if row.item_code})
+		item_stock_flag_map = {}
+		if item_codes:
+			item_stock_flag_map = {
+				row.name: int(row.is_stock_item or 0)
+				for row in frappe.get_all(
+					"Item",
+					filters={"name": ["in", item_codes]},
+					fields=["name", "is_stock_item"],
+				)
+			}
+
 		own_reserved_map = _get_sales_invoice_reservation_map(self.name)
 
 		for row in self.items:
 			if not row.item_code or not row.warehouse:
 				continue
-			if hasattr(row, "is_stock_item") and int(row.is_stock_item or 0) == 0:
+			if item_stock_flag_map.get(row.item_code, 1) == 0:
 				continue
 
 			required_qty = flt(abs(getattr(row, "stock_qty", 0) or 0))
@@ -3681,6 +3847,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				mode_of_payment,
 				business_type,
 				roundoff_amount,
+				delivery_charge,
 				delivery_personnel,
 				is_credit_sale,
 				allow_partial_payment,
@@ -3698,6 +3865,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				mode_of_payment,
 				business_type,
 				roundoff_amount,
+				delivery_charge,
 				include_payments=True,
 				delivery_personnel=delivery_personnel,
 				is_credit_sale=is_credit_sale,

@@ -400,7 +400,6 @@ export default function CustomersPage() {
         {/* Add/Edit Customer Modal */}
         {showAddModal && (
           <>
-            {console.log('Opening modal with prefilled data:', prefilledData)}
             <AddCustomerModal
               customer={selectedCustomer}
               onClose={() => {
@@ -409,11 +408,9 @@ export default function CustomersPage() {
                 setPrefilledData({})
               }}
           onSave={(customer: Partial<Customer>) => {
-            console.log('Saving customer:', customer)
 
             // If it's a new customer (not editing), reload the page to show the new customer
             if (!selectedCustomer && customer.id) {
-              console.log('New customer created, reloading page to show updated list')
               // Small delay to ensure the backend has processed the creation
               setTimeout(() => {
                 window.location.reload()
@@ -643,7 +640,6 @@ export default function CustomersPage() {
       {/* Add/Edit Customer Modal */}
       {showAddModal && (
         <>
-          {console.log('Opening modal with prefilled data:', prefilledData)}
         <AddCustomerModal
           customer={selectedCustomer}
           onClose={() => {
@@ -652,11 +648,9 @@ export default function CustomersPage() {
               setPrefilledData({}) // Clear prefilled data
           }}
           onSave={(customer: Partial<Customer>) => {
-            console.log('Saving customer (desktop):', customer)
 
             // If it's a new customer (not editing), reload the page to show the new customer
             if (!selectedCustomer && customer.id) {
-              console.log('New customer created, reloading page to show updated list')
               // Small delay to ensure the backend has processed the creation
               setTimeout(() => {
                 window.location.reload()

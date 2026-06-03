@@ -410,7 +410,6 @@ export default function OrderSummary({
   };
 
   const handleCompletePayment = async (paymentData: any) => {
-    console.log("OrderSummary: Payment completed, invoice created", paymentData);
   };
 
   const handleClosePaymentDialog = async (paymentCompleted?: boolean) => {

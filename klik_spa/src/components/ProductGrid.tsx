@@ -48,7 +48,11 @@ export default function ProductGrid({
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const inStockItems = useMemo(
-    () => (hideUnavailableItems ? filteredItems.filter((item) => item.available > 0) : filteredItems),
+    () => (
+      hideUnavailableItems
+        ? filteredItems.filter((item) => item.is_stock_item === false || item.available > 0)
+        : filteredItems
+    ),
     [filteredItems, hideUnavailableItems],
   );
 
@@ -76,7 +80,7 @@ export default function ProductGrid({
   }, [addToCart]);
 
   const handleAddToCart = useCallback(async (item: MenuItem) => {
-    if (item.available <= 0) return;
+    if (item.is_stock_item !== false && item.available <= 0) return;
     if (scannerOnly) return;
 
     if (requiresSalespersonPin) {

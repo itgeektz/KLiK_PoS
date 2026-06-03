@@ -317,7 +317,6 @@ export default function ClosingShiftPage() {
   // Helper function to check if invoice has items that can still be returned
   const hasReturnableItems = (invoice: SalesInvoice) => {
     if (!invoice || !invoice.items) {
-      console.log("No invoice or items found for:", invoice?.id);
       return false;
     }
 
@@ -350,7 +349,6 @@ export default function ClosingShiftPage() {
   };
 
   const handleCancel = (invoiceId: string) => {
-    console.log("Cancelling invoice:", invoiceId);
     setShowInvoiceModal(false);
   };
 

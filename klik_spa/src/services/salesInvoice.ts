@@ -110,7 +110,6 @@ export async function createSalesReturn(invoiceName: string) {
   });
 
   const result = await response.json();
-  console.log("Return Invoice result:", result);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const serverMsg = result._server_messages
@@ -242,7 +241,6 @@ export async function submitDraftInvoice(invoiceId: string, data?: unknown) {
   });
 
   const result = await response.json();
-  console.log("Submit draft invoice result:", result);
 
   if (!response.ok || !result.message || result.message.success === false) {
     const errorMessage = extractErrorMessage(result, result.message?.error || 'Failed to submit draft invoice');

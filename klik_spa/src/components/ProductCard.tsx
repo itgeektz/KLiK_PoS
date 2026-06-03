@@ -23,7 +23,8 @@ export default function ProductCard({
 }: ProductCardProps) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const isOutOfStock = item.available <= 0;
+  const isServiceItem = item.is_stock_item === false;
+  const isOutOfStock = item.is_stock_item !== false && item.available <= 0;
   const isDisabled = isOutOfStock || scannerOnly;
   const formattedPrice = formatCurrencyWithSymbol(
     item.price,
@@ -107,8 +108,12 @@ export default function ProductCard({
           )}
 
           {!isOutOfStock && (
-            <div className="absolute top-2 right-2 bg-slate-600 text-white px-1.5 py-0.5 rounded-md text-xs font-medium z-10">
-              {item.available}
+            <div
+              className={`absolute top-2 right-2 text-white px-1.5 py-0.5 rounded-md text-xs font-medium z-10 ${
+                isServiceItem ? "bg-indigo-600" : "bg-slate-600"
+              }`}
+            >
+              {isServiceItem ? "Service" : item.available}
             </div>
           )}
 

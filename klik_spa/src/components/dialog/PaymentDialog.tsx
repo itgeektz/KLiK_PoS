@@ -152,6 +152,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [showDeliveryPersonnelModal, setShowDeliveryPersonnelModal] = useState(false);
   const [showSalespersonModal, setShowSalespersonModal] = useState(false);
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
+  const [deliveryCharge, setDeliveryCharge] = useState(0);
   const [taxPin, setTaxPin] = useState("");
   const [backendTaxPreview, setBackendTaxPreview] = useState<BackendTaxPreview | null>(null);
   const [isTaxPreviewLoading, setIsTaxPreviewLoading] = useState(false);
@@ -199,6 +200,14 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const print_receipt_on_order_complete = posDetails?.print_receipt_on_order_complete;
   const deliveryRequiredValue = posDetails?.custom_delivery_required;
   const isDeliveryRequired = deliveryRequiredValue === 1;
+  const isDeliveryChargeEnabled =
+    posDetails?.custom_enable_delivery_charge === 1
+    || posDetails?.custom_enable_delivery_charge === "1"
+    || posDetails?.custom_enable_delivery_charge === true;
+  const deliveryChargeItemCode =
+    typeof posDetails?.custom_delivery_charge_item === "string"
+      ? posDetails.custom_delivery_charge_item
+      : "";
   const allowPartialPayments = Boolean(posDetails?.allow_partial_payment);
   const requiresSalespersonPin = !!posDetails?.custom_sales_person_pin_required;
   const allow_holding_invoices = Boolean(posDetails?.allow_holding_invoices);
@@ -313,8 +322,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const inclGrandTotal = useMemo(() => {
     return cartItems.reduce((sum, item) => {
       return sum + getEffectiveDisplayRate(item) * item.quantity;
-    }, 0) + roundOffAmount;
-  }, [cartItems, getEffectiveDisplayRate, roundOffAmount]);
+    }, 0) + roundOffAmount + Number(deliveryCharge || 0);
+  }, [cartItems, deliveryCharge, getEffectiveDisplayRate, roundOffAmount]);
 
   const totalPaidAmount = calculateTotalPayments(Object.values(paymentAmounts));
   const hasNegativePaymentAmount = Object.values(paymentAmounts).some((amount) => amount < 0);
@@ -493,6 +502,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       taxType: displayTaxIsIncluded ? "inclusive" : "exclusive",
       couponDiscount: calculations.couponDiscount,
       roundOffAmount,
+      deliveryCharge: Number(deliveryCharge || 0),
+      delivery_charge: Number(deliveryCharge || 0),
       grandTotal: checkoutGrandTotal,
       amountPaid: totalPaidAmount,
       outstandingAmount: outstandingAmount,
@@ -869,6 +880,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       SalesTaxCharges: selectedSalesTaxCharges,
       businessType: posDetails?.business_type || "",
       roundOffAmount: Number(roundOffAmount || 0),
+      deliveryCharge: Number(deliveryCharge || 0),
     };
 
     const previewCacheKey = JSON.stringify(previewPayload);
@@ -922,6 +934,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           SalesTaxCharges: selectedSalesTaxCharges,
           businessType: posDetails?.business_type,
           roundOffAmount,
+          deliveryCharge,
           // Preview-only context: avoid checkout payment validation until user submits payment.
           status: "held",
         };
@@ -991,6 +1004,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     salesTaxLoading,
     posDetails?.business_type,
     roundOffAmount,
+    deliveryCharge,
     isCreditSale,
     dueDate,
     allowPartialPayments,
@@ -1081,6 +1095,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       setShowMpesaOptionsModal(false);
       setMpesaSearchTerm("");
       setSelectedMpesaPayments([]);
+      setDeliveryCharge(0);
     }
   }, [isOpen]);
 
@@ -1252,6 +1267,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         taxType: calculations.isInclusive ? "inclusive" : "exclusive",
         couponDiscount: calculations.couponDiscount,
         roundOffAmount,
+        deliveryCharge,
         grandTotal: checkoutGrandTotal,
         appliedCoupons,
         itemDiscounts,
@@ -1769,6 +1785,25 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     )}
                   </div>
                 )}
+                {isDeliveryChargeEnabled && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Delivery Charge (Service Item)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={deliveryCharge}
+                      onChange={(e) => setDeliveryCharge(Math.max(0, Number(e.target.value || 0)))}
+                      disabled={invoiceSubmitted || isProcessingPayment}
+                      className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                    />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {deliveryChargeItemCode
+                        ? `Posted as service item: ${deliveryChargeItemCode}`
+                        : "Set Delivery Charge Item on POS Profile to post this amount as a service item."}
+                    </p>
+                  </div>
+                )}
                 <TaxSection
                   selectedCustomer={selectedCustomer}
                   invoiceSubmitted={invoiceSubmitted}
@@ -1971,6 +2006,26 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                         <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} min={new Date().toISOString().split("T")[0]} disabled={invoiceSubmitted || isProcessingPayment} className={`w-full px-3 py-2 border border-red-300 dark:border-red-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-red-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`} />
                       </div>
                     )}
+                  </div>
+                )}
+
+                {isDeliveryChargeEnabled && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Delivery Charge (Service Item)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={deliveryCharge}
+                      onChange={(e) => setDeliveryCharge(Math.max(0, Number(e.target.value || 0)))}
+                      disabled={invoiceSubmitted || isProcessingPayment}
+                      className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
+                    />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {deliveryChargeItemCode
+                        ? `Posted as service item: ${deliveryChargeItemCode}`
+                        : "Set Delivery Charge Item on POS Profile to post this amount as a service item."}
+                    </p>
                   </div>
                 )}
 

@@ -64,6 +64,7 @@ export interface MenuItem {
   originalPrice?: number
   image: string
   available: number
+  is_stock_item?: boolean
   sold: number
   discount?: number
   description?: string

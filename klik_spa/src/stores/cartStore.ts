@@ -47,6 +47,13 @@ const roundToCurrencyPrecision = (value: number): number => {
   return Number(Number(value || 0).toFixed(precision));
 };
 
+const hasFiniteAvailableStock = (item: { available?: number; is_stock_item?: boolean }) => {
+  if (item.is_stock_item === false) {
+    return false;
+  }
+  return typeof item.available === 'number' && Number.isFinite(item.available);
+};
+
 const fetchItemTaxDetails = async (
   itemCode: string,
   customerId?: string,
@@ -220,13 +227,13 @@ export const useCartStore = create<CartState>()(
           .filter((cartItem) => (cartItem.item_code || cartItem.id) === incomingCode)
           .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
 
-        if (item.available !== undefined && item.available <= 0) {
+        if (hasFiniteAvailableStock(item) && item.available <= 0) {
           toast.error(`${item.name} is out of stock`);
           return;
         }
 
         if (existingItem) {
-          if (item.available !== undefined && totalMatchingQty >= item.available) {
+          if (hasFiniteAvailableStock(item) && totalMatchingQty >= item.available) {
             toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
             return;
           }
@@ -291,13 +298,13 @@ export const useCartStore = create<CartState>()(
           .filter((cartItem) => (cartItem.item_code || cartItem.id) === incomingCode)
           .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
 
-        if (item.available !== undefined && item.available < quantity) {
+        if (hasFiniteAvailableStock(item) && item.available < quantity) {
           toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
           return;
         }
 
         if (existingItem) {
-          if (item.available !== undefined && (totalMatchingQty + quantity) > item.available) {
+          if (hasFiniteAvailableStock(item) && (totalMatchingQty + quantity) > item.available) {
             toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
             return;
           }
@@ -362,7 +369,7 @@ export const useCartStore = create<CartState>()(
         }
 
         const item = state.cartItems.find((cartItem) => cartItem.id === id);
-        if (item && item.available !== undefined && quantity > item.available) {
+        if (item && hasFiniteAvailableStock(item) && quantity > item.available) {
           toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
           return;
         }

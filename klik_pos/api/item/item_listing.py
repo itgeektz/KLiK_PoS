@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
@@ -28,11 +28,12 @@ def get_items(
     limit = min(limit, 2000)
 
     pos_doc, warehouse, price_list, hide_unavailable = _get_pos_context()
+    include_service_items = _include_service_items(pos_doc)
     
     price_list = _get_priority_price_list(customer, pos_doc, price_list)
 
     try:
-        select_fields = "i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom, i.sales_uom, i.has_batch_no, i.has_serial_no"
+        select_fields = "i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom, i.sales_uom, i.has_batch_no, i.has_serial_no, i.is_stock_item"
         params_list = []
         count_params = []
 
@@ -41,12 +42,37 @@ def get_items(
         if getattr(pos_doc, "item_groups", None):
             allowed_item_groups = [d.item_group for d in pos_doc.item_groups if d.item_group]
 
-        if hide_unavailable:
+        if hide_unavailable and include_service_items:
+            join_clause = "LEFT JOIN `tabBin` b ON i.name = b.item_code"
+            if warehouse:
+                join_clause = "LEFT JOIN `tabBin` b ON i.name = b.item_code AND b.warehouse = %s"
+
+            base_query = [
+                f"SELECT DISTINCT {select_fields}",
+                "FROM `tabItem` i",
+                join_clause,
+                "WHERE i.disabled = 0",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
+                "AND (i.is_stock_item = 0 OR b.actual_qty > 0)",
+            ]
+            count_query = [
+                "SELECT COUNT(DISTINCT i.name) as total",
+                "FROM `tabItem` i",
+                join_clause,
+                "WHERE i.disabled = 0",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
+                "AND (i.is_stock_item = 0 OR b.actual_qty > 0)",
+            ]
+            if warehouse:
+                params_list.append(warehouse)
+                count_params.append(warehouse)
+        elif hide_unavailable:
             base_query = [
                 f"SELECT DISTINCT {select_fields}",
                 "FROM `tabItem` i",
                 "INNER JOIN `tabBin` b ON i.name = b.item_code",
                 "WHERE i.disabled = 0",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
                 "AND i.is_stock_item = 1",
                 "AND b.actual_qty > 0",
             ]
@@ -55,28 +81,33 @@ def get_items(
                 "FROM `tabItem` i",
                 "INNER JOIN `tabBin` b ON i.name = b.item_code",
                 "WHERE i.disabled = 0",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
                 "AND i.is_stock_item = 1",
                 "AND b.actual_qty > 0",
             ]
+
+            if warehouse:
+                base_query.append("AND b.warehouse = %s")
+                count_query.append("AND b.warehouse = %s")
+                params_list.append(warehouse)
+                count_params.append(warehouse)
         else:
             base_query = [
                 f"SELECT DISTINCT {select_fields}",
                 "FROM `tabItem` i",
                 "WHERE i.disabled = 0",
-                "AND i.is_stock_item = 1",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
             ]
             count_query = [
                 "SELECT COUNT(DISTINCT i.name) as total",
                 "FROM `tabItem` i",
                 "WHERE i.disabled = 0",
-                "AND i.is_stock_item = 1",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
             ]
 
-        if hide_unavailable and warehouse:
-            base_query.append("AND b.warehouse = %s")
-            count_query.append("AND b.warehouse = %s")
-            params_list.append(warehouse)
-            count_params.append(warehouse)
+            if not include_service_items:
+                base_query.append("AND i.is_stock_item = 1")
+                count_query.append("AND i.is_stock_item = 1")
 
         # Apply item group filter from POS profile
         if allowed_item_groups:
@@ -154,7 +185,13 @@ def get_items(
         )
 
         item_groups_data = _get_item_groups_with_counts(
-            pos_doc, warehouse, hide_unavailable, search_term, category, enhanced_search
+            pos_doc,
+            warehouse,
+            hide_unavailable,
+            search_term,
+            category,
+            enhanced_search,
+            include_service_items,
         )
 
         if not items:
@@ -189,8 +226,9 @@ def get_items(
         for item in items:
             item_code = item["name"]
             balance = stock_map.get(item_code, 0)
+            is_stock_item = int(item.get("is_stock_item") or 0) == 1
 
-            if hide_unavailable and balance <= 0:
+            if hide_unavailable and is_stock_item and balance <= 0:
                 continue
 
             item_prices = _fetch_item_prices_sql(item_code, price_list, current_date)
@@ -235,7 +273,8 @@ def get_items(
                     "price": price,
                     "currency": currency,
                     "currency_symbol": currency_symbol,
-                    "available": balance,
+                    "available": balance if is_stock_item else 0,
+                    "is_stock_item": is_stock_item,
                     "image": item.image,
                     "sold": 0,
                     "preparationTime": 10,
@@ -311,7 +350,15 @@ def _get_conversion_factor_sql(item_code, uom):
         return 1
 
 
-def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_term=None, selected_category=None, enhanced_search=False):
+def _get_item_groups_with_counts(
+    pos_doc,
+    warehouse,
+    hide_unavailable,
+    search_term=None,
+    selected_category=None,
+    enhanced_search=False,
+    include_service_items=False,
+):
     try:
         item_groups = []
 
@@ -342,10 +389,12 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
                 SELECT DISTINCT i.item_group
                 FROM `tabItem` i
                 WHERE i.disabled = 0
-                AND i.is_stock_item = 1
+                AND IFNULL(i.is_sales_item, 1) = 1
                 AND i.item_group IS NOT NULL
                 AND i.item_group != ''
             """
+            if not include_service_items:
+                group_query += " AND i.is_stock_item = 1"
             
             if hide_unavailable and warehouse:
                 group_query += " AND EXISTS (SELECT 1 FROM `tabBin` b WHERE b.item_code = i.name AND b.warehouse = %s AND b.actual_qty > 0)"
@@ -375,9 +424,11 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
                 SELECT COUNT(DISTINCT i.name) as item_count
                 FROM `tabItem` i
                 WHERE i.disabled = 0
-                AND i.is_stock_item = 1
+                AND IFNULL(i.is_sales_item, 1) = 1
                 AND i.item_group = %s
             """
+            if not include_service_items:
+                count_query += " AND i.is_stock_item = 1"
             params = [group_name]
             
             if hide_unavailable and warehouse:
@@ -500,6 +551,10 @@ def _get_priority_price_list(customer=None, pos_profile=None, default_price_list
         return default_price_list
     
     return None
+
+
+def _include_service_items(pos_doc):
+    return cint(getattr(pos_doc, "custom_enable_service_items", 0) or 0) == 1
 
 
 def _fetch_batch_stock(item_codes, warehouse):

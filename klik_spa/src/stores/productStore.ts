@@ -90,7 +90,13 @@ export const useProductStore = create<ProductStoreState>()(
         const { products } = get();
         const hideUnavailable = usePOSProfileStore.getState().hideUnavailableItems;
         if (hideUnavailable) {
-          return products.filter(p => p.available > 0);
+          return products.filter((p) => {
+            const isStockItem = p.is_stock_item !== false;
+            if (!isStockItem) {
+              return true;
+            }
+            return (p.available || 0) > 0;
+          });
         }
         return products;
       },

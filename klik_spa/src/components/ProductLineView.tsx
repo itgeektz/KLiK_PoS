@@ -70,7 +70,8 @@ export default function ProductLineView({
 
           <div className="divide-y divide-gray-200 dark:divide-gray-600">
             {items.map((item) => {
-              const isOutOfStock = item.available <= 0
+              const isServiceItem = item.is_stock_item === false
+              const isOutOfStock = item.is_stock_item !== false && item.available <= 0
               const isDisabled = isOutOfStock || scannerOnly
               const formattedPrice = formatCurrencyWithSymbol(item.price, item.currency_symbol)
 
@@ -147,7 +148,7 @@ export default function ProductLineView({
                         <p className={`font-medium text-xs ${
                           isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
                         }`}>
-                          {isOutOfStock ? "0" : item.available}
+                          {isOutOfStock ? "0" : isServiceItem ? "Service" : item.available}
                         </p>
                       </div>
 
@@ -181,7 +182,7 @@ export default function ProductLineView({
                         <span className={`font-medium text-sm ${
                           isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
                         }`}>
-                          {isOutOfStock ? "0" : item.available}
+                          {isOutOfStock ? "0" : isServiceItem ? "Service" : item.available}
                         </span>
                       </div>
 

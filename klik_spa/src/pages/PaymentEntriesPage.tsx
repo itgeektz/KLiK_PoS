@@ -15,9 +15,16 @@ import {
 import { formatCurrencyWithSymbol } from "../utils/currency";
 
 type PaymentTab = "invoice" | "customer" | "reconciliation";
+const PAYMENT_ENTRIES_TAB_CACHE_KEY = "klik_pos_payment_entries_active_tab";
+
+const getCachedPaymentTab = (): PaymentTab => {
+  if (typeof window === "undefined") return "invoice";
+  const cached = window.localStorage.getItem(PAYMENT_ENTRIES_TAB_CACHE_KEY);
+  return cached === "customer" || cached === "reconciliation" || cached === "invoice" ? cached : "invoice";
+};
 
 export default function PaymentEntriesPage() {
-  const [activeTab, setActiveTab] = useState<PaymentTab>("invoice");
+  const [activeTab, setActiveTab] = useState<PaymentTab>(getCachedPaymentTab);
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
   const [invoices, setInvoices] = useState<OutstandingSalesInvoice[]>([]);
@@ -36,6 +43,11 @@ export default function PaymentEntriesPage() {
   const [selectedReconcileInvoice, setSelectedReconcileInvoice] = useState<OutstandingSalesInvoice | null>(null);
   const [reconcileAmount, setReconcileAmount] = useState("");
   const [isReconciling, setIsReconciling] = useState(false);
+
+  const handleTabChange = (tab: PaymentTab) => {
+    setActiveTab(tab);
+    window.localStorage.setItem(PAYMENT_ENTRIES_TAB_CACHE_KEY, tab);
+  };
 
   useEffect(() => {
     let isCurrent = true;
@@ -205,7 +217,7 @@ export default function PaymentEntriesPage() {
             <div className="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-1 dark:border-gray-700 dark:bg-gray-800">
               <button
                 type="button"
-                onClick={() => setActiveTab("invoice")}
+                onClick={() => handleTabChange("invoice")}
                 className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
                   activeTab === "invoice"
                     ? "bg-white text-beveren-700 shadow-sm dark:bg-gray-900 dark:text-beveren-300"
@@ -217,7 +229,7 @@ export default function PaymentEntriesPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab("customer")}
+                onClick={() => handleTabChange("customer")}
                 className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
                   activeTab === "customer"
                     ? "bg-white text-beveren-700 shadow-sm dark:bg-gray-900 dark:text-beveren-300"
@@ -229,7 +241,7 @@ export default function PaymentEntriesPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab("reconciliation")}
+                onClick={() => handleTabChange("reconciliation")}
                 className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
                   activeTab === "reconciliation"
                     ? "bg-white text-beveren-700 shadow-sm dark:bg-gray-900 dark:text-beveren-300"
@@ -594,7 +606,9 @@ export default function PaymentEntriesPage() {
         />
       )}
 
-      <BottomNavigation />
+      <div className="lg:hidden">
+        <BottomNavigation />
+      </div>
     </div>
   );
 }

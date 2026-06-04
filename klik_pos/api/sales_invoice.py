@@ -1718,6 +1718,7 @@ def build_sales_invoice_doc(
 	_set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid, allow_partial_payment)
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
+	_validate_no_variant_templates(items)
 	_validate_and_autofetch_batch_and_serial(items, pos_profile)
 	_validate_product_bundle_components(items, pos_profile)
 
@@ -2087,6 +2088,27 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 						"Serial No / Batch No are mandatory for Item {0}. Please select a batch before submitting the invoice."
 					).format(item_code)
 				)
+
+
+def _validate_no_variant_templates(items):
+	if not items:
+		return
+
+	item_codes = [item.get("id") for item in items if item.get("id")]
+	if not item_codes:
+		return
+
+	templates = frappe.get_all(
+		"Item",
+		filters={"name": ["in", item_codes], "has_variants": 1},
+		pluck="name",
+	)
+	if templates:
+		frappe.throw(
+			_(
+				"Item {0} is a variant template. Please select a specific variant before submitting the invoice."
+			).format(", ".join(templates))
+		)
 
 
 def _validate_product_bundle_components(items, pos_profile):

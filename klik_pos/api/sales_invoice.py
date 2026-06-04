@@ -1721,7 +1721,9 @@ def build_sales_invoice_doc(
 	_set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid, allow_partial_payment)
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
+	_validate_no_variant_templates(items)
 	_validate_and_autofetch_batch_and_serial(items, pos_profile)
+	_validate_product_bundle_components(items, pos_profile)
 
 	# Set posting details
 	_set_posting_fields(doc)
@@ -2088,6 +2090,106 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 					_(
 						"Serial No / Batch No are mandatory for Item {0}. Please select a batch before submitting the invoice."
 					).format(item_code)
+				)
+
+
+def _validate_no_variant_templates(items):
+	if not items:
+		return
+
+	item_codes = [item.get("id") for item in items if item.get("id")]
+	if not item_codes:
+		return
+
+	templates = frappe.get_all(
+		"Item",
+		filters={"name": ["in", item_codes], "has_variants": 1},
+		pluck="name",
+	)
+	if templates:
+		frappe.throw(
+			_(
+				"Item {0} is a variant template. Please select a specific variant before submitting the invoice."
+			).format(", ".join(templates))
+		)
+
+
+def _validate_product_bundle_components(items, pos_profile):
+	if not items:
+		return
+
+	bundle_item_codes = [item.get("id") for item in items if item.get("id")]
+	if not bundle_item_codes:
+		return
+
+	placeholders = ", ".join(["%s"] * len(bundle_item_codes))
+	bundle_rows = frappe.db.sql(
+		f"""
+		SELECT
+			pb.new_item_code AS bundle_item_code,
+			pbi.item_code,
+			pbi.qty,
+			i.item_name,
+			i.is_stock_item,
+			i.has_batch_no,
+			i.has_serial_no
+		FROM `tabProduct Bundle` pb
+		INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+		INNER JOIN `tabItem` i ON i.name = pbi.item_code
+		WHERE pb.disabled = 0
+		AND pb.new_item_code IN ({placeholders})
+		ORDER BY pb.new_item_code, pbi.idx
+		""",
+		tuple(bundle_item_codes),
+		as_dict=True,
+	)
+
+	if not bundle_rows:
+		return
+
+	rows_by_bundle = {}
+	for row in bundle_rows:
+		rows_by_bundle.setdefault(row.bundle_item_code, []).append(row)
+
+	for item in items:
+		bundle_item_code = item.get("id")
+		component_rows = rows_by_bundle.get(bundle_item_code)
+		if not component_rows:
+			continue
+
+		parent_qty = flt(item.get("quantity") or 0)
+		for component in component_rows:
+			component_name = component.item_name or component.item_code
+			if cint(component.has_batch_no) or cint(component.has_serial_no):
+				frappe.throw(
+					_(
+						"Product Bundle {0} contains tracked component {1}. Klik POS does not yet support batch or serial selection for bundled components."
+					).format(bundle_item_code, component_name)
+				)
+
+			if not cint(component.is_stock_item):
+				continue
+
+			required_qty = flt(component.qty or 0) * parent_qty
+			available_qty = flt(
+				frappe.db.get_value(
+					"Bin",
+					{"item_code": component.item_code, "warehouse": pos_profile.warehouse},
+					"actual_qty",
+				)
+				or 0
+			)
+			if available_qty < required_qty:
+				frappe.throw(
+					_(
+						"Insufficient stock for Product Bundle {0}. Component {1} requires {2}, but only {3} is available in warehouse {4}."
+					).format(
+						bundle_item_code,
+						component_name,
+						required_qty,
+						available_qty,
+						pos_profile.warehouse,
+					)
 				)
 
 def _autofetch_batch_fifo(item_code, warehouse, qty):

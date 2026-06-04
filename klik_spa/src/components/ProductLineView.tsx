@@ -74,6 +74,8 @@ export default function ProductLineView({
               const isOutOfStock = item.is_stock_item !== false && item.available <= 0
               const isDisabled = isOutOfStock || scannerOnly
               const formattedPrice = formatCurrencyWithSymbol(item.price, item.currency_symbol)
+              const bundleCount = item.is_product_bundle ? item.bundle_items?.length || 0 : 0
+              const variantCount = item.is_variant_template ? item.variant_count || 0 : 0
 
               return (
                 <div
@@ -131,6 +133,16 @@ export default function ProductLineView({
                       <p className={`text-gray-500 dark:text-gray-400 ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
                         {item.category}
                       </p>
+                      {item.is_product_bundle && (
+                        <p className={`text-amber-700 dark:text-amber-300 ${isMobile ? "text-xs leading-tight" : "text-xs"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
+                          Bundle · {bundleCount} packed {bundleCount === 1 ? "item" : "items"}
+                        </p>
+                      )}
+                      {item.is_variant_template && (
+                        <p className={`text-sky-700 dark:text-sky-300 ${isMobile ? "text-xs leading-tight" : "text-xs"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
+                          Options · {variantCount} {variantCount === 1 ? "variant" : "variants"}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -148,7 +160,7 @@ export default function ProductLineView({
                         <p className={`font-medium text-xs ${
                           isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
                         }`}>
-                          {isOutOfStock ? "0" : isServiceItem ? "Service" : item.available}
+                          {isOutOfStock ? "0" : item.is_variant_template ? variantCount : item.is_product_bundle ? item.available : isServiceItem ? "Service" : item.available}
                         </p>
                       </div>
 
@@ -182,7 +194,7 @@ export default function ProductLineView({
                         <span className={`font-medium text-sm ${
                           isOutOfStock ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"
                         }`}>
-                          {isOutOfStock ? "0" : isServiceItem ? "Service" : item.available}
+                          {isOutOfStock ? "0" : item.is_variant_template ? variantCount : item.is_product_bundle ? item.available : isServiceItem ? "Service" : item.available}
                         </span>
                       </div>
 

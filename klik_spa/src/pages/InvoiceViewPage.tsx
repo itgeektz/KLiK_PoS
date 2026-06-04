@@ -24,7 +24,8 @@ import {
   TrendingUp,
   Clock,
   CreditCard,
-  Percent
+  Percent,
+  Banknote
 } from "lucide-react";
 
 
@@ -48,6 +49,7 @@ import MultiInvoiceReturn from "../components/MultiInvoiceReturn";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import AddCustomerModal from "../components/customer/AddCustomerModal";
 import { useCartStore } from "../stores/cartStore";
+import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
 
 export default function InvoiceViewPage() {
 
@@ -68,6 +70,7 @@ export default function InvoiceViewPage() {
   const [showSingleReturn, setShowSingleReturn] = useState(false)
   const [showMultiReturn, setShowMultiReturn] = useState(false)
   const [showDraftPaymentDialog, setShowDraftPaymentDialog] = useState(false)
+  const [showInvoicePaymentModal, setShowInvoicePaymentModal] = useState(false)
 
   // Customer edit modal state
   const [showCustomerEditModal, setShowCustomerEditModal] = useState(false)
@@ -759,6 +762,17 @@ export default function InvoiceViewPage() {
                           </div>
                         )}
 
+                        {invoice.outstanding_amount > 0 && invoice.status !== "Draft" && (
+                          <button
+                            type="button"
+                            onClick={() => setShowInvoicePaymentModal(true)}
+                            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-beveren-600 px-4 py-2 text-sm font-medium text-white hover:bg-beveren-700"
+                          >
+                            <Banknote size={16} />
+                            <span>Receive Payment</span>
+                          </button>
+                        )}
+
                         {invoice.status === "Refunded" && invoice.refundAmount && (
                           <div className="flex justify-between text-sm border-t border-gray-300 dark:border-gray-600 pt-2">
                             <span className="text-red-600 dark:text-red-400">Refunded Amount:</span>
@@ -1061,6 +1075,38 @@ export default function InvoiceViewPage() {
           onHoldOrder={() => setShowDraftPaymentDialog(false)}
           isMobile={false}
           isFullPage={false}
+        />
+      )}
+
+      {showInvoicePaymentModal && invoice && (
+        <CustomerPaymentEntryModal
+          customer={{
+            id: invoice.customer,
+            name: (invoice as any).customer_name || invoice.customer,
+            email: invoice.customer_email || "",
+            phone: invoice.customer_mobile_no || "",
+            type: "individual",
+            status: "active",
+            loyaltyPoints: 0,
+            totalOrders: 0,
+            totalSpent: 0,
+            address: {
+              street: invoice.customer_address_doc?.address_line1 || "",
+              city: invoice.customer_address_doc?.city || "",
+              state: invoice.customer_address_doc?.state || "",
+              zipCode: (invoice.customer_address_doc as any)?.pincode || "",
+              country: invoice.customer_address_doc?.country || "",
+            },
+            preferredPaymentMethod: "Cash",
+            tags: [],
+            createdAt: new Date().toISOString(),
+          }}
+          salesInvoiceName={invoice.name || invoice.id}
+          outstandingAmount={invoice.outstanding_amount}
+          defaultAmount={invoice.outstanding_amount}
+          invoiceCurrency={invoice.currency}
+          onClose={() => setShowInvoicePaymentModal(false)}
+          onCreated={() => void refetch()}
         />
       )}
 

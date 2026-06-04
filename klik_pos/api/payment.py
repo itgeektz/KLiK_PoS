@@ -258,6 +258,184 @@ def get_outstanding_sales_invoices(limit=100, start=0, search=""):
 
 
 @frappe.whitelist()
+def get_unallocated_customer_payment_entries(limit=100, start=0, search=""):
+	"""Return submitted customer Payment Entries with unallocated amount."""
+	try:
+		limit = min(int(limit or 100), 500)
+		start = int(start or 0)
+
+		pos_profile = get_current_pos_profile()
+		conditions = [
+			"pe.docstatus = 1",
+			"pe.payment_type = 'Receive'",
+			"pe.party_type = 'Customer'",
+			"pe.unallocated_amount > 0",
+		]
+		params = []
+
+		if pos_profile:
+			conditions.append("pe.company = %s")
+			params.append(pos_profile.company)
+
+		if search and search.strip():
+			search_term = f"%{search.strip()}%"
+			conditions.append("(pe.name LIKE %s OR pe.party LIKE %s OR c.customer_name LIKE %s)")
+			params.extend([search_term, search_term, search_term])
+
+		where_clause = " AND ".join(conditions)
+
+		count_sql = apply_sql_permissions(f"""
+			SELECT COUNT(pe.name) AS total
+			FROM `tabPayment Entry` pe
+			LEFT JOIN `tabCustomer` c ON c.name = pe.party
+			WHERE {where_clause}
+		""")
+		total_rows = frappe.db.sql(count_sql, tuple(params), as_dict=True)
+		total_count = total_rows[0].total if total_rows else 0
+
+		data_sql = apply_sql_permissions(f"""
+			SELECT
+				pe.name,
+				pe.posting_date,
+				pe.party AS customer,
+				c.customer_name,
+				pe.company,
+				pe.mode_of_payment,
+				pe.paid_amount,
+				pe.unallocated_amount,
+				pe.paid_from_account_currency AS currency,
+				pe.reference_no,
+				pe.remarks
+			FROM `tabPayment Entry` pe
+			LEFT JOIN `tabCustomer` c ON c.name = pe.party
+			WHERE {where_clause}
+			ORDER BY pe.posting_date DESC, pe.modified DESC
+			LIMIT %s OFFSET %s
+		""")
+		payments = frappe.db.sql(data_sql, (*params, limit, start), as_dict=True)
+
+		return {
+			"success": True,
+			"data": payments,
+			"total_count": total_count,
+			"start": start,
+			"limit": limit,
+		}
+	except Exception as e:
+		frappe.log_error(
+			title="Get Unallocated Customer Payment Entries Error",
+			message=frappe.get_traceback(),
+		)
+		return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def reconcile_payment_entry_with_invoice(payment_entry, sales_invoice, allocated_amount=None):
+	"""Allocate an unallocated customer Payment Entry against an outstanding Sales Invoice."""
+	try:
+		if not payment_entry or not sales_invoice:
+			frappe.throw(_("Payment Entry and Sales Invoice are required."))
+
+		pe = frappe.get_doc("Payment Entry", payment_entry)
+		si = frappe.get_doc("Sales Invoice", sales_invoice)
+
+		if pe.docstatus != 1:
+			frappe.throw(_("Payment Entry {0} must be submitted.").format(payment_entry))
+		if si.docstatus != 1:
+			frappe.throw(_("Sales Invoice {0} must be submitted.").format(sales_invoice))
+		if pe.payment_type != "Receive" or pe.party_type != "Customer":
+			frappe.throw(_("Only customer receive Payment Entries can be reconciled from POS."))
+		if pe.party != si.customer:
+			frappe.throw(_("Payment Entry and Sales Invoice must belong to the same customer."))
+		if pe.company != si.company:
+			frappe.throw(_("Payment Entry and Sales Invoice must belong to the same company."))
+
+		unallocated_amount = flt(pe.unallocated_amount)
+		outstanding_amount = flt(si.outstanding_amount)
+		allocated_amount = flt(allocated_amount or min(unallocated_amount, outstanding_amount))
+
+		if unallocated_amount <= 0:
+			frappe.throw(_("Payment Entry {0} has no unallocated amount.").format(payment_entry))
+		if outstanding_amount <= 0:
+			frappe.throw(_("Sales Invoice {0} has no outstanding amount.").format(sales_invoice))
+		if allocated_amount <= 0:
+			frappe.throw(_("Allocated amount must be greater than zero."))
+		if allocated_amount > unallocated_amount + 0.00001:
+			frappe.throw(_("Allocated amount cannot exceed payment unallocated amount."))
+		if allocated_amount > outstanding_amount + 0.00001:
+			frappe.throw(_("Allocated amount cannot exceed invoice outstanding amount."))
+
+		party_account = pe.party_account or _get_customer_receivable_account(pe.party, pe.company)
+		invoice_party_account = getattr(si, "debit_to", None) or party_account
+		reconciliation = frappe.new_doc("Payment Reconciliation")
+		reconciliation.company = pe.company
+		reconciliation.party_type = "Customer"
+		reconciliation.party = pe.party
+		reconciliation.receivable_payable_account = invoice_party_account
+
+		payment_row = {
+			"reference_type": "Payment Entry",
+			"reference_name": pe.name,
+			"posting_date": pe.posting_date,
+			"amount": unallocated_amount,
+			"currency": pe.paid_from_account_currency,
+			"exchange_rate": pe.source_exchange_rate or 1,
+			"cost_center": getattr(pe, "cost_center", None),
+			"remarks": pe.remarks,
+		}
+		invoice_row = {
+			"invoice_type": "Sales Invoice",
+			"invoice_number": si.name,
+			"invoice_date": si.posting_date,
+			"amount": si.grand_total,
+			"currency": si.currency,
+			"outstanding_amount": outstanding_amount,
+			"exchange_rate": si.conversion_rate or 1,
+		}
+
+		reconciliation.append("payments", payment_row)
+		reconciliation.append("invoices", invoice_row)
+		reconciliation.allocate_entries(
+			frappe._dict(
+				{
+					"payments": [frappe._dict(payment_row)],
+					"invoices": [frappe._dict(invoice_row)],
+				}
+			)
+		)
+		for row in reconciliation.get("allocation"):
+			row.allocated_amount = allocated_amount
+		reconciliation.reconcile()
+
+		from erpnext.accounts.utils import update_voucher_outstanding
+
+		update_voucher_outstanding("Sales Invoice", si.name, invoice_party_account, "Customer", si.customer)
+		si.reload()
+		if flt(si.outstanding_amount) == outstanding_amount:
+			update_voucher_outstanding("Sales Invoice", si.name, None, "Customer", si.customer)
+		update_voucher_outstanding("Payment Entry", pe.name, party_account, "Customer", pe.party)
+		frappe.db.commit()
+
+		si.reload()
+		pe.reload()
+
+		return {
+			"success": True,
+			"payment_entry": pe.name,
+			"sales_invoice": si.name,
+			"allocated_amount": allocated_amount,
+			"invoice_outstanding_amount": flt(si.outstanding_amount),
+			"payment_unallocated_amount": flt(pe.unallocated_amount),
+		}
+	except Exception as e:
+		frappe.log_error(
+			title="Reconcile Payment Entry With Invoice Error",
+			message=frappe.get_traceback(),
+		)
+		return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
 def get_payment_modes():
 	try:
 		# Get pos_profile from query params if provided, otherwise use current profile

@@ -17,6 +17,7 @@ import {
 } from "../../services/salesInvoice";
 import { getOriginalDraftInvoiceId } from "../../utils/draftInvoiceCache";
 import { CustomerSearchSection } from "./CustomerSearchSection";
+import CustomerLoyaltySummary from "./CustomerLoyaltySummary";
 import { CartItemRow } from "./CartItemRow";
 import { OrderSummaryFooter } from "./OrderSummaryFooter";
 import { usePOSProfileStore } from "../../stores/posProfileStore";
@@ -410,7 +411,6 @@ export default function OrderSummary({
   };
 
   const handleCompletePayment = async (paymentData: any) => {
-    console.log("OrderSummary: Payment completed, invoice created", paymentData);
   };
 
   const handleClosePaymentDialog = async (paymentCompleted?: boolean) => {
@@ -456,6 +456,10 @@ export default function OrderSummary({
           onCustomerSelect={handleCustomerSelect}
           onCustomerClear={handleCustomerClear}
           isMobile={isMobile}
+        />
+        <CustomerLoyaltySummary
+          customer={selectedCustomer}
+          currencySymbol={currency_symbol}
         />
       </div>
 

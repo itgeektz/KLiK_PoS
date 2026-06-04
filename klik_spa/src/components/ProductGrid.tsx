@@ -6,6 +6,7 @@ import { useProduct } from "../providers/ProductProvider";
 import ProductCard from "./ProductCard";
 import ProductLineView from "./ProductLineView";
 import SalespersonAuthModal from "./dialog/SalespersonAuthModal";
+import VariantPickerModal from "./VariantPickerModal";
 import { useCartStore } from "../stores/cartStore";
 import { usePOSProfileStore } from "../stores/posProfileStore";
 import { useSalespersonStore } from "../stores/salespersonStore";
@@ -32,12 +33,13 @@ export default function ProductGrid({
   totalCount = 0,
   isSearching = false,
 }: ProductGridProps) {
-  const { filteredItems, hideUnavailableItems } = useProduct();
+  const { filteredItems, hideUnavailableItems, selectedCustomer } = useProduct();
   const { addToCart } = useCartStore();
   const { posDetails } = usePOSProfileStore();
   const { activeSalesperson, ensureInitialized, isRestoring } = useSalespersonStore();
   const [showSalespersonModal, setShowSalespersonModal] = useState(false);
   const [pendingCartItem, setPendingCartItem] = useState<MenuItem | null>(null);
+  const [variantTemplateItem, setVariantTemplateItem] = useState<MenuItem | null>(null);
 
   const defaultView = posDetails?.custom_default_view || "Grid View";
   const viewMode = propViewMode || (defaultView === "List View" ? "list" : "grid");
@@ -48,7 +50,11 @@ export default function ProductGrid({
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const inStockItems = useMemo(
-    () => (hideUnavailableItems ? filteredItems.filter((item) => item.available > 0) : filteredItems),
+    () => (
+      hideUnavailableItems
+        ? filteredItems.filter((item) => item.is_stock_item === false || item.available > 0)
+        : filteredItems
+    ),
     [filteredItems, hideUnavailableItems],
   );
 
@@ -68,15 +74,24 @@ export default function ProductGrid({
     setPendingCartItem(null);
   }, [isSalespersonLockActive]);
 
-  const addItemToCart = useCallback(async (item: MenuItem) => {
+  const addConcreteItemToCart = useCallback(async (item: MenuItem) => {
     await addToCart({
       ...item,
       item_code: item.id,
     });
   }, [addToCart]);
 
+  const addItemToCart = useCallback(async (item: MenuItem) => {
+    if (item.is_variant_template || item.has_variants) {
+      setVariantTemplateItem(item);
+      return;
+    }
+
+    await addConcreteItemToCart(item);
+  }, [addConcreteItemToCart]);
+
   const handleAddToCart = useCallback(async (item: MenuItem) => {
-    if (item.available <= 0) return;
+    if (item.is_stock_item !== false && item.available <= 0) return;
     if (scannerOnly) return;
 
     if (requiresSalespersonPin) {
@@ -112,6 +127,10 @@ export default function ProductGrid({
 
     void addItemToCart(itemToAdd);
   }, [addItemToCart, pendingCartItem]);
+
+  const handleVariantSelected = useCallback(async (variant: MenuItem) => {
+    await addConcreteItemToCart(variant);
+  }, [addConcreteItemToCart]);
 
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
@@ -196,6 +215,14 @@ export default function ProductGrid({
           title="Verify salesperson"
           description="Verify the salesperson before adding items to the cart."
         />
+        {variantTemplateItem && (
+          <VariantPickerModal
+            item={variantTemplateItem}
+            customerId={selectedCustomer?.id}
+            onClose={() => setVariantTemplateItem(null)}
+            onSelectVariant={handleVariantSelected}
+          />
+        )}
       </>
     );
   }
@@ -233,6 +260,14 @@ export default function ProductGrid({
               : "Verify the salesperson before adding items to the cart."
           }
         />
+        {variantTemplateItem && (
+          <VariantPickerModal
+            item={variantTemplateItem}
+            customerId={selectedCustomer?.id}
+            onClose={() => setVariantTemplateItem(null)}
+            onSelectVariant={handleVariantSelected}
+          />
+        )}
       </>
     );
   }
@@ -300,6 +335,14 @@ export default function ProductGrid({
             : "Verify the salesperson before adding items to the cart."
         }
       />
+      {variantTemplateItem && (
+        <VariantPickerModal
+          item={variantTemplateItem}
+          customerId={selectedCustomer?.id}
+          onClose={() => setVariantTemplateItem(null)}
+          onSelectVariant={handleVariantSelected}
+        />
+      )}
     </>
   );
 }

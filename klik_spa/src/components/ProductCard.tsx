@@ -23,8 +23,11 @@ export default function ProductCard({
 }: ProductCardProps) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const isOutOfStock = item.available <= 0;
+  const isServiceItem = item.is_stock_item === false;
+  const isOutOfStock = item.is_stock_item !== false && item.available <= 0;
   const isDisabled = isOutOfStock || scannerOnly;
+  const bundleCount = item.is_product_bundle ? item.bundle_items?.length || 0 : 0;
+  const variantCount = item.is_variant_template ? item.variant_count || 0 : 0;
   const formattedPrice = formatCurrencyWithSymbol(
     item.price,
     item.currency_symbol,
@@ -106,9 +109,25 @@ export default function ProductCard({
             </div>
           )}
 
+          {item.is_product_bundle && (
+            <div className="absolute bottom-2 left-2 bg-amber-600 text-white px-1.5 py-0.5 rounded-md text-xs font-medium z-10">
+              Bundle
+            </div>
+          )}
+
+          {item.is_variant_template && (
+            <div className="absolute bottom-2 left-2 bg-sky-600 text-white px-1.5 py-0.5 rounded-md text-xs font-medium z-10">
+              Options
+            </div>
+          )}
+
           {!isOutOfStock && (
-            <div className="absolute top-2 right-2 bg-slate-600 text-white px-1.5 py-0.5 rounded-md text-xs font-medium z-10">
-              {item.available}
+            <div
+              className={`absolute top-2 right-2 text-white px-1.5 py-0.5 rounded-md text-xs font-medium z-10 ${
+                item.is_variant_template ? "bg-sky-700" : item.is_product_bundle ? "bg-amber-700" : isServiceItem ? "bg-indigo-600" : "bg-slate-600"
+              }`}
+            >
+              {item.is_variant_template ? variantCount : item.is_product_bundle ? item.available : isServiceItem ? "Service" : item.available}
             </div>
           )}
 
@@ -139,6 +158,16 @@ export default function ProductCard({
             {showItemCode && (
               <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
                 {item.item_code || item.id}
+              </p>
+            )}
+            {item.is_product_bundle && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-300 truncate">
+                {bundleCount} packed {bundleCount === 1 ? "item" : "items"}
+              </p>
+            )}
+            {item.is_variant_template && (
+              <p className="text-[10px] text-sky-700 dark:text-sky-300 truncate">
+                {variantCount} {variantCount === 1 ? "variant" : "variants"}
               </p>
             )}
           </div>

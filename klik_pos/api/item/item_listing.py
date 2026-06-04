@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
@@ -28,11 +28,17 @@ def get_items(
     limit = min(limit, 2000)
 
     pos_doc, warehouse, price_list, hide_unavailable = _get_pos_context()
+    include_service_items = _include_service_items(pos_doc)
     
     price_list = _get_priority_price_list(customer, pos_doc, price_list)
 
     try:
-        select_fields = "i.name, i.item_name, i.description, i.item_group, i.image, i.stock_uom, i.sales_uom, i.has_batch_no, i.has_serial_no"
+        select_fields = (
+            "i.name, i.item_name, i.description, i.item_group, i.image, "
+            "i.stock_uom, i.sales_uom, i.has_batch_no, i.has_serial_no, "
+            "i.is_stock_item, i.has_variants, i.variant_of, i.variant_based_on, "
+            "CASE WHEN pb.name IS NULL THEN 0 ELSE 1 END AS is_product_bundle"
+        )
         params_list = []
         count_params = []
 
@@ -41,42 +47,76 @@ def get_items(
         if getattr(pos_doc, "item_groups", None):
             allowed_item_groups = [d.item_group for d in pos_doc.item_groups if d.item_group]
 
-        if hide_unavailable:
+        if hide_unavailable and include_service_items:
+            join_clause = "LEFT JOIN `tabBin` b ON i.name = b.item_code"
+            if warehouse:
+                join_clause = "LEFT JOIN `tabBin` b ON i.name = b.item_code AND b.warehouse = %s"
+
             base_query = [
                 f"SELECT DISTINCT {select_fields}",
                 "FROM `tabItem` i",
-                "INNER JOIN `tabBin` b ON i.name = b.item_code",
+                "LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0",
+                join_clause,
                 "WHERE i.disabled = 0",
-                "AND i.is_stock_item = 1",
-                "AND b.actual_qty > 0",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
+                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR i.is_stock_item = 0 OR b.actual_qty > 0)",
             ]
             count_query = [
                 "SELECT COUNT(DISTINCT i.name) as total",
                 "FROM `tabItem` i",
-                "INNER JOIN `tabBin` b ON i.name = b.item_code",
+                "LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0",
+                join_clause,
                 "WHERE i.disabled = 0",
-                "AND i.is_stock_item = 1",
-                "AND b.actual_qty > 0",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
+                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR i.is_stock_item = 0 OR b.actual_qty > 0)",
             ]
+            if warehouse:
+                params_list.append(warehouse)
+                count_params.append(warehouse)
+        elif hide_unavailable:
+            base_query = [
+                f"SELECT DISTINCT {select_fields}",
+                "FROM `tabItem` i",
+                "LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0",
+                "LEFT JOIN `tabBin` b ON i.name = b.item_code",
+                "WHERE i.disabled = 0",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
+                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR (i.is_stock_item = 1 AND b.actual_qty > 0))",
+            ]
+            count_query = [
+                "SELECT COUNT(DISTINCT i.name) as total",
+                "FROM `tabItem` i",
+                "LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0",
+                "LEFT JOIN `tabBin` b ON i.name = b.item_code",
+                "WHERE i.disabled = 0",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
+                "AND (i.has_variants = 1 OR pb.name IS NOT NULL OR (i.is_stock_item = 1 AND b.actual_qty > 0))",
+            ]
+
+            if warehouse:
+                base_query.append("AND (i.has_variants = 1 OR pb.name IS NOT NULL OR b.warehouse = %s)")
+                count_query.append("AND (i.has_variants = 1 OR pb.name IS NOT NULL OR b.warehouse = %s)")
+                params_list.append(warehouse)
+                count_params.append(warehouse)
         else:
             base_query = [
                 f"SELECT DISTINCT {select_fields}",
                 "FROM `tabItem` i",
+                "LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0",
                 "WHERE i.disabled = 0",
-                "AND i.is_stock_item = 1",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
             ]
             count_query = [
                 "SELECT COUNT(DISTINCT i.name) as total",
                 "FROM `tabItem` i",
+                "LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0",
                 "WHERE i.disabled = 0",
-                "AND i.is_stock_item = 1",
+                "AND IFNULL(i.is_sales_item, 1) = 1",
             ]
 
-        if hide_unavailable and warehouse:
-            base_query.append("AND b.warehouse = %s")
-            count_query.append("AND b.warehouse = %s")
-            params_list.append(warehouse)
-            count_params.append(warehouse)
+            if not include_service_items:
+                base_query.append("AND (i.is_stock_item = 1 OR i.has_variants = 1 OR pb.name IS NOT NULL)")
+                count_query.append("AND (i.is_stock_item = 1 OR i.has_variants = 1 OR pb.name IS NOT NULL)")
 
         # Apply item group filter from POS profile
         if allowed_item_groups:
@@ -154,7 +194,13 @@ def get_items(
         )
 
         item_groups_data = _get_item_groups_with_counts(
-            pos_doc, warehouse, hide_unavailable, search_term, category, enhanced_search
+            pos_doc,
+            warehouse,
+            hide_unavailable,
+            search_term,
+            category,
+            enhanced_search,
+            include_service_items,
         )
 
         if not items:
@@ -182,6 +228,8 @@ def get_items(
                 barcode_map[row.parent] = row.barcode
 
         stock_map = _fetch_batch_stock(item_codes, warehouse)
+        product_bundle_map = _fetch_product_bundle_map(item_codes, warehouse)
+        variant_count_map = _fetch_variant_count_map(item_codes)
         
         enriched_items = []
         current_date = frappe.utils.today()
@@ -189,8 +237,21 @@ def get_items(
         for item in items:
             item_code = item["name"]
             balance = stock_map.get(item_code, 0)
+            is_stock_item = int(item.get("is_stock_item") or 0) == 1
+            is_product_bundle = int(item.get("is_product_bundle") or 0) == 1
+            is_variant_template = int(item.get("has_variants") or 0) == 1
+            bundle_items = product_bundle_map.get(item_code, [])
+            variant_count = variant_count_map.get(item_code, 0)
 
-            if hide_unavailable and balance <= 0:
+            if is_product_bundle:
+                stock_component_limits = [
+                    int(component.get("available_bundle_qty") or 0)
+                    for component in bundle_items
+                    if int(component.get("is_stock_item") or 0) == 1
+                ]
+                balance = min(stock_component_limits) if stock_component_limits else 0
+
+            if hide_unavailable and not is_variant_template and (is_stock_item or is_product_bundle) and balance <= 0:
                 continue
 
             item_prices = _fetch_item_prices_sql(item_code, price_list, current_date)
@@ -235,7 +296,15 @@ def get_items(
                     "price": price,
                     "currency": currency,
                     "currency_symbol": currency_symbol,
-                    "available": balance,
+                    "available": variant_count if is_variant_template else balance if (is_stock_item or is_product_bundle) else 0,
+                    "is_stock_item": False if is_variant_template else True if is_product_bundle else is_stock_item,
+                    "is_product_bundle": is_product_bundle,
+                    "bundle_items": bundle_items,
+                    "is_variant_template": is_variant_template,
+                    "has_variants": is_variant_template,
+                    "variant_of": item.get("variant_of"),
+                    "variant_based_on": item.get("variant_based_on"),
+                    "variant_count": variant_count,
                     "image": item.image,
                     "sold": 0,
                     "preparationTime": 10,
@@ -311,7 +380,15 @@ def _get_conversion_factor_sql(item_code, uom):
         return 1
 
 
-def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_term=None, selected_category=None, enhanced_search=False):
+def _get_item_groups_with_counts(
+    pos_doc,
+    warehouse,
+    hide_unavailable,
+    search_term=None,
+    selected_category=None,
+    enhanced_search=False,
+    include_service_items=False,
+):
     try:
         item_groups = []
 
@@ -341,14 +418,17 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
             group_query = """
                 SELECT DISTINCT i.item_group
                 FROM `tabItem` i
+                LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0
                 WHERE i.disabled = 0
-                AND i.is_stock_item = 1
+                AND IFNULL(i.is_sales_item, 1) = 1
                 AND i.item_group IS NOT NULL
                 AND i.item_group != ''
             """
+            if not include_service_items:
+                group_query += " AND (i.is_stock_item = 1 OR i.has_variants = 1 OR pb.name IS NOT NULL)"
             
             if hide_unavailable and warehouse:
-                group_query += " AND EXISTS (SELECT 1 FROM `tabBin` b WHERE b.item_code = i.name AND b.warehouse = %s AND b.actual_qty > 0)"
+                group_query += " AND (i.has_variants = 1 OR pb.name IS NOT NULL OR EXISTS (SELECT 1 FROM `tabBin` b WHERE b.item_code = i.name AND b.warehouse = %s AND b.actual_qty > 0))"
                 group_query_params = [warehouse]
             else:
                 group_query_params = []
@@ -374,14 +454,17 @@ def _get_item_groups_with_counts(pos_doc, warehouse, hide_unavailable, search_te
             count_query = """
                 SELECT COUNT(DISTINCT i.name) as item_count
                 FROM `tabItem` i
+                LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = i.name AND pb.disabled = 0
                 WHERE i.disabled = 0
-                AND i.is_stock_item = 1
+                AND IFNULL(i.is_sales_item, 1) = 1
                 AND i.item_group = %s
             """
+            if not include_service_items:
+                count_query += " AND (i.is_stock_item = 1 OR i.has_variants = 1 OR pb.name IS NOT NULL)"
             params = [group_name]
             
             if hide_unavailable and warehouse:
-                count_query += " AND EXISTS (SELECT 1 FROM `tabBin` b WHERE b.item_code = i.name AND b.warehouse = %s AND b.actual_qty > 0)"
+                count_query += " AND (i.has_variants = 1 OR pb.name IS NOT NULL OR EXISTS (SELECT 1 FROM `tabBin` b WHERE b.item_code = i.name AND b.warehouse = %s AND b.actual_qty > 0))"
                 params.append(warehouse)
             
             if search_term:
@@ -502,6 +585,10 @@ def _get_priority_price_list(customer=None, pos_profile=None, default_price_list
     return None
 
 
+def _include_service_items(pos_doc):
+    return cint(getattr(pos_doc, "custom_enable_service_items", 0) or 0) == 1
+
+
 def _fetch_batch_stock(item_codes, warehouse):
     if not item_codes or not warehouse:
         return {}
@@ -534,3 +621,86 @@ def _fetch_batch_stock(item_codes, warehouse):
             stock_map[code] = fetch_item_balance(code, warehouse)
 
     return stock_map
+
+
+def _fetch_product_bundle_map(item_codes, warehouse):
+    if not item_codes:
+        return {}
+
+    try:
+        placeholders = ", ".join(["%s"] * len(item_codes))
+        bundle_sql = f"""
+            SELECT
+                pb.new_item_code AS bundle_item_code,
+                pbi.item_code,
+                pbi.qty,
+                pbi.uom,
+                pbi.description,
+                i.item_name,
+                i.is_stock_item,
+                i.has_batch_no,
+                i.has_serial_no
+            FROM `tabProduct Bundle` pb
+            INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            INNER JOIN `tabItem` i ON i.name = pbi.item_code
+            WHERE pb.disabled = 0
+            AND pb.new_item_code IN ({placeholders})
+            ORDER BY pb.new_item_code, pbi.idx
+        """
+        bundle_sql = apply_sql_permissions(bundle_sql)
+        rows = frappe.db.sql(bundle_sql, tuple(item_codes), as_dict=True)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Fetch Product Bundle Map Error")
+        return {}
+
+    component_codes = sorted({row.item_code for row in rows if row.get("item_code")})
+    component_stock_map = _fetch_batch_stock(component_codes, warehouse) if component_codes else {}
+    bundle_map = {}
+
+    for row in rows:
+        required_qty = flt(row.get("qty") or 0)
+        available_qty = flt(component_stock_map.get(row.item_code, 0))
+        available_bundle_qty = (
+            int(available_qty // required_qty)
+            if int(row.get("is_stock_item") or 0) == 1 and required_qty > 0
+            else 0
+        )
+
+        bundle_map.setdefault(row.bundle_item_code, []).append(
+            {
+                "item_code": row.item_code,
+                "item_name": row.item_name or row.item_code,
+                "qty": required_qty,
+                "uom": row.uom or "",
+                "description": row.description or "",
+                "is_stock_item": int(row.get("is_stock_item") or 0) == 1,
+                "has_batch_no": int(row.get("has_batch_no") or 0) == 1,
+                "has_serial_no": int(row.get("has_serial_no") or 0) == 1,
+                "available": available_qty,
+                "available_bundle_qty": available_bundle_qty,
+            }
+        )
+
+    return bundle_map
+
+
+def _fetch_variant_count_map(item_codes):
+    if not item_codes:
+        return {}
+
+    try:
+        placeholders = ", ".join(["%s"] * len(item_codes))
+        count_sql = f"""
+            SELECT variant_of, COUNT(*) AS variant_count
+            FROM `tabItem`
+            WHERE disabled = 0
+            AND IFNULL(is_sales_item, 1) = 1
+            AND variant_of IN ({placeholders})
+            GROUP BY variant_of
+        """
+        count_sql = apply_sql_permissions(count_sql)
+        rows = frappe.db.sql(count_sql, tuple(item_codes), as_dict=True)
+        return {row.variant_of: int(row.variant_count or 0) for row in rows}
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Fetch Variant Count Map Error")
+        return {}

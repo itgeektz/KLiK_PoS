@@ -11,6 +11,11 @@ from frappe.utils import cint, flt, nowdate
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
 from .item.item_price import get_price_list_with_customer_priority
+from .loyalty import (
+	apply_loyalty_redemption,
+	get_invoice_loyalty_summary,
+	normalize_loyalty_redemption,
+)
 from .sql_builder import apply_sql_permissions
 
 # Performance optimization: Cache frequently accessed data
@@ -501,6 +506,27 @@ def _get_payment_methods_from_invoice(doc):
 	return payment_methods
 
 
+def _get_invoice_response_summary(doc):
+	return {
+		"name": doc.name,
+		"doctype": doc.doctype,
+		"customer": doc.customer,
+		"customer_name": doc.customer_name,
+		"posting_date": doc.posting_date,
+		"base_grand_total": doc.base_grand_total,
+		"grand_total": doc.grand_total,
+		"rounded_total": doc.rounded_total,
+		"paid_amount": doc.paid_amount,
+		"outstanding_amount": doc.outstanding_amount,
+		"currency": doc.currency,
+		"currency_symbol": frappe.db.get_value("Currency", doc.currency, "symbol") or doc.currency,
+		"status": doc.status,
+		"is_pos": doc.is_pos,
+		"company": doc.company,
+		"loyalty": get_invoice_loyalty_summary(doc),
+	}
+
+
 class PartialPaymentValidationError(ValidationError):
 	pass
 
@@ -842,6 +868,7 @@ def get_invoice_details(invoice_id):
 			"data": {
 				**invoice_data,
 				"items": items,
+				"loyalty": get_invoice_loyalty_summary(invoice),
 				**address_data,
 			},
 		}
@@ -884,6 +911,7 @@ def validate_checkout_invoice(data):
 			salesperson,
 			tax_id,
 			enable_background_submission,
+			loyalty_redemption,
 		) = parse_invoice_data(data)
 
 		preview_doc = build_sales_invoice_doc(
@@ -903,6 +931,7 @@ def validate_checkout_invoice(data):
 			tax_id=tax_id,
 			create_batch_and_serial_bundle=False,
 			enable_background_submission=enable_background_submission,
+			loyalty_redemption=loyalty_redemption,
 		)
 
 		validate_required_salesperson(preview_doc)
@@ -1097,6 +1126,7 @@ def queue_sales_invoice(data):
 			salesperson,
 			tax_id,
 			enable_background_submission,
+			loyalty_redemption,
 		) = parse_invoice_data(data)
 
 		if not customer:
@@ -1121,13 +1151,15 @@ def queue_sales_invoice(data):
 			salesperson=salesperson,
 			tax_id=tax_id,
 			enable_background_submission=enable_background_submission,
+			loyalty_redemption=loyalty_redemption,
 		)
 
 		validate_required_salesperson(doc)
 
-		doc.base_paid_amount = amount_paid
-		doc.paid_amount = amount_paid
-		doc.outstanding_amount = max(flt(doc.grand_total) - flt(amount_paid), 0)
+		paid_credit = flt(amount_paid) + flt(getattr(doc, "loyalty_amount", 0))
+		doc.base_paid_amount = paid_credit
+		doc.paid_amount = paid_credit
+		doc.outstanding_amount = max(flt(doc.grand_total) - paid_credit, 0)
 		doc.reserve_stock = 1
 		_apply_klik_invoice_flags(doc, is_held=False, is_submitted=False)
 
@@ -1165,19 +1197,7 @@ def queue_sales_invoice(data):
 				"queue_status": doc.queue_status,
 				"invoice_name": doc.name,
 				"invoice_id": doc.name,
-				"invoice": {
-					"name": doc.name,
-					"doctype": doc.doctype,
-					"customer": doc.customer,
-					"customer_name": doc.customer_name,
-					"posting_date": doc.posting_date,
-					"base_grand_total": doc.base_grand_total,
-					"currency": doc.currency,
-					"currency_symbol": frappe.db.get_value("Currency", doc.currency, "symbol") or doc.currency,
-					"status": doc.status,
-					"is_pos": doc.is_pos,
-					"company": doc.company,
-				},
+				"invoice": _get_invoice_response_summary(doc),
 				"payment_entry": None,
 				"processing_time": round(processing_time, 2),
 			}
@@ -1214,19 +1234,7 @@ def queue_sales_invoice(data):
 				"success": True,
 				"invoice_name": doc.name,
 				"invoice_id": doc.name,
-				"invoice": {
-					"name": doc.name,
-					"doctype": doc.doctype,
-					"customer": doc.customer,
-					"customer_name": doc.customer_name,
-					"posting_date": doc.posting_date,
-					"base_grand_total": doc.base_grand_total,
-					"currency": doc.currency,
-					"currency_symbol": frappe.db.get_value("Currency", doc.currency, "symbol") or doc.currency,
-					"status": doc.status,
-					"is_pos": doc.is_pos,
-					"company": doc.company,
-				},
+				"invoice": _get_invoice_response_summary(doc),
 				"payment_entry": None,
 				"processing_time": round(processing_time, 2),
 			}
@@ -1347,6 +1355,7 @@ def create_draft_invoice(data):
 			salesperson,
 			tax_id,
 			enable_background_submission,
+			loyalty_redemption,
 		) = parse_invoice_data(data)
 
 		if target_draft_invoice_id:
@@ -1375,6 +1384,7 @@ def create_draft_invoice(data):
 				salesperson=salesperson,
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
+				loyalty_redemption=loyalty_redemption,
 			)
 		else:
 			doc = build_sales_invoice_doc(
@@ -1394,6 +1404,7 @@ def create_draft_invoice(data):
 				salesperson=salesperson,
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
+				loyalty_redemption=loyalty_redemption,
 			)
 
 			validate_required_salesperson(doc)
@@ -1446,6 +1457,7 @@ def parse_invoice_data(data):
 	enable_background_submission = _as_bool(
 		data.get("enable_background_invoice_submission") or 0
 	)
+	loyalty_redemption = normalize_loyalty_redemption(data)
 	due_date = data.get("dueDate") or data.get("due_date")
 	mode_of_payment = None
 	default_payment_mode = None
@@ -1620,7 +1632,12 @@ def parse_invoice_data(data):
 		amount_paid = 0.0
 		default_payment_mode = _get_default_payment_mode()
 		mode_of_payment = _normalize_credit_sale_payment_methods(mode_of_payment, default_payment_mode)
-	elif has_payment_submission_context and checkout_status != "held" and has_positive_priced_item:
+	elif (
+		has_payment_submission_context
+		and checkout_status != "held"
+		and has_positive_priced_item
+		and not loyalty_redemption
+	):
 		if flt(amount_paid or 0) <= 0 or not _has_positive_payment_amount(mode_of_payment):
 			frappe.throw(
 				_("Cash sale requires at least one payment method with a positive amount.")
@@ -1652,6 +1669,7 @@ def parse_invoice_data(data):
 		salesperson,
 		tax_id,
 		enable_background_submission,
+		loyalty_redemption,
 	)
 
 
@@ -1673,6 +1691,7 @@ def build_sales_invoice_doc(
 	tax_id=None,
 	create_batch_and_serial_bundle=True,
 	enable_background_submission=False,
+	loyalty_redemption=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -1730,6 +1749,9 @@ def build_sales_invoice_doc(
 	doc.set_taxes()
 	doc.set_missing_values()
 	doc.calculate_taxes_and_totals()
+	apply_loyalty_redemption(doc, loyalty_redemption)
+	if loyalty_redemption:
+		doc.calculate_taxes_and_totals()
 
 	if create_batch_and_serial_bundle:
 		_create_batch_and_serial_bundle(items, doc)
@@ -1738,6 +1760,7 @@ def build_sales_invoice_doc(
 	if include_payments:
 		doc.is_pos = 1
 		_add_payment_entries(doc, mode_of_payment)
+		doc.calculate_taxes_and_totals()
 
 	if is_credit_sale and due_date:
 		doc.due_date = due_date
@@ -1762,6 +1785,7 @@ def _update_existing_draft_invoice(
 	salesperson=None,
 	tax_id=None,
 	enable_background_submission=False,
+	loyalty_redemption=None,
 ):
 	rebuilt_doc = build_sales_invoice_doc(
 		customer,
@@ -1781,6 +1805,7 @@ def _update_existing_draft_invoice(
 		tax_id=tax_id,
 		create_batch_and_serial_bundle=False,
 		enable_background_submission=enable_background_submission,
+		loyalty_redemption=loyalty_redemption,
 	)
 
 	invoice_doc.customer = rebuilt_doc.customer
@@ -1798,6 +1823,12 @@ def _update_existing_draft_invoice(
 	invoice_doc.warehouse = rebuilt_doc.warehouse
 	invoice_doc.cost_center = rebuilt_doc.cost_center
 	invoice_doc.is_pos = rebuilt_doc.is_pos
+	invoice_doc.redeem_loyalty_points = rebuilt_doc.redeem_loyalty_points
+	invoice_doc.loyalty_points = rebuilt_doc.loyalty_points
+	invoice_doc.loyalty_amount = rebuilt_doc.loyalty_amount
+	invoice_doc.loyalty_program = rebuilt_doc.loyalty_program
+	invoice_doc.loyalty_redemption_account = rebuilt_doc.loyalty_redemption_account
+	invoice_doc.loyalty_redemption_cost_center = rebuilt_doc.loyalty_redemption_cost_center
 	invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
 	invoice_doc.set("items", [])
 	for item_row in rebuilt_doc.get("items", []):
@@ -1816,9 +1847,11 @@ def _update_existing_draft_invoice(
 	invoice_doc.set_missing_values()
 	invoice_doc.calculate_taxes_and_totals()
 
-	# Payments must be applied AFTER calculate_taxes_and_totals to preserve entered amounts.
+	# Payments must be applied after the first totals pass, then totals are recalculated
+	# so ERPNext includes both payment rows and loyalty redemption in paid/outstanding amounts.
 	invoice_doc.set("payments", [])
 	_add_payment_entries(invoice_doc, mode_of_payment)
+	invoice_doc.calculate_taxes_and_totals()
 
 	validate_required_salesperson(invoice_doc)
 	_apply_klik_invoice_flags(invoice_doc, is_held=True, is_submitted=False)
@@ -3113,6 +3146,8 @@ class CustomSalesInvoice(SalesInvoice):
 		allow_partial_payment = allow_partial_payment or getattr(self, "custom_allow_partial_payment", 0)
 		invoice_total = flt(self.rounded_total) or flt(self.grand_total)
 		paid_amount = flt(self.paid_amount)
+		if paid_amount < invoice_total and flt(getattr(self, "loyalty_amount", 0)):
+			paid_amount += flt(self.loyalty_amount)
 
 		if not allow_partial_payment and paid_amount < invoice_total:
 			frappe.throw(
@@ -3858,6 +3893,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				salesperson,
 				tax_id,
 				enable_background_submission,
+				loyalty_redemption,
 			) = parse_invoice_data(data)
 
 			rebuilt_doc = build_sales_invoice_doc(
@@ -3878,6 +3914,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				tax_id=tax_id,
 				create_batch_and_serial_bundle=False,
 				enable_background_submission=enable_background_submission,
+				loyalty_redemption=loyalty_redemption,
 			)
 
 			invoice_doc.customer = rebuilt_doc.customer
@@ -3895,6 +3932,12 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.warehouse = rebuilt_doc.warehouse
 			invoice_doc.cost_center = rebuilt_doc.cost_center
 			invoice_doc.is_pos = rebuilt_doc.is_pos
+			invoice_doc.redeem_loyalty_points = rebuilt_doc.redeem_loyalty_points
+			invoice_doc.loyalty_points = rebuilt_doc.loyalty_points
+			invoice_doc.loyalty_amount = rebuilt_doc.loyalty_amount
+			invoice_doc.loyalty_program = rebuilt_doc.loyalty_program
+			invoice_doc.loyalty_redemption_account = rebuilt_doc.loyalty_redemption_account
+			invoice_doc.loyalty_redemption_cost_center = rebuilt_doc.loyalty_redemption_cost_center
 			invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
 			invoice_doc.set("items", [])
 			for item_row in rebuilt_doc.get("items", []):
@@ -3913,10 +3956,11 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.set_missing_values()
 			invoice_doc.calculate_taxes_and_totals()
 
-			# Payments must be applied AFTER calculate_taxes_and_totals to prevent
-			# ERPNext's set_payments() from overwriting the user-entered amounts.
+			# Payments must be applied after the first totals pass, then totals are recalculated
+			# so ERPNext includes both payment rows and loyalty redemption in paid/outstanding amounts.
 			invoice_doc.set("payments", [])
 			_add_payment_entries(invoice_doc, mode_of_payment)
+			invoice_doc.calculate_taxes_and_totals()
 
 			invoice_doc.save(ignore_permissions=True)
 

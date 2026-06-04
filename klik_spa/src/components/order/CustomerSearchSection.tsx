@@ -102,7 +102,7 @@ export const CustomerSearchSection = ({
         employeeCount: customer.employee_count || "",
         registrationScheme: customer.registration_scheme || "",
         registrationNumber: customer.registration_number || "",
-        loyaltyPoints: customer.custom_loyalty_points || 0,
+        loyaltyPoints: customer.loyalty?.loyalty_points || customer.custom_loyalty_points || 0,
         totalSpent: customer.custom_total_spent || 0,
         totalOrders: customer.custom_total_orders || 0,
         preferredPaymentMethod: (customer.payment_method as "Cash" | "Bank Card" | "Bank Payment" | "Credit") || "Cash",
@@ -155,7 +155,11 @@ export const CustomerSearchSection = ({
         currencyCode: customer.currency || null,
         salesTeam: customer.sales_team || [],
         vatNumber: customer.vat_number || "",
-        paymentMethod: customer.payment_method || "Cash"
+        paymentMethod: customer.payment_method || "Cash",
+        loyalty: customer.loyalty || undefined,
+        loyaltyProgram: customer.loyalty?.loyalty_program || null,
+        loyaltyTier: customer.loyalty?.loyalty_program_tier || customer.loyalty?.customer_loyalty_program_tier || null,
+        redeemableValue: customer.loyalty?.redeemable_value || 0,
       };
       
       return transformedCustomer;

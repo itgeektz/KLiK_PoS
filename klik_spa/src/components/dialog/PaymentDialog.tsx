@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { ChevronDown, Eye, Loader2, MailPlus, MessageCirclePlus, MessageSquarePlus, Printer } from "lucide-react";
+import { Award, ChevronDown, Eye, Loader2, MailPlus, MessageCirclePlus, MessageSquarePlus, Printer, X } from "lucide-react";
 import { useCartStore } from "../../stores/cartStore";
 import { usePaymentModes } from "../../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../../hooks/useSalesTaxCharges";
@@ -11,6 +11,7 @@ import { useDeliveryPersonnel } from "../../hooks/useDeliveryPersonnel";
 import {
   createDraftSalesInvoice,
   createSalesInvoice,
+  previewLoyaltyRedemption,
   submitDraftInvoice,
   validateCheckoutInvoice,
 } from "../../services/salesInvoice";
@@ -68,6 +69,12 @@ interface MpesaRealtimeEvent {
   request_name?: string;
   status?: string;
   transaction_id?: string;
+}
+
+interface AppliedLoyaltyRedemption {
+  loyalty_program: string;
+  loyalty_points: number;
+  loyalty_amount: number;
 }
 
 interface FrappeRealtimeClient {
@@ -167,6 +174,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [selectedMpesaPayments, setSelectedMpesaPayments] = useState<MpesaRegisterPayment[]>([]);
   const [mergeMpesaPayments, setMergeMpesaPayments] = useState(true);
   const [isLoadingMpesaRegisterPayments, setIsLoadingMpesaRegisterPayments] = useState(false);
+  const [loyaltyPointsInput, setLoyaltyPointsInput] = useState("");
+  const [appliedLoyalty, setAppliedLoyalty] = useState<AppliedLoyaltyRedemption | null>(null);
+  const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
   const backendTaxPreviewRef = useRef<BackendTaxPreview | null>(null);
   const taxPreviewRequestIdRef = useRef(0);
   const taxPreviewCacheRef = useRef<Map<string, CachedTaxPreviewEntry>>(new Map());
@@ -333,7 +343,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const checkoutGrandTotal = hasBackendTaxPreview
     ? Number(backendTaxPreview?.grand_total || inclGrandTotal)
     : inclGrandTotal;
-  const outstandingAmount = calculateRemainingAmount(checkoutGrandTotal, Object.values(paymentAmounts));
+  const loyaltyAmount = Number(appliedLoyalty?.loyalty_amount || 0);
+  const checkoutPayableTotal = roundCurrency(Math.max(0, checkoutGrandTotal - loyaltyAmount));
+  const outstandingAmount = calculateRemainingAmount(checkoutPayableTotal, Object.values(paymentAmounts));
 
   // Tax amount = inclusive grand total minus exclusive subtotal (works for both item templates and global taxes)
   const localTaxTotal = parseFloat((checkoutGrandTotal - calculations.subtotal - (calculations.couponDiscount > 0 ? 0 : 0)).toFixed(2));
@@ -348,7 +360,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     ? backendTaxPreview?.total_taxes_and_charges || 0
     : calculations.taxAmount > 0 ? calculations.taxAmount : Math.max(0, localTaxTotal);
   
-  const previousCheckoutGrandTotalRef = useRef(checkoutGrandTotal);
+  const previousCheckoutGrandTotalRef = useRef(checkoutPayableTotal);
 
   const roundOffEnabled = (() => {
     if (!posDetails?.custom_allow_write_off) return false;
@@ -422,6 +434,113 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     }
     return null;
   }, [modes, paymentAmounts]);
+
+  const trimPaymentAmountsToPayable = useCallback((payableTotal: number) => {
+    setPaymentAmounts((prev) => {
+      const updated = { ...prev };
+      let excess = roundCurrency(calculateTotalPayments(Object.values(updated)) - payableTotal);
+
+      if (excess <= 0) {
+        return updated;
+      }
+
+      const preferredIds = [
+        lastModifiedMethodId,
+        activeMethodId,
+        ...Object.entries(updated)
+          .filter(([, amount]) => (amount || 0) > 0)
+          .map(([methodId]) => methodId),
+      ].filter((methodId, index, all): methodId is string => Boolean(methodId) && all.indexOf(methodId) === index);
+
+      for (const methodId of preferredIds) {
+        if (excess <= 0) break;
+        const currentAmount = Number(updated[methodId] || 0);
+        if (currentAmount <= 0) continue;
+        const reduction = Math.min(currentAmount, excess);
+        updated[methodId] = roundCurrency(currentAmount - reduction);
+        excess = roundCurrency(excess - reduction);
+      }
+
+      return updated;
+    });
+  }, [activeMethodId, lastModifiedMethodId]);
+
+  const clearLoyaltyRedemption = useCallback(() => {
+    setAppliedLoyalty(null);
+    setLoyaltyPointsInput("");
+  }, []);
+
+  const handleLoyaltyPointsInputChange = useCallback((value: string) => {
+    setLoyaltyPointsInput(value);
+
+    const loyalty = selectedCustomer?.loyalty;
+    const points = Number.parseInt(value || "0", 10);
+    const availablePoints = Number(loyalty?.available_points ?? loyalty?.loyalty_points ?? 0);
+    const conversionFactor = Number(loyalty?.conversion_factor || 0);
+
+    if (!loyalty?.enabled || !loyalty.loyalty_program || !Number.isFinite(points) || points <= 0) {
+      setAppliedLoyalty(null);
+      return;
+    }
+
+    if (points > availablePoints || conversionFactor <= 0) {
+      setAppliedLoyalty(null);
+      return;
+    }
+
+    const loyaltyAmount = roundCurrency(Math.min(points * conversionFactor, checkoutGrandTotal));
+    setAppliedLoyalty({
+      loyalty_program: loyalty.loyalty_program,
+      loyalty_points: points,
+      loyalty_amount: loyaltyAmount,
+    });
+    trimPaymentAmountsToPayable(roundCurrency(Math.max(0, checkoutGrandTotal - loyaltyAmount)));
+  }, [checkoutGrandTotal, selectedCustomer?.loyalty, trimPaymentAmountsToPayable]);
+
+  const handleApplyLoyaltyRedemption = useCallback(async () => {
+    const loyalty = selectedCustomer?.loyalty;
+    const points = Number.parseInt(loyaltyPointsInput || "0", 10);
+
+    if (!selectedCustomer?.id || !loyalty?.enabled || !loyalty.loyalty_program) {
+      toast.error("Selected customer is not enrolled in a loyalty program.");
+      return;
+    }
+
+    if (!Number.isFinite(points) || points <= 0) {
+      toast.error("Enter loyalty points greater than zero.");
+      return;
+    }
+
+    if (points > Number(loyalty.available_points ?? loyalty.loyalty_points ?? 0)) {
+      toast.error("Entered points exceed the customer's available loyalty balance.");
+      return;
+    }
+
+    try {
+      setIsApplyingLoyalty(true);
+      const preview = await previewLoyaltyRedemption(
+        selectedCustomer.id,
+        points,
+        checkoutGrandTotal,
+        posCompanyName || undefined,
+        loyalty.loyalty_program,
+      );
+
+      setAppliedLoyalty({
+        loyalty_program: preview.loyalty_program,
+        loyalty_points: preview.loyalty_points,
+        loyalty_amount: Number(preview.loyalty_amount || 0),
+      });
+      const newPayableTotal = roundCurrency(Math.max(0, checkoutGrandTotal - Number(preview.loyalty_amount || 0)));
+      trimPaymentAmountsToPayable(newPayableTotal);
+      toast.success("Loyalty redemption applied.");
+    } catch (error) {
+      setAppliedLoyalty(null);
+      toast.error(extractErrorFromException(error, "Failed to apply loyalty redemption"));
+    } finally {
+      setIsApplyingLoyalty(false);
+    }
+  }, [checkoutGrandTotal, loyaltyPointsInput, posCompanyName, selectedCustomer, trimPaymentAmountsToPayable]);
 
   const refreshMpesaStatus = useCallback(async (requestName?: string) => {
     const name = requestName || mpesaFlow?.requestName;
@@ -518,6 +637,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       allow_partial_payment: allowPartialPayments,
       salesperson: currentSalesperson?.name || null,
       tax_id: taxPin || null,
+      loyalty: appliedLoyalty
+        ? {
+            loyalty_program: appliedLoyalty.loyalty_program,
+            loyalty_points: appliedLoyalty.loyalty_points,
+          }
+        : null,
     };
   };
 
@@ -720,7 +845,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     });
 
     const remaining = roundCurrency(
-      checkoutGrandTotal - calculateTotalPayments(Object.values(updatedAmounts)),
+      checkoutPayableTotal - calculateTotalPayments(Object.values(updatedAmounts)),
     );
 
     if (remaining > 0) {
@@ -758,7 +883,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (invoiceSubmitted || isProcessingPayment) return;
     const newPaymentAmounts: PaymentAmount = {};
     paymentMethods.forEach((method) => { newPaymentAmounts[method.id] = 0; });
-    newPaymentAmounts[methodId] = checkoutGrandTotal;
+    newPaymentAmounts[methodId] = checkoutPayableTotal;
     setLastModifiedMethodId(methodId);
     setPaymentAmounts(newPaymentAmounts);
     setActiveMethodId(methodId);
@@ -881,6 +1006,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       businessType: posDetails?.business_type || "",
       roundOffAmount: Number(roundOffAmount || 0),
       deliveryCharge: Number(deliveryCharge || 0),
+      loyalty: appliedLoyalty
+        ? {
+            loyalty_program: appliedLoyalty.loyalty_program,
+            loyalty_points: appliedLoyalty.loyalty_points,
+          }
+        : null,
     };
 
     const previewCacheKey = JSON.stringify(previewPayload);
@@ -935,6 +1066,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
           businessType: posDetails?.business_type,
           roundOffAmount,
           deliveryCharge,
+          loyalty: appliedLoyalty
+            ? {
+                loyalty_program: appliedLoyalty.loyalty_program,
+                loyalty_points: appliedLoyalty.loyalty_points,
+              }
+            : null,
           // Preview-only context: avoid checkout payment validation until user submits payment.
           status: "held",
         };
@@ -1005,6 +1142,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     posDetails?.business_type,
     roundOffAmount,
     deliveryCharge,
+    appliedLoyalty,
     isCreditSale,
     dueDate,
     allowPartialPayments,
@@ -1099,6 +1237,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    clearLoyaltyRedemption();
+  }, [clearLoyaltyRedemption, selectedCustomer?.id, isOpen]);
+
   const processPayment = async (deliveryPersonnel: string | null = null) => {
     if (!selectedCustomer || !selectedCustomer.name) {
       toast.error("Kindly select a customer");
@@ -1110,7 +1252,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     }
     if (!isCreditSale) {
       const totalPaid = calculateTotalPayments(Object.values(paymentAmounts));
-      const orderTotal = checkoutGrandTotal;
+      const orderTotal = checkoutPayableTotal;
       
       if (totalPaid < orderTotal) {
         const remainingAmount = orderTotal - totalPaid;
@@ -1277,6 +1419,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         businessType: posDetails?.business_type,
         salesperson: currentSalesperson?.name || null,
         tax_id: taxPin || null,
+        loyalty: appliedLoyalty
+          ? {
+              loyalty_program: appliedLoyalty.loyalty_program,
+              loyalty_points: appliedLoyalty.loyalty_points,
+            }
+          : null,
         draft_invoice_id: getOriginalDraftInvoiceId(),
       };
 
@@ -1454,21 +1602,21 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (isOpen && modes.length > 0 && !isCreditSale) {
       const defaultMode = modes.find((mode) => mode.default === 1);
       if (defaultMode && Object.keys(paymentAmounts).length === 0) {
-        const defaultAmount = parseFloat(checkoutGrandTotal.toFixed(2));
+        const defaultAmount = parseFloat(checkoutPayableTotal.toFixed(2));
         setLastModifiedMethodId(defaultMode.mode_of_payment);
         setPaymentAmounts({ [defaultMode.mode_of_payment]: defaultAmount });
       }
     }
-  }, [isOpen, modes, checkoutGrandTotal, isB2B, isB2C, paymentAmounts, isCreditSale]);
+  }, [isOpen, modes, checkoutPayableTotal, isB2B, isB2C, paymentAmounts, isCreditSale]);
 
   useEffect(() => {
     if (!isOpen || invoiceSubmitted || isProcessingPayment || isCreditSale) {
-      previousCheckoutGrandTotalRef.current = checkoutGrandTotal;
+      previousCheckoutGrandTotalRef.current = checkoutPayableTotal;
       return;
     }
 
     const previousTotal = previousCheckoutGrandTotalRef.current;
-    if (Math.abs(previousTotal - checkoutGrandTotal) < 0.0001) {
+    if (Math.abs(previousTotal - checkoutPayableTotal) < 0.0001) {
       return;
     }
 
@@ -1488,14 +1636,14 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
       const defaultMode = modes.find((mode) => mode.default === 1)?.mode_of_payment;
       if (entries.length === 1 && defaultMode && entries[0]?.[0] === defaultMode) {
-        return { [defaultMode]: roundCurrency(checkoutGrandTotal) };
+        return { [defaultMode]: roundCurrency(checkoutPayableTotal) };
       }
 
       return prev;
     });
 
-    previousCheckoutGrandTotalRef.current = checkoutGrandTotal;
-  }, [checkoutGrandTotal, isOpen, invoiceSubmitted, isProcessingPayment, isCreditSale, modes]);
+    previousCheckoutGrandTotalRef.current = checkoutPayableTotal;
+  }, [checkoutPayableTotal, isOpen, invoiceSubmitted, isProcessingPayment, isCreditSale, modes]);
 
   useEffect(() => {
     if (invoiceSubmitted && invoiceData && print_receipt_on_order_complete) {
@@ -1612,6 +1760,86 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     }
     setMpesaFlow((prev) => (prev ? { ...prev, status: "idle", message: undefined } : prev));
     setShowMpesaOptionsModal(true);
+  };
+
+  const renderLoyaltyRedemption = () => {
+    const loyalty = selectedCustomer?.loyalty;
+    if (!selectedCustomer || !loyalty?.enabled || !loyalty.loyalty_program) {
+      return null;
+    }
+
+    const availablePoints = Number(loyalty.available_points ?? loyalty.loyalty_points ?? 0);
+    const redeemableValue = Number(loyalty.redeemable_value || 0);
+    const tier = loyalty.loyalty_program_tier || loyalty.customer_loyalty_program_tier;
+
+    return (
+      <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+              <Award className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-gray-900 dark:text-white">Redeem Loyalty Points</div>
+              <div className="text-xs text-gray-600 dark:text-gray-300">
+                {loyalty.loyalty_program_name || loyalty.loyalty_program}
+                {tier ? ` · ${tier}` : ""}
+              </div>
+            </div>
+          </div>
+          <div className="text-right text-xs text-gray-600 dark:text-gray-300">
+            <div className="font-semibold text-gray-900 dark:text-white">
+              {availablePoints.toLocaleString()} pts
+            </div>
+            <div>{formatCurrencyWithSymbol(redeemableValue, displayCurrencySymbol)}</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+          <input
+            type="number"
+            min="0"
+            step="1"
+            max={availablePoints}
+            value={loyaltyPointsInput}
+            onChange={(event) => handleLoyaltyPointsInputChange(event.target.value)}
+            disabled={invoiceSubmitted || isProcessingPayment || isApplyingLoyalty || availablePoints <= 0}
+            placeholder="Points to redeem"
+            className="w-full px-3 py-2 border border-amber-200 dark:border-amber-800 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={() => void handleApplyLoyaltyRedemption()}
+            disabled={invoiceSubmitted || isProcessingPayment || isApplyingLoyalty || availablePoints <= 0 || !appliedLoyalty}
+            className="px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
+          >
+            {isApplyingLoyalty ? "Applying..." : "Apply"}
+          </button>
+        </div>
+
+        {appliedLoyalty && (
+          <div className="flex items-center justify-between gap-3 rounded-md bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800 p-3">
+            <div>
+              <div className="text-sm font-medium text-gray-900 dark:text-white">
+                {appliedLoyalty.loyalty_points.toLocaleString()} points applied
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-300">
+                {formatCurrencyWithSymbol(appliedLoyalty.loyalty_amount, displayCurrencySymbol)} will reduce amount due.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={clearLoyaltyRedemption}
+              disabled={invoiceSubmitted || isProcessingPayment}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Remove loyalty redemption"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderMpesaStatusNotice = () => {
@@ -1771,6 +1999,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     ))}
                   </div>
                 </div>
+                {renderLoyaltyRedemption()}
                 {renderMpesaStatusNotice()}
                 {allowPartialPayments && (
                   <div className="space-y-3 pt-2">
@@ -1827,6 +2056,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   displayTaxTotal={displayTaxTotal}
                   displayTaxIsIncluded={displayTaxIsIncluded}
                   checkoutGrandTotal={checkoutGrandTotal}
+                  loyaltyAmount={loyaltyAmount}
+                  checkoutPayableTotal={checkoutPayableTotal}
                   totalPaidAmount={totalPaidAmount}
                   outstandingAmount={outstandingAmount}
                   displayCurrencySymbol={displayCurrencySymbol}
@@ -1993,6 +2224,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   setActiveMethodId={setActiveMethodId}
                 />
 
+                {renderLoyaltyRedemption()}
                 {renderMpesaStatusNotice()}
 
                 {allowPartialPayments && (
@@ -2067,6 +2299,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   displayTaxTotal={displayTaxTotal}
                   displayTaxIsIncluded={displayTaxIsIncluded}
                   checkoutGrandTotal={checkoutGrandTotal}
+                  loyaltyAmount={loyaltyAmount}
+                  checkoutPayableTotal={checkoutPayableTotal}
                   totalPaidAmount={totalPaidAmount}
                   outstandingAmount={outstandingAmount}
                   displayCurrencySymbol={displayCurrencySymbol}

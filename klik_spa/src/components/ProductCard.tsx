@@ -26,6 +26,7 @@ export default function ProductCard({
   const isServiceItem = item.is_stock_item === false;
   const isOutOfStock = item.is_stock_item !== false && item.available <= 0;
   const isDisabled = isOutOfStock || scannerOnly;
+  const bundleCount = item.is_product_bundle ? item.bundle_items?.length || 0 : 0;
   const formattedPrice = formatCurrencyWithSymbol(
     item.price,
     item.currency_symbol,
@@ -107,13 +108,19 @@ export default function ProductCard({
             </div>
           )}
 
+          {item.is_product_bundle && (
+            <div className="absolute bottom-2 left-2 bg-amber-600 text-white px-1.5 py-0.5 rounded-md text-xs font-medium z-10">
+              Bundle
+            </div>
+          )}
+
           {!isOutOfStock && (
             <div
               className={`absolute top-2 right-2 text-white px-1.5 py-0.5 rounded-md text-xs font-medium z-10 ${
-                isServiceItem ? "bg-indigo-600" : "bg-slate-600"
+                item.is_product_bundle ? "bg-amber-700" : isServiceItem ? "bg-indigo-600" : "bg-slate-600"
               }`}
             >
-              {isServiceItem ? "Service" : item.available}
+              {item.is_product_bundle ? item.available : isServiceItem ? "Service" : item.available}
             </div>
           )}
 
@@ -144,6 +151,11 @@ export default function ProductCard({
             {showItemCode && (
               <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
                 {item.item_code || item.id}
+              </p>
+            )}
+            {item.is_product_bundle && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-300 truncate">
+                {bundleCount} packed {bundleCount === 1 ? "item" : "items"}
               </p>
             )}
           </div>

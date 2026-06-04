@@ -68,6 +68,16 @@ export interface BundleComponent {
   available_bundle_qty?: number
 }
 
+export interface VariantOptionValue {
+  value: string
+  variant_count: number
+}
+
+export interface VariantAttributeOption {
+  attribute: string
+  values: VariantOptionValue[]
+}
+
 export interface MenuItem {
   id: string
   item_code?: string
@@ -89,6 +99,12 @@ export interface MenuItem {
   item_group?: string // Item group reference
   is_product_bundle?: boolean
   bundle_items?: BundleComponent[]
+  is_variant_template?: boolean
+  has_variants?: boolean
+  variant_of?: string
+  variant_based_on?: string
+  variant_count?: number
+  variant_attributes?: Record<string, string>
 }
 
 export interface Category {

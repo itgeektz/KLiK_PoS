@@ -11,6 +11,7 @@ import { SerialBatchBundleModal } from "./SerialBatchBundleSelector";
 import { useCartStore } from "../../stores/cartStore";
 import ProductDetailsModal from "../ProductDetailsModal";
 import { getEffectiveDisplayRate, getEffectiveItemRate, getExclusiveTaxRateForItem } from "../../utils/cartPricing";
+import { roundCurrency } from "../../utils/currencyMath";
 
 interface CartItemRowProps {
   item: CartItem;
@@ -22,7 +23,7 @@ interface CartItemRowProps {
   onRemoveItem?: (id: string) => void;
   onUOMChange: (itemId: string, uom: string, price: number) => void;
   onDiscountChange: (itemId: string, field: string, value: number | string) => void;
-  onCustomRateChange: (item: CartItem, rate?: number) => void;
+  onCustomRateChange: (item: CartItem, rate?: number, includesTax?: boolean) => void;
   onDuplicateItem: (item: CartItem) => void;
   onBundleUpdate?: (itemId: string, bundleId: string, entries: any[]) => void;
   selectedCustomer?: { id: string } | null;
@@ -303,6 +304,11 @@ export const CartItemRow = ({
     await fetchBundleData(qty, true);
   };
 
+  const isTaxIncludedInBasicRate =
+    posDetails?.is_tax_included_in_basic_rate === 1
+    || posDetails?.is_tax_included_in_basic_rate === "1"
+    || posDetails?.is_tax_included_in_basic_rate === true;
+
   const handleRateChange = (value?: number) => {
     if (value === undefined || value === null || Number.isNaN(value)) {
       onCustomRateChange(item, undefined);
@@ -312,7 +318,7 @@ export const CartItemRow = ({
     }
 
     const rate = Math.max(0, value);
-    onCustomRateChange(item, rate);
+    onCustomRateChange(item, rate, isTaxIncludedInBasicRate);
     onDiscountChange(item.id, "discountAmount", 0);
     setLocalDiscountPct(0);
   };
@@ -330,11 +336,6 @@ export const CartItemRow = ({
     setLocalDiscountPct(item.price > 0 ? parseFloat(((amt / item.price) * 100).toFixed(2)) : 0);
   };
 
-  const isTaxIncludedInBasicRate =
-    posDetails?.is_tax_included_in_basic_rate === 1
-    || posDetails?.is_tax_included_in_basic_rate === "1"
-    || posDetails?.is_tax_included_in_basic_rate === true;
-
   const discountedPrice = getEffectiveItemRate(item, {
     itemDiscounts: { [item.id]: itemDiscount },
     isTaxIncludedInBasicRate,
@@ -346,11 +347,12 @@ export const CartItemRow = ({
   const exclusiveTaxRate = getExclusiveTaxRateForItem(item, { isTaxIncludedInBasicRate });
   const hasExclusiveTax = exclusiveTaxRate > 0;
   const totalTaxRate = hasExclusiveTax ? exclusiveTaxRate : Number(item.total_tax_rate || 0);
-  const taxAmountPerUnit = Math.max(0, displayRateInclTax - discountedPrice);
-  const originalTotal = item.price * item.quantity;
-  const discountedTotal = displayRateInclTax * item.quantity;
+  const taxAmountPerUnit = roundCurrency(Math.max(0, displayRateInclTax - discountedPrice));
+  const originalTotal = roundCurrency(item.price * item.quantity);
+  const discountedTotal = roundCurrency(displayRateInclTax * item.quantity);
   const amount = discountedTotal;
-  const displayRate = itemDiscount.customRate ?? (displayRateInclTax > 0 ? displayRateInclTax : "");
+  const editableRate = hasExclusiveTax ? discountedPrice : displayRateInclTax;
+  const displayRate = editableRate > 0 ? editableRate : "";
 
   const hasBundleEntries = bundleEntries.length > 0;
 
@@ -529,7 +531,7 @@ export const CartItemRow = ({
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
-                    Rate (Incl. Tax)
+                    {hasExclusiveTax ? "Rate (Excl. Tax)" : "Rate (Incl. Tax)"}
                   </label>
                   <input
                     type="number"
@@ -592,11 +594,11 @@ export const CartItemRow = ({
                   </div>
                   <div>
                     <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
-                      Base Rate (Excl. Tax)
+                      {hasExclusiveTax ? "Rate (Incl. Tax)" : "Base Rate"}
                     </label>
                     <input
                       type="text"
-                      value={formatCurrencyWithSymbol(discountedPrice, currency_symbol)}
+                      value={formatCurrencyWithSymbol(hasExclusiveTax ? displayRateInclTax : discountedPrice, currency_symbol)}
                       readOnly
                       className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-4 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white cursor-not-allowed`}
                     />

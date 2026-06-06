@@ -11,6 +11,7 @@ import { SerialBatchBundleModal } from "./SerialBatchBundleSelector";
 import { useCartStore } from "../../stores/cartStore";
 import ProductDetailsModal from "../ProductDetailsModal";
 import { getEffectiveDisplayRate, getEffectiveItemRate, getExclusiveTaxRateForItem } from "../../utils/cartPricing";
+import { roundCurrency } from "../../utils/currencyMath";
 
 interface CartItemRowProps {
   item: CartItem;
@@ -346,9 +347,9 @@ export const CartItemRow = ({
   const exclusiveTaxRate = getExclusiveTaxRateForItem(item, { isTaxIncludedInBasicRate });
   const hasExclusiveTax = exclusiveTaxRate > 0;
   const totalTaxRate = hasExclusiveTax ? exclusiveTaxRate : Number(item.total_tax_rate || 0);
-  const taxAmountPerUnit = Math.max(0, displayRateInclTax - discountedPrice);
-  const originalTotal = item.price * item.quantity;
-  const discountedTotal = displayRateInclTax * item.quantity;
+  const taxAmountPerUnit = roundCurrency(Math.max(0, displayRateInclTax - discountedPrice));
+  const originalTotal = roundCurrency(item.price * item.quantity);
+  const discountedTotal = roundCurrency(displayRateInclTax * item.quantity);
   const amount = discountedTotal;
   const displayRate = itemDiscount.customRate ?? (displayRateInclTax > 0 ? displayRateInclTax : "");
 

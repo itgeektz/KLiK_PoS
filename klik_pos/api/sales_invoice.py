@@ -3243,10 +3243,13 @@ class CustomSalesInvoice(SalesInvoice):
 			"POS Profile", self.pos_profile, "allow_partial_payment"
 		)
 		allow_partial_payment = allow_partial_payment or getattr(self, "custom_allow_partial_payment", 0)
-		invoice_total = flt(self.rounded_total) or flt(self.grand_total)
-		paid_amount = flt(self.paid_amount)
+		precision = self.precision("rounded_total")
+		if precision is None:
+			precision = self.precision("grand_total")
+		invoice_total = flt(self.rounded_total, precision) or flt(self.grand_total, precision)
+		paid_amount = flt(self.paid_amount, precision)
 		if paid_amount < invoice_total and flt(getattr(self, "loyalty_amount", 0)):
-			paid_amount += flt(self.loyalty_amount)
+			paid_amount = flt(paid_amount + flt(self.loyalty_amount, precision), precision)
 
 		if not allow_partial_payment and paid_amount < invoice_total:
 			frappe.throw(

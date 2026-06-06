@@ -149,6 +149,7 @@ export const CartItemRow = ({
   const hasSerialOrBatch = item.has_serial_no || item.has_batch_no;
   const warehouse = posDetails?.warehouse || "";
   const restrictCostVisibility = posDetails?.restrict_cost_visibility_in_tooltip ?? true;
+  const allowPriceListSwitching = !!posDetails?.allow_price_list_switching;
 
   const fetchFullItemDetails = useCallback(async () => {
     if (!warehouse) return;
@@ -334,6 +335,25 @@ export const CartItemRow = ({
     const amt = Math.max(0, value || 0);
     onDiscountChange(item.id, "discountAmount", amt);
     setLocalDiscountPct(item.price > 0 ? parseFloat(((amt / item.price) * 100).toFixed(2)) : 0);
+  };
+
+  const handleLinePriceListChange = (priceListName: string) => {
+    onDiscountChange(item.id, "selectedPriceList", priceListName);
+    if (!priceListName) {
+      handleRateChange(undefined);
+      return;
+    }
+
+    const matchingPrice = fullItemData?.price_lists?.find((priceList) =>
+      priceList.price_list === priceListName
+      && (!priceList.uom || priceList.uom === item.uom)
+    ) || fullItemData?.price_lists?.find((priceList) => priceList.price_list === priceListName);
+
+    if (matchingPrice) {
+      onCustomRateChange(item, Number(matchingPrice.rate || 0), false);
+      onDiscountChange(item.id, "discountAmount", 0);
+      setLocalDiscountPct(0);
+    }
   };
 
   const discountedPrice = getEffectiveItemRate(item, {
@@ -610,6 +630,29 @@ export const CartItemRow = ({
                   )}
                 </div>
               )}
+
+              {allowPriceListSwitching && fullItemData?.price_lists?.length ? (
+                <div className="mb-4">
+                  <label className={`block text-gray-700 dark:text-gray-300 font-medium ${isMobile ? "text-sm" : "text-sm"} mb-2`}>
+                    Item Price List
+                  </label>
+                  <select
+                    value={itemDiscount.selectedPriceList || ""}
+                    onChange={(event) => handleLinePriceListChange(event.target.value)}
+                    disabled={!posDetails?.allow_rate_change}
+                    className={`w-full ${isMobile ? "text-sm" : "text-sm"} px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60`}
+                  >
+                    <option value="">Use order price list</option>
+                    {fullItemData.price_lists
+                      .filter((priceList) => !priceList.uom || priceList.uom === item.uom)
+                      .map((priceList) => (
+                        <option key={`${priceList.price_list}-${priceList.uom || ""}-${priceList.rate}`} value={priceList.price_list}>
+                          {priceList.price_list}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>

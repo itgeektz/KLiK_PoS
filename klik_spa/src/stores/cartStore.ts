@@ -112,6 +112,7 @@ interface CartState {
   cartItems: CartItem[]
   appliedCoupons: GiftCoupon[]
   selectedCustomer: Customer | null
+  selectedPriceList: string | null
   isPricingLoading: boolean
   pricingError: string | null
 
@@ -124,6 +125,7 @@ interface CartState {
   applyCoupon: (coupon: GiftCoupon) => void
   removeCoupon: (couponCode: string) => void
   setSelectedCustomer: (customer: Customer | null) => Promise<void>
+  setSelectedPriceList: (priceList: string | null) => Promise<void>
   refreshCartPricing: () => Promise<void>
   updateItemBundleEntries: (id: string, entries: SerialBatchEntry[]) => void
 }
@@ -139,6 +141,7 @@ export const useCartStore = create<CartState>()(
       cartItems: [],
       appliedCoupons: [],
       selectedCustomer: null,
+      selectedPriceList: null,
       isPricingLoading: false,
       pricingError: null,
 
@@ -158,7 +161,13 @@ export const useCartStore = create<CartState>()(
           }));
 
           const customerId = state.selectedCustomer?.id;
-          const url = `/api/method/klik_pos.api.item.pricing.get_cart_pricing?cart_items=${encodeURIComponent(JSON.stringify(itemsForPricing))}${customerId ? `&customer=${customerId}` : ''}`;
+          const params = new URLSearchParams({
+            cart_items: JSON.stringify(itemsForPricing),
+          });
+          if (customerId) params.append('customer', customerId);
+          const allowPriceListSwitching = !!usePOSProfileStore.getState().posDetails?.allow_price_list_switching;
+          if (allowPriceListSwitching && state.selectedPriceList) params.append('price_list', state.selectedPriceList);
+          const url = `/api/method/klik_pos.api.item.pricing.get_cart_pricing?${params.toString()}`;
           
           const response = await fetch(url, {
             method: 'GET',
@@ -399,7 +408,8 @@ export const useCartStore = create<CartState>()(
         set(() => ({
           cartItems: [],
           appliedCoupons: [],
-          selectedCustomer: null
+          selectedCustomer: null,
+          selectedPriceList: null,
         }));
       },
 
@@ -418,6 +428,14 @@ export const useCartStore = create<CartState>()(
 
       setSelectedCustomer: async (customer) => {
         set({ selectedCustomer: customer });
+        const state = get();
+        if (state.cartItems.length > 0) {
+          await state.refreshCartPricing();
+        }
+      },
+
+      setSelectedPriceList: async (priceList) => {
+        set({ selectedPriceList: priceList });
         const state = get();
         if (state.cartItems.length > 0) {
           await state.refreshCartPricing();

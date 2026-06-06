@@ -692,17 +692,24 @@ def _get_user_ids_by_full_name(full_name):
 		return []
 
 
+def _sql_in_clause(values):
+	"""Build a parameterized SQL IN clause for dynamic value lists."""
+	values = list(values or [])
+	return ", ".join(["%s"] * len(values)), tuple(values)
+
+
 def _batch_fetch_cashier_names(user_ids):
 	"""Batch fetch cashier names for given user IDs."""
 	if not user_ids:
 		return {}
 
+	placeholders, params = _sql_in_clause(user_ids)
 	cashier_query = """
 		SELECT name, full_name
 		FROM `tabUser`
 		WHERE name IN ({})
-	""".format(",".join([f"'{uid}'" for uid in user_ids]))
-	cashier_results = frappe.db.sql(cashier_query, as_dict=True)
+	""".format(placeholders)
+	cashier_results = frappe.db.sql(cashier_query, params, as_dict=True)
 	return {user.name: user.full_name or user.name for user in cashier_results}
 
 
@@ -711,12 +718,13 @@ def _batch_fetch_payment_methods(invoice_names):
 	if not invoice_names:
 		return {}
 
+	placeholders, params = _sql_in_clause(invoice_names)
 	payment_query = """
 		SELECT parent, mode_of_payment, amount
 		FROM `tabSales Invoice Payment`
 		WHERE parent IN ({})
-	""".format(",".join([f"'{name}'" for name in invoice_names]))
-	payment_results = frappe.db.sql(payment_query, as_dict=True)
+	""".format(placeholders)
+	payment_results = frappe.db.sql(payment_query, params, as_dict=True)
 
 	# Group by parent invoice
 	payment_methods_map = {}
@@ -735,12 +743,13 @@ def _batch_fetch_items(invoice_names):
 	if not invoice_names:
 		return {}
 
+	placeholders, params = _sql_in_clause(invoice_names)
 	items_query = """
 		SELECT parent, item_code, qty, rate, amount
 		FROM `tabSales Invoice Item`
 		WHERE parent IN ({})
-	""".format(",".join([f"'{name}'" for name in invoice_names]))
-	items_results = frappe.db.sql(items_query, as_dict=True)
+	""".format(placeholders)
+	items_results = frappe.db.sql(items_query, params, as_dict=True)
 
 	# Group by parent invoice
 	items_map = {}
@@ -809,6 +818,7 @@ def _calculate_return_quantities(invoice, items):
 	if not item_codes:
 		return
 
+	item_placeholders, item_params = _sql_in_clause(item_codes)
 	returns_query = """
 		SELECT sii.item_code, COALESCE(SUM(ABS(sii.qty)), 0) as total_returned_qty
 		FROM `tabSales Invoice` si
@@ -819,9 +829,11 @@ def _calculate_return_quantities(invoice, items):
 		  AND si.docstatus = 1
 		  AND si.customer = %s
 		GROUP BY sii.item_code
-	""".format(",".join([f"'{code}'" for code in item_codes]))
+	""".format(item_placeholders)
 
-	returns_data = frappe.db.sql(returns_query, (invoice.name, invoice.customer), as_dict=True)
+	returns_data = frappe.db.sql(
+		returns_query, (invoice.name, *item_params, invoice.customer), as_dict=True
+	)
 	returned_qty_map = {row.item_code: row.total_returned_qty for row in returns_data}
 
 	# Update items with return data
@@ -989,6 +1001,7 @@ def _get_invoice_items_with_returns(invoice_id, customer):
 	returned_qty_map = {}
 
 	if item_codes:
+		item_placeholders, item_params = _sql_in_clause(item_codes)
 		returns_query = """
 			SELECT sii.item_code, COALESCE(SUM(ABS(sii.qty)), 0) as total_returned_qty
 			FROM `tabSales Invoice` si
@@ -999,9 +1012,11 @@ def _get_invoice_items_with_returns(invoice_id, customer):
 			  AND si.docstatus = 1
 			  AND si.customer = %s
 			GROUP BY sii.item_code
-		""".format(",".join([f"'{code}'" for code in item_codes]))
+		""".format(item_placeholders)
 
-		returns_data = frappe.db.sql(returns_query, (invoice_id, customer), as_dict=True)
+		returns_data = frappe.db.sql(
+			returns_query, (invoice_id, *item_params, customer), as_dict=True
+		)
 		returned_qty_map = {row.item_code: row.total_returned_qty for row in returns_data}
 
 	# Build items list with return data
@@ -2417,13 +2432,14 @@ def _batch_fetch_item_data(item_codes):
 	if not item_codes:
 		return {}
 
+	placeholders, params = _sql_in_clause(item_codes)
 	item_query = """
 		SELECT name, has_batch_no, has_serial_no, is_stock_item
 		FROM `tabItem`
 		WHERE name IN ({})
-	""".format(",".join([f"'{code}'" for code in item_codes]))
+	""".format(placeholders)
 
-	item_results = frappe.db.sql(item_query, as_dict=True)
+	item_results = frappe.db.sql(item_query, params, as_dict=True)
 	return {item.name: item for item in item_results}
 
 
@@ -3613,6 +3629,8 @@ def get_customer_invoices_for_return(customer, start_date=None, end_date=None, s
 			_invoice_item_pairs = [(item.parent, item.item_code) for item in all_items]
 
 			if item_codes:
+				invoice_placeholders, invoice_params = _sql_in_clause(invoice_names)
+				item_placeholders, item_params = _sql_in_clause(item_codes)
 				# Create a more efficient query to get all returned quantities
 				returns_query = """
 					SELECT
@@ -3628,11 +3646,13 @@ def get_customer_invoices_for_return(customer, start_date=None, end_date=None, s
 					  AND rsi.customer = %s
 					GROUP BY rsi.return_against, sii.item_code
 				""".format(
-					",".join([f"'{name}'" for name in invoice_names]),
-					",".join([f"'{code}'" for code in item_codes]),
+					invoice_placeholders,
+					item_placeholders,
 				)
 
-				returns_data = frappe.db.sql(returns_query, (customer,), as_dict=True)
+				returns_data = frappe.db.sql(
+					returns_query, (*invoice_params, *item_params, customer), as_dict=True
+				)
 				returned_qty_map = {
 					(row.original_invoice, row.item_code): row.total_returned_qty for row in returns_data
 				}

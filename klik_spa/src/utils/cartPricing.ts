@@ -32,6 +32,7 @@ interface DiscountDataLike {
   discountPercentage?: number;
   discountAmount?: number;
   customRate?: number;
+  customRateIncludesTax?: boolean;
 }
 
 type DiscountMapLike = Record<string, DiscountDataLike | undefined>;
@@ -117,7 +118,7 @@ export function getEffectiveItemRate(item: PricingItemLike, options: RateOptions
   if (customRate !== undefined && customRate !== null) {
     const enteredRate = Math.max(0, Number(customRate) || 0);
     const exclusiveTaxRate = getExclusiveTaxRateForItem(item, options);
-    if (exclusiveTaxRate > 0) {
+    if (exclusiveTaxRate > 0 && discountData.customRateIncludesTax !== false) {
       return roundCurrency(enteredRate / (1 + exclusiveTaxRate / 100));
     }
     return roundCurrency(enteredRate);

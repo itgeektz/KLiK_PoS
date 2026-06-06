@@ -72,6 +72,7 @@ export default function OrderSummary({
           discountPercentage: persistedDiscountPercentage,
           discountAmount: persistedDiscountAmount,
           customRate: persistedCustomRate,
+          customRateIncludesTax: (item as CartItem & { custom_rate_includes_tax?: boolean }).custom_rate_includes_tax,
           serial_batch_bundle: serialBatchBundle,
           bundle_entries: item.bundle_entries,
         };
@@ -80,6 +81,7 @@ export default function OrderSummary({
           discountPercentage: persistedDiscountPercentage,
           discountAmount: persistedDiscountAmount,
           customRate: persistedCustomRate,
+          customRateIncludesTax: (item as CartItem & { custom_rate_includes_tax?: boolean }).custom_rate_includes_tax,
         };
       }
     });
@@ -128,6 +130,7 @@ export default function OrderSummary({
             discountPercentage: persistedDiscountPercentage,
             discountAmount: persistedDiscountAmount,
             customRate: persistedCustomRate,
+            customRateIncludesTax: (item as CartItem & { custom_rate_includes_tax?: boolean }).custom_rate_includes_tax,
             serial_batch_bundle: serialBatchBundle,
             bundle_entries: bundleEntries,
           };
@@ -270,12 +273,13 @@ export default function OrderSummary({
     }));
   };
 
-  const handleCustomRateChange = (item: CartItem, newRate?: number) => {
+  const handleCustomRateChange = (item: CartItem, newRate?: number, includesTax?: boolean) => {
     setItemDiscounts(prev => ({
       ...prev,
       [item.id]: {
         ...(prev[item.id] || {}),
         customRate: newRate,
+        customRateIncludesTax: includesTax,
         discountPercentage: 0,
         discountAmount: 0,
       }

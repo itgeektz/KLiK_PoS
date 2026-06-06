@@ -6,6 +6,7 @@ import type { Customer } from '../types/customer'
 import { toast } from 'react-toastify'
 import { clearDraftInvoiceCache } from '../utils/draftInvoiceCache'
 import { usePOSProfileStore } from './posProfileStore'
+import { roundCurrency } from '../utils/currencyMath'
 
 interface SerialBatchEntry {
   serial_no?: string;
@@ -34,17 +35,8 @@ interface PricedItemPayload {
   has_pricing_rule?: boolean;
 }
 
-const getCurrencyPrecision = (): number => {
-  const maybeFrappe = (window as unknown as {
-    frappe?: { boot?: { sysdefaults?: { currency_precision?: string | number } } }
-  }).frappe;
-  const precision = Number(maybeFrappe?.boot?.sysdefaults?.currency_precision);
-  return Number.isFinite(precision) && precision >= 0 ? precision : 2;
-};
-
 const roundToCurrencyPrecision = (value: number): number => {
-  const precision = getCurrencyPrecision();
-  return Number(Number(value || 0).toFixed(precision));
+  return roundCurrency(value);
 };
 
 const hasFiniteAvailableStock = (item: { available?: number; is_stock_item?: boolean }) => {

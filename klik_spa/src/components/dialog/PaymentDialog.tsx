@@ -298,30 +298,28 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const calculations: Calculations = useMemo(() => {
     // subtotal uses exclusive (pre-tax) prices so the tax line is separately visible
     const subtotal = cartItems.reduce((sum, item) => {
-      return sum + getEffectiveItemRate(item) * item.quantity;
+      return roundCurrency(sum + roundCurrency(getEffectiveItemRate(item) * item.quantity));
     }, 0);
-    const couponDiscount = appliedCoupons.reduce((sum, coupon) => sum + coupon.value, 0);
-    const taxableAmount = Math.max(0, subtotal - couponDiscount);
+    const couponDiscount = appliedCoupons.reduce((sum, coupon) => roundCurrency(sum + coupon.value), 0);
+    const taxableAmount = roundCurrency(Math.max(0, subtotal - couponDiscount));
     const selectedTax = selectedTaxTemplate;
     const taxRate = selectedTax?.rate || 0;
     const isInclusive = isTaxIncludedInBasicRate || selectedTax?.is_inclusive || false;
     let taxAmount: number;
     let grandTotal: number;
     if (isInclusive) {
-      taxAmount = (taxableAmount * taxRate) / (100 + taxRate);
-      taxAmount = parseFloat(taxAmount.toFixed(2));
+      taxAmount = roundCurrency((taxableAmount * taxRate) / (100 + taxRate));
       grandTotal = taxableAmount;
     } else {
-      taxAmount = (taxableAmount * taxRate) / 100;
-      taxAmount = parseFloat(taxAmount.toFixed(2));
-      grandTotal = taxableAmount + taxAmount;
+      taxAmount = roundCurrency((taxableAmount * taxRate) / 100);
+      grandTotal = roundCurrency(taxableAmount + taxAmount);
     }
     return {
       subtotal,
       couponDiscount,
       taxableAmount,
       taxAmount,
-      grandTotal: grandTotal + roundOffAmount,
+      grandTotal: roundCurrency(grandTotal + roundOffAmount),
       selectedTax,
       isInclusive,
     };
@@ -330,9 +328,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   // Inclusive grand total: sum of discountedPriceIncl (already computed correctly in OrderSummary mapping)
   // This is reliable regardless of whether items have ERPNext Item Tax Templates
   const inclGrandTotal = useMemo(() => {
-    return cartItems.reduce((sum, item) => {
-      return sum + getEffectiveDisplayRate(item) * item.quantity;
-    }, 0) + roundOffAmount + Number(deliveryCharge || 0);
+    const itemTotal = cartItems.reduce((sum, item) => {
+      return roundCurrency(sum + roundCurrency(getEffectiveDisplayRate(item) * item.quantity));
+    }, 0);
+    return roundCurrency(itemTotal + roundOffAmount + Number(deliveryCharge || 0));
   }, [cartItems, deliveryCharge, getEffectiveDisplayRate, roundOffAmount]);
 
   const totalPaidAmount = calculateTotalPayments(Object.values(paymentAmounts));
@@ -340,15 +339,19 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const backendTaxLines = backendTaxPreview?.tax_breakdown || [];
   const hasBackendTaxPreview = backendTaxPreview !== null;
   const hasBackendTaxBreakdown = backendTaxLines.length > 0;
+  const backendRoundedTotal = roundCurrency(Number(backendTaxPreview?.rounded_total || 0));
+  const backendGrandTotal = roundCurrency(Number(backendTaxPreview?.grand_total || inclGrandTotal));
   const checkoutGrandTotal = hasBackendTaxPreview
-    ? Number(backendTaxPreview?.grand_total || inclGrandTotal)
-    : inclGrandTotal;
+    ? backendTaxPreview?.disable_rounded_total === 0 && backendRoundedTotal > 0
+      ? backendRoundedTotal
+      : backendGrandTotal
+    : roundCurrency(inclGrandTotal);
   const loyaltyAmount = Number(appliedLoyalty?.loyalty_amount || 0);
   const checkoutPayableTotal = roundCurrency(Math.max(0, checkoutGrandTotal - loyaltyAmount));
   const outstandingAmount = calculateRemainingAmount(checkoutPayableTotal, Object.values(paymentAmounts));
 
   // Tax amount = inclusive grand total minus exclusive subtotal (works for both item templates and global taxes)
-  const localTaxTotal = parseFloat((checkoutGrandTotal - calculations.subtotal - (calculations.couponDiscount > 0 ? 0 : 0)).toFixed(2));
+  const localTaxTotal = roundCurrency(checkoutGrandTotal - calculations.subtotal - (calculations.couponDiscount > 0 ? 0 : 0));
 
   const displaySubtotal = hasBackendTaxPreview
     ? Number(backendTaxPreview?.net_total || calculations.subtotal)

@@ -17,6 +17,7 @@ def get_items(
     search: str | None = None,
     category: str | None = None,
     customer: str | None = None,
+    price_list: str | None = None,
 ):
     try:
         limit = int(limit) if limit else 1000
@@ -30,7 +31,7 @@ def get_items(
     pos_doc, warehouse, price_list, hide_unavailable = _get_pos_context()
     include_service_items = _include_service_items(pos_doc)
     
-    price_list = _get_priority_price_list(customer, pos_doc, price_list)
+    price_list = price_list or _get_priority_price_list(customer, pos_doc, price_list)
 
     try:
         select_fields = (

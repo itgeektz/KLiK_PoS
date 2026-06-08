@@ -28,10 +28,11 @@ def get_items(
 
     limit = min(limit, 2000)
 
-    pos_doc, warehouse, price_list, hide_unavailable = _get_pos_context()
+    requested_price_list = price_list
+    pos_doc, warehouse, pos_price_list, hide_unavailable = _get_pos_context()
     include_service_items = _include_service_items(pos_doc)
     
-    price_list = price_list or _get_priority_price_list(customer, pos_doc, price_list)
+    price_list = requested_price_list or _get_priority_price_list(customer, pos_doc, pos_price_list)
 
     try:
         select_fields = (

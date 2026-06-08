@@ -73,7 +73,20 @@ export default function ProductLineView({
               const isServiceItem = item.is_stock_item === false
               const isOutOfStock = item.is_stock_item !== false && item.available <= 0
               const isDisabled = isOutOfStock || scannerOnly
-              const formattedPrice = formatCurrencyWithSymbol(item.price, item.currency_symbol)
+              const expectedPrice = Number(item.price_with_vat ?? item.price)
+              const basePrice = Number(item.price || 0)
+              const showsAdjustedPrice = Math.abs(expectedPrice - basePrice) > 0.004
+              const formattedPrice = formatCurrencyWithSymbol(expectedPrice, item.currency_symbol)
+              const formattedBasePrice = formatCurrencyWithSymbol(basePrice, item.currency_symbol)
+              const taxRate = Number(item.tax_info?.total_tax_rate || 0)
+              const taxBadgeLabel = item.tax_info?.has_vat
+                ? `VAT ${taxRate.toFixed(taxRate % 1 === 0 ? 0 : 2)}% ${item.tax_info.is_inclusive ? "Incl" : "Excl"}`
+                : "No VAT"
+              const taxBadgeClass = item.tax_info?.has_vat
+                ? item.tax_info.is_inclusive
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-700"
+                  : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-700"
+                : "bg-gray-50 text-gray-500 border-gray-200 dark:bg-gray-700/50 dark:text-gray-300 dark:border-gray-600"
               const bundleCount = item.is_product_bundle ? item.bundle_items?.length || 0 : 0
               const variantCount = item.is_variant_template ? item.variant_count || 0 : 0
 
@@ -133,6 +146,12 @@ export default function ProductLineView({
                       <p className={`text-gray-500 dark:text-gray-400 ${isMobile ? "text-xs leading-tight" : "text-sm"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
                         {item.category}
                       </p>
+                      <span
+                        className={`mt-1 inline-flex max-w-full rounded border px-1.5 py-0.5 text-[9px] font-semibold leading-none ${taxBadgeClass} ${isDisabled ? "opacity-60" : ""}`}
+                        title={item.tax_info?.item_tax_template || item.tax_info?.source || taxBadgeLabel}
+                      >
+                        {taxBadgeLabel}
+                      </span>
                       {item.is_product_bundle && (
                         <p className={`text-amber-700 dark:text-amber-300 ${isMobile ? "text-xs leading-tight" : "text-xs"} ${isMobile ? "break-words" : "truncate"} ${isDisabled ? "opacity-60" : ""}`}>
                           Bundle · {bundleCount} packed {bundleCount === 1 ? "item" : "items"}
@@ -153,6 +172,11 @@ export default function ProductLineView({
                         <p className="font-semibold text-beveren-600 dark:text-beveren-400 text-xs">
                           {formattedPrice}
                         </p>
+                        {showsAdjustedPrice && (
+                          <p className="text-[12px] font-medium leading-tight text-gray-600 dark:text-gray-300">
+                            Base {formattedBasePrice}
+                          </p>
+                        )}
                       </div>
 
                       <div className={`col-span-3 text-center ${isDisabled ? "opacity-60" : ""}`}>
@@ -185,9 +209,16 @@ export default function ProductLineView({
                   ) : (
                     <>
                       <div className={`col-span-2 flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>
-                        <span className="font-semibold text-beveren-600 dark:text-beveren-400 text-sm">
-                          {formattedPrice}
-                        </span>
+                        <div className="text-center">
+                          <span className="block font-semibold text-beveren-600 dark:text-beveren-400 text-sm">
+                            {formattedPrice}
+                          </span>
+                          {showsAdjustedPrice && (
+                            <span className="block text-[10px] font-medium leading-tight text-gray-600 dark:text-gray-300">
+                              Base {formattedBasePrice}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className={`col-span-2 flex items-center justify-center ${isDisabled ? "opacity-60" : ""}`}>

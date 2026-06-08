@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt, getdate
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 
@@ -236,6 +236,8 @@ def get_items(
         enriched_items = []
         current_date = frappe.utils.today()
 
+        price_by_item = {}
+
         for item in items:
             item_code = item["name"]
             balance = stock_map.get(item_code, 0)
@@ -288,6 +290,7 @@ def get_items(
                     price = price * conversion_factor
             
             currency_symbol = frappe.db.get_value("Currency", currency, "symbol") if currency else currency
+            price_by_item[item_code] = price
 
             enriched_items.append(
                 {
@@ -316,6 +319,18 @@ def get_items(
                     "has_serial_no": item.has_serial_no,
                 }
             )
+
+        tax_info_map = _fetch_item_tax_info_map(
+            [item["id"] for item in enriched_items],
+            pos_doc,
+            current_date,
+            customer,
+            price_by_item,
+        )
+        for item in enriched_items:
+            tax_info = tax_info_map.get(item["id"], _empty_tax_info())
+            item["tax_info"] = tax_info
+            item["price_with_vat"] = _get_expected_display_price(item["price"], tax_info)
 
         return {
             "items": enriched_items,
@@ -361,6 +376,216 @@ def _fetch_item_prices_sql(item_code, price_list, current_date):
         return results
     except Exception:
         return []
+
+
+def _empty_tax_info():
+    return {
+        "has_vat": False,
+        "is_inclusive": False,
+        "total_tax_rate": 0,
+        "item_tax_template": "",
+        "source": "none",
+        "tax_templates": [],
+    }
+
+
+def _fetch_item_tax_info_map(item_codes, pos_doc, current_date, customer=None, price_by_item=None):
+    if not item_codes:
+        return {}
+
+    price_by_item = price_by_item or {}
+    tax_rate_precision_default = frappe.db.get_default("float_precision")
+    tax_rate_precision = cint(tax_rate_precision_default) if tax_rate_precision_default not in (None, "") else 3
+    force_inclusive = cint(getattr(pos_doc, "is_tax_included_in_basic_rate", 0) or 0) == 1
+    pos_tax_rows = _fetch_pos_sales_tax_rows(pos_doc)
+    default_tax_lines = [
+        {
+            "account": row["account_head"],
+            "rate": flt(row.get("rate") or 0, tax_rate_precision),
+            "is_inclusive": force_inclusive or bool(row.get("included_in_print_rate")),
+        }
+        for row in pos_tax_rows
+        if row.get("account_head") and flt(row.get("rate") or 0) > 0
+    ]
+
+    result = {
+        item_code: _build_tax_info(default_tax_lines, "", "sales_taxes_template")
+        for item_code in item_codes
+    }
+
+    item_tax_rows = _fetch_item_tax_rows(item_codes, current_date)
+    if not item_tax_rows:
+        return result
+
+    customer_tax_category = _get_customer_tax_category(customer)
+    selected_template_by_item = _select_item_tax_templates(
+        item_tax_rows,
+        customer_tax_category,
+        price_by_item,
+    )
+    template_names = sorted({
+        template
+        for template in selected_template_by_item.values()
+        if template
+    })
+    template_details = _fetch_item_tax_template_details(template_names)
+    included_map = {row["account"]: row["is_inclusive"] for row in default_tax_lines}
+
+    for item_code, template_name in selected_template_by_item.items():
+        detail_rows = template_details.get(template_name, [])
+        tax_lines = []
+        for row in detail_rows:
+            account = row.get("tax_type")
+            if not account or cint(row.get("not_applicable") or 0):
+                continue
+            rate = flt(row.get("tax_rate") or 0, tax_rate_precision)
+            if rate <= 0:
+                continue
+            tax_lines.append(
+                {
+                    "account": account,
+                    "rate": rate,
+                    "is_inclusive": force_inclusive or included_map.get(account, False),
+                }
+            )
+
+        result[item_code] = _build_tax_info(tax_lines, template_name, "item_tax_template")
+
+    return result
+
+
+def _build_tax_info(tax_lines, item_tax_template="", source="none"):
+    total_tax_rate = flt(sum(flt(row.get("rate") or 0) for row in tax_lines), 3)
+    exclusive_tax_rate = flt(
+        sum(flt(row.get("rate") or 0) for row in tax_lines if not row.get("is_inclusive")),
+        3,
+    )
+    inclusive_tax_rate = flt(total_tax_rate - exclusive_tax_rate, 3)
+    return {
+        "has_vat": total_tax_rate > 0,
+        "is_inclusive": any(bool(row.get("is_inclusive")) for row in tax_lines),
+        "total_tax_rate": total_tax_rate,
+        "exclusive_tax_rate": exclusive_tax_rate,
+        "inclusive_tax_rate": inclusive_tax_rate,
+        "item_tax_template": item_tax_template or "",
+        "source": source if total_tax_rate > 0 else "none",
+        "tax_templates": tax_lines,
+    }
+
+
+def _get_expected_display_price(price, tax_info):
+    exclusive_tax_rate = flt((tax_info or {}).get("exclusive_tax_rate") or 0)
+    if exclusive_tax_rate <= 0:
+        return flt(price)
+
+    return flt(price) * (1 + exclusive_tax_rate / 100)
+
+
+def _fetch_pos_sales_tax_rows(pos_doc):
+    taxes_and_charges = getattr(pos_doc, "taxes_and_charges", None)
+    if not taxes_and_charges:
+        return []
+
+    try:
+        return frappe.get_all(
+            "Sales Taxes and Charges",
+            filters={
+                "parent": taxes_and_charges,
+                "charge_type": "On Net Total",
+            },
+            fields=["account_head", "rate", "included_in_print_rate"],
+            order_by="idx asc",
+        )
+    except Exception:
+        return []
+
+
+def _fetch_item_tax_rows(item_codes, current_date):
+    try:
+        return frappe.get_all(
+            "Item Tax",
+            filters={
+                "parent": ["in", item_codes],
+                "parenttype": "Item",
+            },
+            fields=[
+                "parent",
+                "item_tax_template",
+                "tax_category",
+                "valid_from",
+                "minimum_net_rate",
+                "maximum_net_rate",
+            ],
+            order_by="idx asc",
+        )
+    except Exception:
+        return []
+
+
+def _get_customer_tax_category(customer):
+    if not customer:
+        return None
+
+    try:
+        return frappe.db.get_value("Customer", customer, "tax_category")
+    except Exception:
+        return None
+
+
+def _select_item_tax_templates(item_tax_rows, customer_tax_category=None, price_by_item=None):
+    price_by_item = price_by_item or {}
+    current_date = getdate(frappe.utils.today())
+    selected = {}
+
+    for row in item_tax_rows:
+        item_code = row.get("parent")
+        template = row.get("item_tax_template")
+        if not item_code or not template:
+            continue
+
+        tax_category = row.get("tax_category")
+        if tax_category and tax_category != customer_tax_category:
+            continue
+
+        valid_from = row.get("valid_from")
+        if valid_from and getdate(valid_from) > current_date:
+            continue
+
+        price = flt(price_by_item.get(item_code) or 0)
+        minimum_net_rate = flt(row.get("minimum_net_rate") or 0)
+        maximum_net_rate = flt(row.get("maximum_net_rate") or 0)
+        if minimum_net_rate and price and price < minimum_net_rate:
+            continue
+        if maximum_net_rate and price and price > maximum_net_rate:
+            continue
+
+        current_rank = selected.get(item_code, {}).get("rank", -1)
+        rank = 1 if tax_category and tax_category == customer_tax_category else 0
+        if rank >= current_rank:
+            selected[item_code] = {"template": template, "rank": rank}
+
+    return {item_code: data["template"] for item_code, data in selected.items()}
+
+
+def _fetch_item_tax_template_details(template_names):
+    if not template_names:
+        return {}
+
+    details = {}
+    try:
+        rows = frappe.get_all(
+            "Item Tax Template Detail",
+            filters={"parent": ["in", template_names]},
+            fields=["parent", "tax_type", "tax_rate", "not_applicable"],
+            order_by="idx asc",
+        )
+    except Exception:
+        return details
+
+    for row in rows:
+        details.setdefault(row.get("parent"), []).append(row)
+
+    return details
 
    
 def _get_conversion_factor_sql(item_code, uom):

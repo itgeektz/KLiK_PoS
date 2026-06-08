@@ -55,6 +55,21 @@ export interface PriceListRate {
   rate: number
 }
 
+export interface ItemTaxInfo {
+  has_vat: boolean
+  is_inclusive: boolean
+  total_tax_rate: number
+  exclusive_tax_rate?: number
+  inclusive_tax_rate?: number
+  item_tax_template?: string
+  source?: string
+  tax_templates?: Array<{
+    account: string
+    rate: number
+    is_inclusive: boolean
+  }>
+}
+
 export interface BundleComponent {
   item_code: string
   item_name: string
@@ -84,6 +99,7 @@ export interface MenuItem {
   name: string
   category: string
   price: number
+  price_with_vat?: number
   originalPrice?: number
   image: string
   available: number
@@ -93,6 +109,7 @@ export interface MenuItem {
   description?: string
   uom?: string
   currency_symbol?: string
+  tax_info?: ItemTaxInfo
   barcode?: string
   cost_price?: number
   price_lists?: PriceListRate[]

@@ -1,30 +1,31 @@
 <div align="center" markdown="1">
 
 <!-- <img src=".github/klik-logo.svg" alt="KLiK PoS logo" width="80"/> -->
-<h1>KLiK PoS - cec</h1>
+<h1>KLiK PoS</h1>
 
 [![CI](https://github.com/Beveren-Software-Inc/KLiK_PoS/actions/workflows/ci.yaml/badge.svg?branch=develop)](https://github.com/Beveren-Software-Inc/KLiK_PoS/actions/workflows/ci.yaml) <br>
 
-
 **Modern Point of Sale for Retail Businesses**
-
 
 </div>
 
 <div align="center">
-	<img src="./docs/screenshots/PoS_Hero_Image.png" alt="Hero Image" width="100%" />
+	<img src="./docs/screenshots/PoS_Hero_Image.png" alt="KLiK PoS interface" width="100%" />
 </div>
 <br />
 <div align="center">
 	<a href="https://beverensoftware.com/">Website</a>
 	-
-	<a href="https://github.com/Beveren-Software-Inc/klik_pos">Documentation</a>
+	<a href="#documentation">Documentation</a>
 </div>
 
 ---
 
 ## KLiK PoS
-KLiK PoS is a 100% open-source Point of Sale for ERPNext - simple, modern, responsive, and feature-rich system designed for retail businesses.
+
+KLiK PoS is an open-source Point of Sale application for ERPNext and the Frappe Framework. It provides a responsive POS interface at `/klik_pos` while keeping ERPNext as the system of record for customers, items, stock, taxes, invoices, payments, and accounting.
+
+It is simple, modern, responsive and feature-rich
 
 ---
 
@@ -35,7 +36,7 @@ KLiK PoS was built to close this gap—offering a simple, modern, compliant, and
 
 ---
 
-### Key Features
+## Key Features
 
 - **ZATCA Compliance**: Built-in ZATCA compliance by default for Saudi Arabian tax regulations
 - **Flexible Sales Modes**: Supports B2C, B2B, or hybrid modes to suit different business needs
@@ -44,153 +45,101 @@ KLiK PoS was built to close this gap—offering a simple, modern, compliant, and
 - **Multi-Invoice Credit Notes**: Create credit notes for single or multiple invoices effortlessly
 - **Customer Management**: Create or edit individual or business customers directly from PoS
 - **Payment Processing**: Support for multiple payment methods with seamless round-off (write-off) handling
-
-After installing KLiK PoS, a few extra configurations are required inside **POS Profile** and **KLiK PoS Settings** to unlock the full functionality.
-
-### POS Profile Settings
-
-Navigate to **POS Profile** in ERPNext and configure the following fields:
-<img width="1137" height="907" alt="image" src="https://github.com/user-attachments/assets/ce6446da-8646-4109-b1d9-bf065cbe4f4d" />
-
--   **Business Type**
-    Defines the type of customer allowed in the POS:
-
-    -   **B2C** → For walk-in individual customers. Payment is required immediately at checkout.
-
-    -   **B2B** → For company customers. Sales can be completed on credit (Can make instant payment, partial payment or pay later).
-
-    -   **B2C & B2B** → Both types allowed.
-        This directly controls how customers are fetched (Individual vs. Company) and whether credit sales are permitted.
-
--   **POS Print Format**
-    Select the print format to use when an invoice is submitted.
-
-    -   Default: Thermal printer–friendly format.
-
-    -   Custom formats: You may create your own print formats and select them here.
-
--   **Email Template**
-    Used when sending invoices via email.
-
-    -   If blank, a default template is used.
-
-    -   Recommended: Define your own email template for a consistent branding experience.
-
--   **WhatsApp Template**
- <img width="1271" height="731" alt="Screenshot 2025-09-28 at 10 32 30" src="https://github.com/user-attachments/assets/619d9b53-e467-4c5e-bfb4-fa69cd32837e" />
-
-    Used when sharing invoices via WhatsApp.
-
-    -   Templates must be registered and approved in the **WhatsApp Template** doctype.
-
-    -   If left blank, a fallback default will be used.
-
--   **Default View**
-Defines how items are displayed on the POS screen:
-        <img width="2922" height="1660" alt="image (1)" src="https://github.com/user-attachments/assets/00f7fb5b-7a63-4060-892f-d20d02b04462" />
-
-    -   **List View** → Compact list-style layout.
-
-    -   **Grid View** → Grid-style product cards (recommended for retail).
-
--   **Hide Expected Amount**
-    Controls cashier visibility at POS closing shift:
-
-    -   Enabled → Cashiers do not see the day’s expected sales amount; they must enter their counted cash manually.
-
-    -   Disabled → Cashiers see the expected amount before submitting closing entry.
-        _Admins and System Managers always have full visibility regardless of this setting._
-
--   **Enable WhatsApp / Enable SMS**
-
-    -   Enable these only if WhatsApp or SMS gateways are properly configured.
-
-    -   If not configured, leave unchecked to avoid errors during invoice sharing.
-
--   **Use Scanner Fully**
-
-    -   When enabled, items can only be added via barcode scanner.
-
-    -   Disables manual click-based item selection.
-
-    -   If the scanner fails, users can still click the scanner icon in the search bar to enter a barcode manually.
-<img width="2904" height="1646" alt="image (3)" src="https://github.com/user-attachments/assets/aba76c01-1cdc-48fd-9c5e-814fdfd51e36" />
+- **Salesperson PINs:** Multiple salespeople can share one register or login while still attributing each sale to the correct Sales Person.
+- **Returns:** Full, partial, and multi-invoice returns using ERPNext return Sales Invoices.
+- **Stock-aware selling:** Warehouse stock, product bundles, item variants, batch/serial handling, and queued-invoice stock reservation.
+- **Integrations and extensions:** Delivery charges, loyalty points, WhatsApp/SMS/email sharing, optional M-Pesa integration, and ZATCA field awareness when a compatible ZATCA app is installed.
 
 ---
-### ZATCA Compliance
-KLiK PoS is fully compliant with ZATCA regulations for B2B and B2C invoices, as well as credit notes. The system has been validated and tested with the [Beveren ZATCA Integration App](https://github.com/Beveren-Software-Inc/zatca_integration).
 
-Saudi retailers can install both applications together to achieve ZATCA Phase 2 compliance effortlessly. KLiK PoS has been successfully adopted by numerous retail businesses, including some of the largest Dates Distributor companies in the Kingdom.
+## Key Sections
 
-<div align="center">
-	<img src="./docs/screenshots/ZATCA_Compliance.png" alt="Hero Image" width="100%" />
-</div>
+The detailed consultant and implementation documentation is in `docs/`:
+
+- [Installation and Prerequisites](docs/installation.md)
+- [Configuration](docs/configuration.md)
+- [Opening and Closing](docs/opening-and-closing.md)
+- [Selling](docs/selling.md)
+- [Returns](docs/returns.md)
+- [Payments and Reconciliation](docs/payments-and-reconciliation.md)
+- [Additional Features](docs/additional-features.md)
+- [Roles and Permissions](docs/roles-and-permissions.md)
+- [Troubleshooting](docs/troubleshooting.md)
+
+<details open>
+
+<summary>More</summary>
+
 <br />
 
----
-### Under the Hood
+<div align="center">
+	<img src="./docs/screenshots/ZATCA_Compliance.png" alt="ZATCA compliance" width="92%" />
+	<br /><br />
+	<img src="./docs/screenshots/klik_pos_settings.png" alt="Klik POS settings" width="92%" />
+	<br /><br />
+	<img src="./docs/screenshots/pos_opening_modal.png" alt="POS opening modal" width="92%" />
+	<br /><br />
+	<img src="./docs/screenshots/payment_dialog.png" alt="Payment dialog" width="92%" />
+	<br /><br />
+	<img src="./docs/screenshots/return_dialog.png" alt="Return dialog" width="92%" />
+</div>
 
-- [**React 19**](https://react.dev/) + [**TypeScript**](https://www.typescriptlang.org/)
-- [**Vite**](https://vitejs.dev/) for lightning-fast builds
-- [**Tailwind CSS**](https://tailwindcss.com/) for styling
-- [**Zustand**](https://zustand-demo.pmnd.rs/) for state management
-- [**ERPNext API**](https://frappeframework.com/) integration
+</details>
 
 ---
 
 ## Production Setup
 
-### Managed Hosting
-Try KLiK PoS on [Frappe Cloud](https://frappecloud.com) for a hassle-free, secure, and scalable deployment.
-
 ### Self Hosting
 
-**Step 1:** Install the app using bench
+Install the app using Bench:
 
 ```bash
 cd $PATH_TO_YOUR_BENCH
-bench get-app https://github.com/beverensoftware/klik_pos --branch develop
-bench install-app klik_pos
+bench get-app https://github.com/navariltd/klik_pos
+bench --site <site-name> install-app klik_pos
+bench --site <site-name> migrate
+bench restart
 ```
 
-**Step 2:** Start your bench
+Access the POS at:
 
-```bash
-bench start
+```text
+http(s)://your-site/klik_pos
 ```
 
-**Step 3:** Access the POS at `http://your-site:8000/klik_pos`
+After installation, configure the ERPNext POS Profile, payment methods, accounts, warehouse, customers, items, taxes, and users before using the POS. See [Installation and Prerequisites](docs/installation.md) and [Configuration](docs/configuration.md).
+
+### Managed Hosting
+
+KLiK PoS can be hosted on a managed Frappe environment such as Frappe Cloud, subject to app compatibility and dependency requirements.
 
 ---
 
 ## Development Setup
 
-### Backend (Frappe App)
+### Backend
 
 1. [Install Frappe/ERPNext](https://frappeframework.com/docs/v15/user/en/installation)
-2. Install KLiK PoS as above
-3. Run `bench start`
+2. Install this app on a site.
+3. Run migrations and start Bench.
 
-### Frontend (SPA)
+### Frontend
 
-1. Clone the SPA repo:
-    ```bash
-    git clone https://github.com/beverensoftware/klik_spa.git
-    cd klik_spa
-    ```
-2. Install dependencies:
-    ```bash
-    npm install
-    # or
-    yarn install
-    ```
-3. Start the dev server:
-    ```bash
-    npm run dev
-    # or
-    yarn dev
-    ```
-4. Open [http://localhost:5173](http://localhost:5173) in your browser.
+The SPA source is included in `klik_spa`.
+
+```bash
+cd apps/klik_pos
+yarn install
+yarn dev
+```
+
+For production assets:
+
+```bash
+yarn build
+bench build --app klik_pos
+```
 
 ---
 
@@ -220,6 +169,6 @@ For support and questions, please contact the development team at [info@beverens
 
 <div align="center">
 	<a href="https://beverensoftware.com" target="_blank">
-		<img src="./docs/screenshots/beveren-logo.png"" alt="Beveren Software" height="28"/>
+		<img src="./docs/screenshots/beveren-logo.png" alt="Beveren Software" height="28"/>
 	</a>
 </div>

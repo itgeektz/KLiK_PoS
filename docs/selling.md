@@ -2,6 +2,8 @@
 
 Klik POS creates ERPNext Sales Invoices from the POS cart.
 
+https://github.com/user-attachments/assets/016c1517-41fd-475e-802d-962add4a2230
+
 ## Standard Sale Lifecycle
 
 ```text

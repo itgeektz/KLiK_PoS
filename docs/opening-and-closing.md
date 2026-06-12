@@ -114,3 +114,7 @@ Recommended steps:
 If `Clear Draft Invoices on Closing Shift` is enabled on the POS Profile, Klik POS deletes draft Sales Invoices linked to the opening entry after the POS Closing Entry is submitted. It also cancels related stock reservations.
 
 If the setting is disabled, Draft invoices remain in ERPNext and can be reviewed later.
+
+---
+
+Previous: [Configuration](configuration.md) | Next: [Selling](selling.md)

@@ -169,3 +169,7 @@ Use this when the business wants one cashier station but salesperson-level sales
 | Workers | Confirm long queue workers are running |
 | Stock Reservation | Review ERPNext Stock Reservation setting |
 | Monitoring | Review Draft Sales Invoices with queue status `Queued`, `Processing`, or `Failed` |
+
+---
+
+Previous: [Installation](installation.md) | Next: [Opening and Closing](opening-and-closing.md)

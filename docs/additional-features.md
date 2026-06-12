@@ -125,3 +125,7 @@ Klik POS frontend calls API methods from an external app named `frappe_mpsa_paym
 | STK push fails | External app or credentials are missing. | Verify `frappe_mpsa_payments` setup and API logs. |
 | Payment confirmed but invoice unpaid | Request was not linked or invoice submission failed. | Inspect M-Pesa Express Request and Sales Invoice queue status. |
 | Callback delayed | External provider/app delay. | Refresh STK status and reconcile register payment once it appears. |
+
+---
+
+Previous: [Payments and Reconciliation](payments-and-reconciliation.md) | Next: [Roles and Permissions](roles-and-permissions.md)

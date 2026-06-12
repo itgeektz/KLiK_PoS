@@ -96,3 +96,7 @@ At minimum:
 - Close the shift and verify a POS Closing Entry is created.
 - If using M-Pesa, install and configure the external [M-Pesa](https://github.com/navariltd/frappe-mpsa-payments.git) app and test STK/C2B flows.
 - If using WhatsApp, configure WhatsApp Setup and templates.
+
+---
+
+Previous: [README](../README.md) | Next: [Configuration](configuration.md)

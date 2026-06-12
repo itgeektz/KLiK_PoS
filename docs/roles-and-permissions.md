@@ -65,3 +65,7 @@ Recommended control split:
 | Access to a POS Profile | POS Profile Applicable Users and User Permissions |
 | Sales attribution | Sales Person PIN and Sales Team row |
 | Commission or salesperson reporting | ERPNext Sales Person and Sales Team data |
+
+---
+
+Previous: [Additional Features](additional-features.md) | Next: [Troubleshooting](troubleshooting.md)

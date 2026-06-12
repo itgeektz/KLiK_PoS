@@ -47,3 +47,7 @@ If a cashier closing amount differs from expected:
 6. Document the variance through the organization’s finance process.
 
 > **Warning:** Do not mark invoices as paid without a submitted payment document or valid payment row. Do not manually edit General Ledger entries.
+
+---
+
+Previous: [Returns](returns.md) | Next: [Additional Features](additional-features.md)

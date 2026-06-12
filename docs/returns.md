@@ -76,3 +76,7 @@ Because Klik POS submits ERPNext return Sales Invoices:
 | Only submitted invoices can be returned | Original invoice is Draft or cancelled. | Submit or select a valid submitted invoice. |
 | This invoice is already a return | User selected a return invoice as the original. | Select the original non-return Sales Invoice. |
 | No returnable quantity | All quantities have already been returned. | Review existing return invoices linked to the original invoice. |
+
+---
+
+Previous: [Selling](selling.md) | Next: [Payments and Reconciliation](payments-and-reconciliation.md)

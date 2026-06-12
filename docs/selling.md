@@ -157,3 +157,7 @@ Invoice sharing features include:
 - Email template lookup and sending.
 - WhatsApp sending from the Sales Invoice form and POS sharing UI.
 - SMS controls where SMS gateway setup exists.
+
+---
+
+Previous: [Opening and Closing](opening-and-closing.md) | Next: [Returns](returns.md)

@@ -68,4 +68,4 @@ Recommended control split:
 
 ---
 
-Previous: [Additional Features](additional-features.md) | Next: [Troubleshooting](troubleshooting.md)
+Previous: [Additional Features](additional-features.md)

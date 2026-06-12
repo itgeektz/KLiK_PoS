@@ -2,6 +2,8 @@
 
 Klik POS uses standard ERPNext accounting documents and adds session links for easier reconciliation.
 
+https://github.com/user-attachments/assets/8382b53a-c477-4768-962a-e0b27474656a
+
 ## Customer Payment Collection in Klik POS
 
 Klik POS provides a customer Payment Entry flow.

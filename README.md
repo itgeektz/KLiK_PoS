@@ -82,6 +82,8 @@ The detailed consultant and implementation documentation is in `docs/`:
 	<img src="./docs/screenshots/payment_dialog.png" alt="Payment dialog" width="92%" />
 	<br /><br />
 	<img src="./docs/screenshots/return_dialog.png" alt="Return dialog" width="92%" />
+	<br /><br />
+	<img src="./docs/screenshots/pos_closing_dialog.png" alt="POS closing modal" width="92%" />
 </div>
 
 </details>

@@ -2492,6 +2492,11 @@ def _create_stock_reconciliation(item_code, warehouse, qty, valuation_rate, comp
 	})
 	if batch_no:
 		row.batch_no = batch_no
+		# Required for v15+/v16 -- without this, Stock Reconciliation.set_current_serial_and_batch_bundle
+		# throws "Please add Serial and Batch Bundle for Item X" because it only accepts a plain batch_no
+		# when use_serial_batch_fields is explicitly set (the alternative is building a full Serial and
+		# Batch Bundle document first, which is unnecessary for this simple top-up).
+		row.use_serial_batch_fields = 1
 	recon.insert(ignore_permissions=True)
 	recon.submit()
 	return recon.name

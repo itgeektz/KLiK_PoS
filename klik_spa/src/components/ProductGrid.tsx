@@ -91,7 +91,8 @@ export default function ProductGrid({
   }, [addConcreteItemToCart]);
 
   const handleAddToCart = useCallback(async (item: MenuItem) => {
-    if (item.is_stock_item !== false && item.available <= 0) return;
+    if (item.is_stock_item !== false && item.available <= 0 &&
+      !usePOSProfileStore.getState().posDetails?.custom_allow_out_of_stock_sale) return;
     if (scannerOnly) return;
 
     if (requiresSalespersonPin) {

@@ -1951,6 +1951,7 @@ def build_sales_invoice_doc(
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
 	_validate_no_variant_templates(items)
+	_auto_provision_stock_for_items(items, pos_profile)
 	_validate_and_autofetch_batch_and_serial(items, pos_profile)
 	_validate_product_bundle_components(items, pos_profile)
 
@@ -2429,6 +2430,172 @@ def _validate_product_bundle_components(items, pos_profile):
 						pos_profile.warehouse,
 					)
 				)
+
+def _generate_provisional_batch_id(item_code):
+	"""Deterministic batch id for auto-provisioned stock: first 5 alnum chars of the
+	item code (uppercased) + today's date as DDMMYY, e.g. item 'COKE-500ML' -> 'COKE5280826'.
+	Reusing the same id for repeat out-of-stock sales of the same item on the same day
+	is intentional -- see _ensure_stock_for_item, which tops up an existing batch rather
+	than erroring on a duplicate name.
+	"""
+	import re
+	from frappe.utils import nowdate, get_datetime
+
+	prefix = re.sub(r"[^A-Za-z0-9]", "", item_code or "")[:5].upper() or "ITEM"
+	date_part = get_datetime(nowdate()).strftime("%d%m%y")
+	return f"{prefix}{date_part}"
+
+
+def _get_provisioning_rate(item_code):
+	"""Valuation rate to record auto-provisioned stock at: most recent submitted
+	Purchase Invoice rate, else most recent submitted Purchase Receipt rate,
+	else the Item's own valuation_rate, else 0.
+	"""
+	rate = frappe.db.sql(
+		"""select rate from `tabPurchase Invoice Item`
+		   where item_code=%s and docstatus=1
+		   order by creation desc limit 1""",
+		item_code,
+	)
+	if rate and flt(rate[0][0]):
+		return flt(rate[0][0])
+
+	rate = frappe.db.sql(
+		"""select rate from `tabPurchase Receipt Item`
+		   where item_code=%s and docstatus=1
+		   order by creation desc limit 1""",
+		item_code,
+	)
+	if rate and flt(rate[0][0]):
+		return flt(rate[0][0])
+
+	return flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
+
+
+def _create_stock_reconciliation(item_code, warehouse, qty, valuation_rate, company, batch_no=None):
+	"""Create and submit a Stock Reconciliation setting absolute qty for item_code in
+	warehouse (optionally scoped to batch_no) to `qty`. Returns the document name.
+	"""
+	from frappe.utils import nowdate, nowtime
+
+	recon = frappe.new_doc("Stock Reconciliation")
+	recon.company = company
+	recon.purpose = "Stock Reconciliation"
+	recon.posting_date = nowdate()
+	recon.posting_time = nowtime()
+	recon.set_posting_time = 1
+	row = recon.append("items", {
+		"item_code": item_code,
+		"warehouse": warehouse,
+		"qty": qty,
+		"valuation_rate": valuation_rate,
+	})
+	if batch_no:
+		row.batch_no = batch_no
+	recon.insert(ignore_permissions=True)
+	recon.submit()
+	return recon.name
+
+
+def _ensure_stock_for_item(item_code, has_batch_no, required_qty, warehouse, company):
+	"""If real available stock (actual - reserved) for item_code/warehouse is below
+	required_qty, top it up via a Stock Reconciliation for exactly the shortfall.
+	For batch-tracked items, auto-creates/reuses a provisional Batch (see
+	_generate_provisional_batch_id) expiring 3 months from today, and tops that
+	specific batch up -- returning its batch id so the caller can stamp it onto the
+	cart line. For non-batch items, tops up the plain item/warehouse qty and returns None.
+	Returns None if no provisioning was needed.
+	"""
+	from erpnext.stock.doctype.batch.batch import get_batch_qty
+	from frappe.utils import add_months, nowdate
+
+	actual_qty = flt(
+		frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty") or 0
+	)
+	reserved_qty = get_reserved_qty_for_item_warehouse(item_code, warehouse)
+	available_qty = flt(actual_qty - reserved_qty)
+	shortfall = flt(required_qty) - available_qty
+	if shortfall <= 1e-6:
+		return None
+
+	valuation_rate = _get_provisioning_rate(item_code)
+
+	if has_batch_no:
+		batch_no = _generate_provisional_batch_id(item_code)
+		if not frappe.db.exists("Batch", batch_no):
+			batch_doc = frappe.new_doc("Batch")
+			batch_doc.batch_id = batch_no
+			batch_doc.item = item_code
+			batch_doc.expiry_date = add_months(nowdate(), 3)
+			batch_doc.insert(ignore_permissions=True)
+		existing_batch_qty = flt(get_batch_qty(batch_no=batch_no, warehouse=warehouse) or 0)
+		new_qty = existing_batch_qty + shortfall
+		_create_stock_reconciliation(item_code, warehouse, new_qty, valuation_rate, company, batch_no=batch_no)
+		return batch_no
+
+	new_qty = actual_qty + shortfall
+	_create_stock_reconciliation(item_code, warehouse, new_qty, valuation_rate, company)
+	return None
+
+
+def _auto_provision_stock_for_items(items, pos_profile):
+	"""If POS Profile.custom_allow_out_of_stock_sale (or, if Customize Form saved it
+	without the custom_ prefix, allow_out_of_stock_sale) is enabled, top up real stock
+	for any item on this sale whose available quantity is less than what's being sold,
+	via a submitted Stock Reconciliation -- BEFORE the existing stock/batch validations
+	run, so they pass naturally with no changes to them. Serial-tracked items are left
+	untouched (out of scope; they keep requiring a real serial). Mutates `items` in
+	place, stamping `batchNumber` onto any line whose item got a provisioned batch and
+	doesn't already have an explicit batch/serial selection.
+	"""
+	if not items:
+		return
+	allow_out_of_stock_sale = cint(
+		getattr(pos_profile, "custom_allow_out_of_stock_sale", 0)
+		or getattr(pos_profile, "allow_out_of_stock_sale", 0)
+		or 0
+	)
+	if not allow_out_of_stock_sale:
+		return
+
+	warehouse = getattr(pos_profile, "warehouse", None)
+	if not warehouse:
+		return
+	company = getattr(pos_profile, "company", None)
+
+	item_codes = [item.get("id") for item in items if item.get("id")]
+	if not item_codes:
+		return
+
+	item_data_map = _batch_fetch_item_data(item_codes)
+
+	required_by_item = {}
+	for item in items:
+		item_code = item.get("id")
+		if not item_code:
+			continue
+		item_db_data = item_data_map.get(item_code, {}) or {}
+		if not int(item_db_data.get("is_stock_item") or 0):
+			continue
+		if int(item_db_data.get("has_serial_no") or 0):
+			continue
+		required_by_item[item_code] = flt(required_by_item.get(item_code, 0)) + flt(item.get("quantity") or 0)
+
+	provisioned_batches = {}
+	for item_code, required_qty in required_by_item.items():
+		if required_qty <= 0:
+			continue
+		has_batch_no = int((item_data_map.get(item_code) or {}).get("has_batch_no") or 0)
+		batch_no = _ensure_stock_for_item(item_code, has_batch_no, required_qty, warehouse, company)
+		if batch_no:
+			provisioned_batches[item_code] = batch_no
+
+	if provisioned_batches:
+		for item in items:
+			item_code = item.get("id")
+			if item_code in provisioned_batches and not (item.get("batchNumber") or item.get("batch_no")):
+				item["batchNumber"] = provisioned_batches[item_code]
+
 
 def _autofetch_batch_fifo(item_code, warehouse, qty):
 	from erpnext.stock.doctype.batch.batch import get_batch_qty

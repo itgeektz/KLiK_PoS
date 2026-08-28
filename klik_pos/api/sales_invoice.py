@@ -1061,6 +1061,7 @@ def validate_checkout_invoice(data):
 			tax_id,
 			enable_background_submission,
 			loyalty_redemption,
+			bill_discount,
 		) = parse_invoice_data(data)
 
 		preview_doc = build_sales_invoice_doc(
@@ -1081,6 +1082,7 @@ def validate_checkout_invoice(data):
 			create_batch_and_serial_bundle=False,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			bill_discount=bill_discount,
 		)
 
 		validate_required_salesperson(preview_doc)
@@ -1289,6 +1291,7 @@ def queue_sales_invoice(data):
 			tax_id,
 			enable_background_submission,
 			loyalty_redemption,
+			bill_discount,
 		) = parse_invoice_data(data)
 
 		if not customer:
@@ -1314,6 +1317,7 @@ def queue_sales_invoice(data):
 			tax_id=tax_id,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
+			bill_discount=bill_discount,
 		)
 
 		validate_required_salesperson(doc)
@@ -1565,6 +1569,7 @@ def create_draft_invoice(data):
 			tax_id,
 			enable_background_submission,
 			loyalty_redemption,
+			bill_discount,
 		) = parse_invoice_data(data)
 
 		if target_draft_invoice_id:
@@ -1594,6 +1599,7 @@ def create_draft_invoice(data):
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				bill_discount=bill_discount,
 			)
 		else:
 			doc = build_sales_invoice_doc(
@@ -1614,6 +1620,7 @@ def create_draft_invoice(data):
 				tax_id=tax_id,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				bill_discount=bill_discount,
 			)
 
 			validate_required_salesperson(doc)
@@ -1858,6 +1865,18 @@ def parse_invoice_data(data):
 	salesperson = data.get("salesperson")
 	tax_id = data.get("tax_id")
 
+	# Whole-invoice ("bill-level") discount, distinct from per-item discounts above.
+	# Percentage takes priority over a flat amount when both are sent; validated and
+	# permission-checked later in _set_bill_discount_fields, once pos_profile is in scope.
+	bill_discount = {
+		"additional_discount_percentage": flt(
+			data.get("billDiscountPercentage") or data.get("bill_discount_percentage") or 0
+		),
+		"discount_amount": flt(
+			data.get("billDiscountAmount") or data.get("bill_discount_amount") or 0
+		),
+	}
+
 	if not customer or not items:
 		frappe.throw(_("Customer and items are required"))
 
@@ -1878,6 +1897,7 @@ def parse_invoice_data(data):
 		tax_id,
 		enable_background_submission,
 		loyalty_redemption,
+		bill_discount,
 	)
 
 
@@ -1900,6 +1920,7 @@ def build_sales_invoice_doc(
 	create_batch_and_serial_bundle=True,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	bill_discount=None,
 ):
 	"""Main function to build a sales invoice document."""
 	doc = frappe.new_doc("Sales Invoice")
@@ -1945,6 +1966,10 @@ def build_sales_invoice_doc(
 	# Set taxes and charges
 	_set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile)
 	force_inclusive_tax = _is_pos_profile_tax_included_in_basic_rate(pos_profile)
+
+	# Whole-invoice discount (e.g. "give full discount for the bill"), separate from
+	# the per-item discounts handled inside _populate_invoice_items below.
+	_set_bill_discount_fields(doc, bill_discount, pos_profile)
 
 	# Add items to invoice
 	_populate_invoice_items(doc, items, pos_profile)
@@ -1996,6 +2021,7 @@ def _update_existing_draft_invoice(
 	tax_id=None,
 	enable_background_submission=False,
 	loyalty_redemption=None,
+	bill_discount=None,
 ):
 	rebuilt_doc = build_sales_invoice_doc(
 		customer,
@@ -2016,6 +2042,7 @@ def _update_existing_draft_invoice(
 		create_batch_and_serial_bundle=False,
 		enable_background_submission=enable_background_submission,
 		loyalty_redemption=loyalty_redemption,
+		bill_discount=bill_discount,
 	)
 
 	invoice_doc.customer = rebuilt_doc.customer
@@ -2040,6 +2067,9 @@ def _update_existing_draft_invoice(
 	invoice_doc.loyalty_redemption_account = rebuilt_doc.loyalty_redemption_account
 	invoice_doc.loyalty_redemption_cost_center = rebuilt_doc.loyalty_redemption_cost_center
 	invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+	invoice_doc.additional_discount_percentage = rebuilt_doc.additional_discount_percentage
+	invoice_doc.discount_amount = rebuilt_doc.discount_amount
+	invoice_doc.apply_discount_on = rebuilt_doc.apply_discount_on
 	invoice_doc.set("items", [])
 	for item_row in rebuilt_doc.get("items", []):
 		invoice_doc.append("items", item_row.as_dict())
@@ -2521,6 +2551,47 @@ def _set_taxes_and_charges(doc, sales_and_tax_charges, pos_profile):
 		doc.taxes_and_charges = sales_and_tax_charges
 	else:
 		doc.taxes_and_charges = pos_profile.taxes_and_charges
+
+
+def _set_bill_discount_fields(doc, bill_discount, pos_profile):
+	"""Apply a whole-invoice ("bill-level") discount, distinct from per-item discounts.
+
+	`bill_discount` is a dict shaped like:
+	    {"additional_discount_percentage": <float>, "discount_amount": <float>}
+	Percentage takes priority over a flat amount when both are sent (mirrors how the
+	standard ERPNext desk Sales Invoice/POS form treats the two fields). Setting these
+	on the doc before calculate_taxes_and_totals() is enough - core ERPNext already
+	knows how to fold Additional Discount into the grand total via apply_discount_on.
+	"""
+	if not bill_discount:
+		return
+
+	percentage = flt(bill_discount.get("additional_discount_percentage") or 0)
+	amount = flt(bill_discount.get("discount_amount") or 0)
+
+	if not percentage and not amount:
+		return
+
+	if not cint(getattr(pos_profile, "allow_discount_change", 0) or 0):
+		frappe.throw(
+			_(
+				"You are not allowed to apply a bill discount. Enable 'Allow User to Edit "
+				"Discount' on POS Profile {0} first."
+			).format(pos_profile.name)
+		)
+
+	if percentage:
+		if percentage < 0 or percentage > 100:
+			frappe.throw(_("Bill discount percentage must be between 0 and 100."))
+		doc.additional_discount_percentage = percentage
+		doc.discount_amount = 0
+	elif amount:
+		if amount < 0:
+			frappe.throw(_("Bill discount amount cannot be negative."))
+		doc.additional_discount_percentage = 0
+		doc.discount_amount = amount
+
+	doc.apply_discount_on = getattr(pos_profile, "apply_discount_on", None) or "Grand Total"
 
 
 def _upsert_delivery_charge_service_item(doc, pos_profile, delivery_charge):
@@ -3886,6 +3957,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				tax_id,
 				enable_background_submission,
 				loyalty_redemption,
+				bill_discount,
 			) = parse_invoice_data(data)
 
 			rebuilt_doc = build_sales_invoice_doc(
@@ -3907,6 +3979,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				create_batch_and_serial_bundle=False,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
+				bill_discount=bill_discount,
 			)
 
 			invoice_doc.customer = rebuilt_doc.customer
@@ -3931,6 +4004,9 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.loyalty_redemption_account = rebuilt_doc.loyalty_redemption_account
 			invoice_doc.loyalty_redemption_cost_center = rebuilt_doc.loyalty_redemption_cost_center
 			invoice_doc.taxes_and_charges = rebuilt_doc.taxes_and_charges
+			invoice_doc.additional_discount_percentage = rebuilt_doc.additional_discount_percentage
+			invoice_doc.discount_amount = rebuilt_doc.discount_amount
+			invoice_doc.apply_discount_on = rebuilt_doc.apply_discount_on
 			invoice_doc.set("items", [])
 			for item_row in rebuilt_doc.get("items", []):
 				invoice_doc.append("items", item_row.as_dict())

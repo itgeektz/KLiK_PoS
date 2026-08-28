@@ -47,6 +47,10 @@ const hasFiniteAvailableStock = (item: { available?: number; is_stock_item?: boo
   return typeof item.available === 'number' && Number.isFinite(item.available);
 };
 
+const isOutOfStockSaleAllowed = (): boolean => {
+  return !!usePOSProfileStore.getState().posDetails?.custom_allow_out_of_stock_sale;
+};
+
 const fetchItemTaxDetails = async (
   itemCode: string,
   customerId?: string,
@@ -229,13 +233,13 @@ export const useCartStore = create<CartState>()(
           .filter((cartItem) => (cartItem.item_code || cartItem.id) === incomingCode)
           .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
 
-        if (hasFiniteAvailableStock(item) && item.available <= 0) {
+        if (hasFiniteAvailableStock(item) && item.available <= 0 && !isOutOfStockSaleAllowed()) {
           toast.error(`${item.name} is out of stock`);
           return;
         }
 
         if (existingItem) {
-          if (hasFiniteAvailableStock(item) && totalMatchingQty >= item.available) {
+          if (hasFiniteAvailableStock(item) && totalMatchingQty >= item.available && !isOutOfStockSaleAllowed()) {
             toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
             return;
           }
@@ -300,13 +304,13 @@ export const useCartStore = create<CartState>()(
           .filter((cartItem) => (cartItem.item_code || cartItem.id) === incomingCode)
           .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
 
-        if (hasFiniteAvailableStock(item) && item.available < quantity) {
+        if (hasFiniteAvailableStock(item) && item.available < quantity && !isOutOfStockSaleAllowed()) {
           toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
           return;
         }
 
         if (existingItem) {
-          if (hasFiniteAvailableStock(item) && (totalMatchingQty + quantity) > item.available) {
+          if (hasFiniteAvailableStock(item) && (totalMatchingQty + quantity) > item.available && !isOutOfStockSaleAllowed()) {
             toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
             return;
           }
@@ -371,7 +375,7 @@ export const useCartStore = create<CartState>()(
         }
 
         const item = state.cartItems.find((cartItem) => cartItem.id === id);
-        if (item && hasFiniteAvailableStock(item) && quantity > item.available) {
+        if (item && hasFiniteAvailableStock(item) && quantity > item.available && !isOutOfStockSaleAllowed()) {
           toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
           return;
         }

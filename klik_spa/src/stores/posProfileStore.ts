@@ -35,6 +35,7 @@ export interface POSProfile {
   custom_delivery_charge_account?: string;
   custom_prevent_invoice_reprinting?: boolean | number;
   custom_allow_return?: boolean | number | string;
+  custom_allow_out_of_stock_sale?: boolean | number;
   custom_allow_to_create_and_edit_customers?: number;
   custom_default_view?: "Grid View" | "List View";
   custom_cart_item_insertion_position?: "Top" | "Bottom";

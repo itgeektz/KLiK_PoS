@@ -1,6 +1,7 @@
 "use client"
 
 import type { MenuItem } from "../../types"
+import { usePOSProfileStore } from "../stores/posProfileStore"
 
 interface MenuItemCardProps {
   item: MenuItem
@@ -9,7 +10,8 @@ interface MenuItemCardProps {
 
 export default function MenuItemCard({ item, onAddToCart }: MenuItemCardProps) {
   const isServiceItem = item.is_stock_item === false
-  const isOutOfStock = item.is_stock_item !== false && item.available <= 0
+  const isOutOfStock = item.is_stock_item !== false && item.available <= 0 &&
+    !usePOSProfileStore.getState().posDetails?.custom_allow_out_of_stock_sale
 
   return (
     <div

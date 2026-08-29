@@ -5,7 +5,7 @@ import type { CartItem, GiftCoupon } from '../../types'
 import type { Customer } from '../types/customer'
 import { toast } from 'react-toastify'
 import { clearDraftInvoiceCache } from '../utils/draftInvoiceCache'
-import { usePOSProfileStore } from './posProfileStore'
+import { usePOSProfileStore, isOversellAllowedForItem } from './posProfileStore'
 import { roundCurrency } from '../utils/currencyMath'
 import { clearCheckoutAttempt } from '../utils/checkoutAttempt'
 
@@ -45,10 +45,6 @@ const hasFiniteAvailableStock = (item: { available?: number; is_stock_item?: boo
     return false;
   }
   return typeof item.available === 'number' && Number.isFinite(item.available);
-};
-
-const isOutOfStockSaleAllowed = (): boolean => {
-  return !!usePOSProfileStore.getState().posDetails?.custom_allow_out_of_stock_sale;
 };
 
 const fetchItemTaxDetails = async (
@@ -233,13 +229,13 @@ export const useCartStore = create<CartState>()(
           .filter((cartItem) => (cartItem.item_code || cartItem.id) === incomingCode)
           .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
 
-        if (hasFiniteAvailableStock(item) && item.available <= 0 && !isOutOfStockSaleAllowed()) {
+        if (hasFiniteAvailableStock(item) && item.available <= 0 && !isOversellAllowedForItem(item)) {
           toast.error(`${item.name} is out of stock`);
           return;
         }
 
         if (existingItem) {
-          if (hasFiniteAvailableStock(item) && totalMatchingQty >= item.available && !isOutOfStockSaleAllowed()) {
+          if (hasFiniteAvailableStock(item) && totalMatchingQty >= item.available && !isOversellAllowedForItem(item)) {
             toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
             return;
           }
@@ -304,13 +300,13 @@ export const useCartStore = create<CartState>()(
           .filter((cartItem) => (cartItem.item_code || cartItem.id) === incomingCode)
           .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
 
-        if (hasFiniteAvailableStock(item) && item.available < quantity && !isOutOfStockSaleAllowed()) {
+        if (hasFiniteAvailableStock(item) && item.available < quantity && !isOversellAllowedForItem(item)) {
           toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
           return;
         }
 
         if (existingItem) {
-          if (hasFiniteAvailableStock(item) && (totalMatchingQty + quantity) > item.available && !isOutOfStockSaleAllowed()) {
+          if (hasFiniteAvailableStock(item) && (totalMatchingQty + quantity) > item.available && !isOversellAllowedForItem(item)) {
             toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
             return;
           }
@@ -375,7 +371,7 @@ export const useCartStore = create<CartState>()(
         }
 
         const item = state.cartItems.find((cartItem) => cartItem.id === id);
-        if (item && hasFiniteAvailableStock(item) && quantity > item.available && !isOutOfStockSaleAllowed()) {
+        if (item && hasFiniteAvailableStock(item) && quantity > item.available && !isOversellAllowedForItem(item)) {
           toast.error(`Only ${item.available} ${item.uom || 'units'} of ${item.name} available`);
           return;
         }

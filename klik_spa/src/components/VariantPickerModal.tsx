@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import type { MenuItem, VariantAttributeOption } from "../../types";
 import { formatCurrencyWithSymbol } from "../utils/currency";
-import { usePOSProfileStore } from "../stores/posProfileStore";
+import { isOversellAllowedForItem } from "../stores/posProfileStore";
 
 interface VariantPickerResponse {
   template: {
@@ -94,7 +94,7 @@ export default function VariantPickerModal({
 
   const isOutOfStock =
     selectedVariant?.is_stock_item !== false && (selectedVariant?.available ?? 0) <= 0 &&
-    !usePOSProfileStore.getState().posDetails?.custom_allow_out_of_stock_sale;
+    !isOversellAllowedForItem(selectedVariant);
 
   const handleSelect = (attribute: string, value: string) => {
     setSelected((current) => ({
@@ -207,7 +207,7 @@ export default function VariantPickerModal({
                   {matchingVariants.map((variant) => {
                     const active = selectedVariant?.id === variant.id;
                     const disabled = variant.is_stock_item !== false && variant.available <= 0 &&
-                      !usePOSProfileStore.getState().posDetails?.custom_allow_out_of_stock_sale;
+                      !isOversellAllowedForItem(variant);
                     return (
                       <button
                         key={variant.id}

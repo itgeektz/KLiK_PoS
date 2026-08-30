@@ -2777,20 +2777,30 @@ def _is_oversell_allowed_for_item(item_db_data, pos_profile):
 	return bool(cint((item_db_data or {}).get("custom_allow_oversell") or 0))
 
 
-def _generate_provisional_batch_id(item_code):
+def _generate_provisional_batch_id(item_code, disambiguator=0):
 	"""Deterministic batch id for auto-provisioned stock: first 5 alnum chars of the
 	item code (uppercased) + today's date as DDMMYY, e.g. item 'COKE-500ML' -> 'COKE5280826'.
 	Reusing the same id for repeat out-of-stock/partial-stock sales of the same item on
 	the same day is intentional -- see _ensure_stock_for_item, which tops up an existing
 	batch rather than erroring on a duplicate name, so every oversell of that item today
 	lands in one traceable batch instead of a new one per sale.
+
+	disambiguator: 0 gives the plain "PREFIX+DDMMYY" id. Two different items whose codes
+	happen to truncate to the same 5-character prefix (e.g. "Aciclovir Eye Ointment 5g"
+	and another "Aciclovir ..." item both giving "ACICL") would otherwise collide on this
+	exact name on the same day -- whichever item sells first "claims" it, and ERPNext
+	then rejects every other item's Stock Reconciliation against it with "Batch {0} does
+	not belong to Item {1}". _ensure_stock_for_item detects that case (an existing batch
+	under this name linked to a DIFFERENT item) and retries with disambiguator=1, 2, ...
+	until it lands on a name that's either free or already correctly linked to this item.
 	"""
 	import re
 	from frappe.utils import nowdate, get_datetime
 
 	prefix = re.sub(r"[^A-Za-z0-9]", "", item_code or "")[:5].upper() or "ITEM"
 	date_part = get_datetime(nowdate()).strftime("%d%m%y")
-	return f"{prefix}{date_part}"
+	suffix = f"-{disambiguator}" if disambiguator else ""
+	return f"{prefix}{date_part}{suffix}"
 
 
 def _get_provisioning_rate(item_code):
@@ -2888,14 +2898,27 @@ def _ensure_stock_for_item(item_code, has_batch_no, required_qty, warehouse, com
 	valuation_rate = _get_provisioning_rate(item_code)
 
 	if has_batch_no:
-		batch_no = _generate_provisional_batch_id(item_code)
-		if not frappe.db.exists("Batch", batch_no):
-			batch_doc = frappe.new_doc("Batch")
-			batch_doc.batch_id = batch_no
-			batch_doc.item = item_code
-			batch_doc.expiry_date = add_months(nowdate(), 3)
-			batch_doc.insert(ignore_permissions=True)
-			_stamp_system_owner(batch_doc.doctype, batch_doc.name)
+		# See the disambiguator note on _generate_provisional_batch_id -- the plain
+		# name can collide across two different items on the same day. Walk forward
+		# through disambiguator=0, 1, 2, ... until landing on a batch id that either
+		# doesn't exist yet (safe to create fresh) or already exists AND is linked to
+		# THIS item_code (safe to reuse/top up). Never reuse one linked to a different
+		# item -- that's exactly what produced "Batch {0} does not belong to Item {1}".
+		disambiguator = 0
+		while True:
+			batch_no = _generate_provisional_batch_id(item_code, disambiguator)
+			existing_batch_item = frappe.db.get_value("Batch", batch_no, "item")
+			if existing_batch_item is None:
+				batch_doc = frappe.new_doc("Batch")
+				batch_doc.batch_id = batch_no
+				batch_doc.item = item_code
+				batch_doc.expiry_date = add_months(nowdate(), 3)
+				batch_doc.insert(ignore_permissions=True)
+				_stamp_system_owner(batch_doc.doctype, batch_doc.name)
+				break
+			if existing_batch_item == item_code:
+				break
+			disambiguator += 1
 		existing_batch_qty = flt(get_batch_qty(batch_no=batch_no, warehouse=warehouse) or 0)
 		new_qty = existing_batch_qty + shortfall
 		_create_stock_reconciliation(item_code, warehouse, new_qty, valuation_rate, company, batch_no=batch_no)

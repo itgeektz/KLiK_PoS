@@ -139,6 +139,42 @@ def _fulfill_backorders_for_item_warehouse(item_code, warehouse, incoming_qty, s
 		remaining -= fulfill_qty
 
 
+def _assign_batch_to_delivery_note_row(dn_row, item_code, warehouse, qty):
+	"""Give a fulfillment Delivery Note row a batch to consume, if the item is
+	batch-tracked. Reuses the same FIFO auto-fetch klik_pos.api.sales_invoice uses at
+	sale time -- it returns a single batch name when one batch alone covers `qty`, or a
+	list of {batch_no, qty} entries when it took more than one, in which case a Serial
+	and Batch Bundle is built here the same way _create_batch_and_serial_bundle does
+	for a normal sale. Does nothing for a non-batch-tracked item.
+	"""
+	has_batch_no = frappe.db.get_value("Item", item_code, "has_batch_no")
+	if not has_batch_no:
+		return
+
+	from klik_pos.api.sales_invoice import _autofetch_batch_fifo
+
+	auto_batch = _autofetch_batch_fifo(item_code, warehouse, qty)
+	if isinstance(auto_batch, list):
+		bundle = frappe.new_doc("Serial and Batch Bundle")
+		bundle.item_code = item_code
+		bundle.company = frappe.db.get_value("Warehouse", warehouse, "company")
+		bundle.warehouse = warehouse
+		bundle.has_batch_no = 1
+		bundle.type_of_transaction = "Outward"
+		bundle.voucher_type = "Delivery Note"
+		for entry in auto_batch:
+			bundle.append(
+				"entries",
+				{"batch_no": entry.get("batch_no"), "qty": -abs(flt(entry.get("qty") or 0))},
+			)
+		with _as_system_user():
+			bundle.insert(ignore_permissions=True)
+		dn_row.serial_and_batch_bundle = bundle.name
+	elif auto_batch:
+		dn_row.batch_no = auto_batch
+		dn_row.use_serial_batch_fields = 1
+
+
 def _fulfill_one_backorder(backorder_name, qty, source_doc, source_doctype):
 	backorder = frappe.get_doc("Klik POS Backorder", backorder_name)
 	if backorder.status in ("Fulfilled", "Cancelled"):
@@ -186,6 +222,14 @@ def _fulfill_one_backorder(backorder_name, qty, source_doc, source_doctype):
 			"si_detail": backorder.sales_invoice_item,
 		},
 	)
+
+	# A backorder row was deliberately never given a batch at sale time (see
+	# _split_oversold_items / _validate_and_autofetch_batch_and_serial in
+	# klik_pos.api.sales_invoice -- there was no real stock behind it yet to pick a
+	# batch from). Now that this qty has actually arrived, this Delivery Note is the
+	# first real stock-consuming transaction for it, so a batch-tracked item needs a
+	# batch assigned here, or ERPNext will refuse to submit the Delivery Note at all.
+	_assign_batch_to_delivery_note_row(dn_row, backorder.item_code, backorder.warehouse, qty)
 
 	with _as_system_user():
 		dn.insert(ignore_permissions=True)

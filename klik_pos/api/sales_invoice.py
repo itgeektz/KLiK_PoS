@@ -672,6 +672,16 @@ def _issue_delivery_note_for_available_qty(doc):
 		if getattr(row, "batch_no", None):
 			dn_row.batch_no = row.batch_no
 			dn_row.use_serial_batch_fields = 1
+		elif getattr(row, "serial_and_batch_bundle", None):
+			# The invoice's own bundle (see _create_batch_and_serial_bundle) was created
+			# for a Sales Invoice that never actually submits its stock ledger (this whole
+			# invoice was built with update_stock = 0) -- it stays an orphaned draft and
+			# is never consumed. This Delivery Note is the real, first stock-consuming
+			# transaction for this qty, so it needs its own bundle covering the same
+			# batch(es), not a reference to one scoped to a document that never moves stock.
+			dn_row.serial_and_batch_bundle = _clone_bundle_for_new_voucher(
+				row.serial_and_batch_bundle, "Delivery Note", row.warehouse
+			)
 		if getattr(row, "serial_no", None):
 			dn_row.serial_no = row.serial_no
 			dn_row.use_serial_batch_fields = 1
@@ -2453,6 +2463,38 @@ def _create_batch_and_serial_bundle(items, doc):
 		used_rows.add(row.name)
 
 
+def _clone_bundle_for_new_voucher(source_bundle_name, voucher_type, warehouse):
+	"""Copy a Serial and Batch Bundle's batch/serial + qty entries into a fresh bundle
+	scoped to a different voucher type (e.g. a Delivery Note issued after the fact for
+	an invoice that never actually moved stock itself). Reusing the source bundle's
+	`name` directly would be wrong -- it's tied to whichever document created it, and
+	Frappe expects one bundle per stock-moving transaction, not one shared across two.
+	"""
+	source = frappe.get_doc("Serial and Batch Bundle", source_bundle_name)
+
+	bundle = frappe.new_doc("Serial and Batch Bundle")
+	bundle.item_code = source.item_code
+	bundle.company = source.company
+	bundle.warehouse = warehouse or source.warehouse
+	bundle.has_batch_no = source.has_batch_no
+	bundle.has_serial_no = source.has_serial_no
+	bundle.type_of_transaction = "Outward"
+	bundle.voucher_type = voucher_type
+
+	for entry in source.entries:
+		bundle.append(
+			"entries",
+			{
+				"batch_no": entry.batch_no,
+				"serial_no": entry.serial_no,
+				"qty": -abs(flt(entry.qty)),
+			},
+		)
+
+	bundle.insert()
+	return bundle.name
+
+
 def _get_active_pos_profile():
 	"""Get the active POS profile from current session or fallback to default."""
 	selected_pos_profile_name = None
@@ -2523,6 +2565,19 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 		if not item_code:
 			continue
 
+		# A backorder row (see _split_oversold_items) carries no real stock behind it --
+		# it is deliberately stripped of any batch/serial selection at split time and must
+		# never be forced through batch/serial auto-fetch here. Without this, a fully
+		# backordered line (zero real stock at all) would hit _autofetch_batch_fifo, find
+		# nothing available, and throw -- aborting a sale the oversell feature exists
+		# specifically to allow. A partially-backordered line would be worse: auto-fetch
+		# would happily find and re-assign the SAME physical batch stock already claimed
+		# by this item's real, stock-backed line a moment earlier in this same loop, since
+		# nothing has actually been posted to the ledger yet for either line to reflect
+		# that the first line already spoken for it.
+		if item.get("klik_backorder_qty"):
+			continue
+
 		item_db_data = item_data_map.get(item_code, {}) or {}
 		is_stock_item = int(item_db_data.get("is_stock_item") or 0)
 		if not is_stock_item:
@@ -2556,7 +2611,17 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 							"Serial No / Batch No are mandatory for Item {0} and no suitable batch is available in warehouse {1}."
 						).format(item_code, pos_profile.warehouse)
 					)
-				item["batchNumber"] = auto_batch
+				# A single batch that alone covers the qty comes back as a bare batch name
+				# (unchanged, common-case behaviour). When it took more than one batch to
+				# cover it, _autofetch_batch_fifo returns a list of {batch_no, qty} entries
+				# instead -- hand those to the same Serial and Batch Bundle machinery a
+				# cashier's own multi-batch selection already goes through (see
+				# _create_batch_and_serial_bundle), rather than requiring one batch to
+				# cover the whole line.
+				if isinstance(auto_batch, list):
+					item["bundle_entries"] = auto_batch
+				else:
+					item["batchNumber"] = auto_batch
 			else:
 				frappe.throw(
 					_(
@@ -2806,13 +2871,41 @@ def _split_oversold_items(items, pos_profile):
 
 
 def _autofetch_batch_fifo(item_code, warehouse, qty):
+	"""FIFO-based batch auto-selection for a batch-tracked item with no batch chosen yet.
+
+	Walks non-expired batches oldest-first (by expiry_date, then creation) and
+	accumulates across as many of them as it takes to cover `qty`, consuming each
+	batch's available stock in full before moving to the next. A single line's
+	stock is not guaranteed to sit in one batch -- the previous version of this
+	function only ever checked one batch at a time and required THAT ONE to cover
+	the whole qty, throwing "no batch with sufficient stock" the moment stock was
+	split across batches even when the item's total available stock was more than
+	enough. It also skipped straight to whichever batch happened to have enough on
+	its own, which could skip over an older batch's partial stock entirely --
+	consuming out of order for a FIFO/FEFO costing item.
+
+	Returns a single batch name (str) when exactly one batch covers the full qty --
+	this keeps the existing single-batch call site's behaviour completely unchanged
+	in the common case. Returns a list of {"batch_no": ..., "qty": ...} entries when
+	covering it took more than one batch, for the caller to hand to the existing
+	Serial and Batch Bundle multi-batch machinery (see _create_batch_and_serial_bundle)
+	-- the exact same mechanism already used when a cashier manually selects more than
+	one batch for a line in the cart.
+
+	Raises if the item's total available stock across all its batches genuinely
+	can't cover `qty`. By the time this runs (after _split_oversold_items has already
+	trimmed any real stock-backed line down to what's actually on the shelf), that
+	should only trip if batch-level stock is out of sync with the Bin total -- worth
+	surfacing loudly rather than silently under-delivering stock.
+	"""
 	from erpnext.stock.doctype.batch.batch import get_batch_qty
 	from frappe.utils import getdate, nowdate
 
 	today = nowdate()
 	required_qty = flt(qty or 0)
+	if required_qty <= 0:
+		return None
 
-	# Walk batches in FIFO order and return the first usable batch.
 	batches = frappe.get_all(
 		"Batch",
 		filters={
@@ -2823,19 +2916,34 @@ def _autofetch_batch_fifo(item_code, warehouse, qty):
 		order_by="expiry_date asc, creation asc",
 	)
 
+	remaining = required_qty
+	picked = []
 	for batch in batches:
+		if remaining <= 1e-6:
+			break
 		if batch.expiry_date and getdate(batch.expiry_date) < getdate(today):
 			continue
 
 		available_qty = flt(get_batch_qty(batch_no=batch.name, warehouse=warehouse) or 0)
-		if available_qty >= required_qty:
-			return batch.name
+		if available_qty <= 1e-6:
+			continue
 
-	item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
-	frappe.throw(
-		f"No batch with sufficient stock found for item {item_name} ({item_code}) "
-		f"in warehouse {warehouse}. Required: {qty}"
-	)
+		take_qty = min(available_qty, remaining)
+		picked.append({"batch_no": batch.name, "qty": take_qty})
+		remaining -= take_qty
+
+	if remaining > 1e-6 or not picked:
+		item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
+		frappe.throw(
+			_(
+				"No batch (or combination of batches) with sufficient stock found for item "
+				"{0} ({1}) in warehouse {2}. Required: {3}."
+			).format(item_name, item_code, warehouse, required_qty)
+		)
+
+	if len(picked) == 1:
+		return picked[0]["batch_no"]
+	return picked
 
 # def _autofetch_batch_fifo(item_code, warehouse, qty):
 # 	"""

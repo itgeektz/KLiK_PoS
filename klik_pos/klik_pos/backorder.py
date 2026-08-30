@@ -57,12 +57,36 @@ from frappe.utils import cint, flt, nowdate, nowtime
 # its permissions -- System Manager and read-only Sales User only). The Delivery Note
 # and Backorder update this creates run with ignore_permissions=True for the same
 # reason the sale-time side does (see klik_pos.api.sales_invoice), and for the same
-# audit-trail reason should be attributed to the system, not to whoever happened to be
-# submitting a purchase document. Frappe unconditionally stamps owner/modified_by from
+# audit-trail reason should be attributed to a dedicated service account, not to
+# whoever happened to be submitting a purchase document -- and not to "Administrator"
+# either, since that's a real login shared by actual humans, which makes "who did
+# this" ambiguous. Frappe unconditionally stamps owner/modified_by from
 # frappe.session.user on every insert/save (set_user_and_timestamp in
 # frappe/model/document.py) -- pre-setting the field on the document itself is silently
 # overwritten, so the session user has to actually change for the duration of the call.
-SYSTEM_AUTOMATION_USER = "Administrator"
+#
+# Kept as its own copy here (not imported from klik_pos.api.sales_invoice) for the same
+# reason the rest of this module avoids a module-level import from there -- see the
+# local imports elsewhere in this file.
+SYSTEM_AUTOMATION_USER = "system.oversell@klikpos.internal"
+
+
+def _ensure_system_automation_user():
+	"""Create the dedicated System Oversell User the first time it's actually needed.
+	Idempotent; a no-op once the user exists. See the matching function in
+	klik_pos.api.sales_invoice for why this creates itself on demand rather than via a
+	migrate patch.
+	"""
+	if frappe.db.exists("User", SYSTEM_AUTOMATION_USER):
+		return
+	user = frappe.new_doc("User")
+	user.email = SYSTEM_AUTOMATION_USER
+	user.first_name = "System Oversell User"
+	user.send_welcome_email = 0
+	user.enabled = 1
+	user.user_type = "System User"
+	user.append("roles", {"role": "System Manager"})
+	user.insert(ignore_permissions=True)
 
 
 @contextlib.contextmanager
@@ -71,6 +95,7 @@ def _as_system_user():
 	if previous_user == SYSTEM_AUTOMATION_USER:
 		yield
 		return
+	_ensure_system_automation_user()
 	frappe.set_user(SYSTEM_AUTOMATION_USER)
 	try:
 		yield

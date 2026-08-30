@@ -1390,6 +1390,7 @@ def validate_checkout_invoice(data):
 			due_date,
 			salesperson,
 			tax_id,
+			custom_customer_alias,
 			enable_background_submission,
 			loyalty_redemption,
 			bill_discount,
@@ -1410,6 +1411,7 @@ def validate_checkout_invoice(data):
 			due_date=due_date,
 			salesperson=salesperson,
 			tax_id=tax_id,
+			custom_customer_alias=custom_customer_alias,
 			create_batch_and_serial_bundle=False,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
@@ -1620,6 +1622,7 @@ def queue_sales_invoice(data):
 			due_date,
 			salesperson,
 			tax_id,
+			custom_customer_alias,
 			enable_background_submission,
 			loyalty_redemption,
 			bill_discount,
@@ -1646,6 +1649,7 @@ def queue_sales_invoice(data):
 			due_date=due_date,
 			salesperson=salesperson,
 			tax_id=tax_id,
+			custom_customer_alias=custom_customer_alias,
 			enable_background_submission=enable_background_submission,
 			loyalty_redemption=loyalty_redemption,
 			bill_discount=bill_discount,
@@ -1707,6 +1711,9 @@ def queue_sales_invoice(data):
 			if tax_id:
 				doc.db_set("tax_id", tax_id)
 
+			if custom_customer_alias:
+				doc.db_set("custom_customer_alias", custom_customer_alias)
+
 			processing_time = time.time() - start_time
 			frappe.logger().info(f"Invoice {doc.name} queued in {processing_time:.2f} seconds")
 
@@ -1730,6 +1737,9 @@ def queue_sales_invoice(data):
 
 			if tax_id:
 				doc.db_set("tax_id", tax_id)
+
+			if custom_customer_alias:
+				doc.db_set("custom_customer_alias", custom_customer_alias)
 
 			_apply_klik_invoice_flags(doc, is_submitted=True)
 			doc.submit()
@@ -1799,6 +1809,7 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 	try:
 		doc = frappe.get_doc("Sales Invoice", invoice_name)
 		tax_id = doc.tax_id
+		custom_customer_alias = doc.custom_customer_alias
 		if doc.docstatus != 0:
 			_apply_klik_invoice_flags(doc, is_submitted=True)
 			_update_queue_fields(doc, QUEUE_STATUSES["submitted"], None)
@@ -1810,6 +1821,8 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 		doc.save(ignore_permissions=True)
 		if tax_id:
 			doc.tax_id = tax_id
+		if custom_customer_alias:
+			doc.custom_customer_alias = custom_customer_alias
 		_apply_klik_invoice_flags(doc, is_submitted=True)
 		doc.submit()
 		doc.reload()
@@ -1919,6 +1932,7 @@ def create_draft_invoice(data):
 			due_date,
 			salesperson,
 			tax_id,
+			custom_customer_alias,
 			enable_background_submission,
 			loyalty_redemption,
 			bill_discount,
@@ -1949,6 +1963,7 @@ def create_draft_invoice(data):
 				due_date=due_date,
 				salesperson=salesperson,
 				tax_id=tax_id,
+				custom_customer_alias=custom_customer_alias,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
 				bill_discount=bill_discount,
@@ -1970,6 +1985,7 @@ def create_draft_invoice(data):
 				due_date=due_date,
 				salesperson=salesperson,
 				tax_id=tax_id,
+				custom_customer_alias=custom_customer_alias,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
 				bill_discount=bill_discount,
@@ -1981,6 +1997,9 @@ def create_draft_invoice(data):
 
 		if tax_id:
 			doc.db_set("tax_id", tax_id)
+
+		if custom_customer_alias:
+			doc.db_set("custom_customer_alias", custom_customer_alias)
 
 		return {"success": True, "invoice_name": doc.name, "invoice": doc}
 
@@ -2216,6 +2235,7 @@ def parse_invoice_data(data):
 	delivery_personnel = data.get("deliveryPersonnel")
 	salesperson = data.get("salesperson")
 	tax_id = data.get("tax_id")
+	custom_customer_alias = data.get("custom_customer_alias")
 
 	# Whole-invoice ("bill-level") discount, distinct from per-item discounts above.
 	# Percentage takes priority over a flat amount when both are sent; validated and
@@ -2247,6 +2267,7 @@ def parse_invoice_data(data):
 		due_date,
 		salesperson,
 		tax_id,
+		custom_customer_alias,
 		enable_background_submission,
 		loyalty_redemption,
 		bill_discount,
@@ -2269,6 +2290,7 @@ def build_sales_invoice_doc(
 	due_date=None,
 	salesperson=None,
 	tax_id=None,
+	custom_customer_alias=None,
 	create_batch_and_serial_bundle=True,
 	enable_background_submission=False,
 	loyalty_redemption=None,
@@ -2289,6 +2311,13 @@ def build_sales_invoice_doc(
 	# Set tax ID if provided
 	if tax_id:
 		doc.tax_id = tax_id
+
+	# Walk-in-only per-transaction name (see TaxSection.tsx) -- same "only if
+	# provided" handling as tax_id right above, for the same reason: leaving it
+	# untouched here means an update path that doesn't send this key can't
+	# accidentally blank out a value set earlier.
+	if custom_customer_alias:
+		doc.custom_customer_alias = custom_customer_alias
 
 	# Set salesperson in sales team
 	if salesperson:
@@ -2382,6 +2411,7 @@ def _update_existing_draft_invoice(
 	due_date=None,
 	salesperson=None,
 	tax_id=None,
+	custom_customer_alias=None,
 	enable_background_submission=False,
 	loyalty_redemption=None,
 	bill_discount=None,
@@ -2402,6 +2432,7 @@ def _update_existing_draft_invoice(
 		due_date=due_date,
 		salesperson=salesperson,
 		tax_id=tax_id,
+		custom_customer_alias=custom_customer_alias,
 		create_batch_and_serial_bundle=False,
 		enable_background_submission=enable_background_submission,
 		loyalty_redemption=loyalty_redemption,
@@ -2414,6 +2445,7 @@ def _update_existing_draft_invoice(
 	invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 	invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 	invoice_doc.tax_id = rebuilt_doc.tax_id
+	invoice_doc.custom_customer_alias = rebuilt_doc.custom_customer_alias
 	invoice_doc.pos_profile = rebuilt_doc.pos_profile
 	invoice_doc.company = rebuilt_doc.company
 	invoice_doc.currency = rebuilt_doc.currency
@@ -4836,6 +4868,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				due_date,
 				salesperson,
 				tax_id,
+				custom_customer_alias,
 				enable_background_submission,
 				loyalty_redemption,
 				bill_discount,
@@ -4857,6 +4890,7 @@ def submit_draft_invoice(invoice_id, data=None):
 				due_date=due_date,
 				salesperson=salesperson,
 				tax_id=tax_id,
+				custom_customer_alias=custom_customer_alias,
 				create_batch_and_serial_bundle=False,
 				enable_background_submission=enable_background_submission,
 				loyalty_redemption=loyalty_redemption,
@@ -4869,6 +4903,7 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 			invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 			invoice_doc.tax_id = rebuilt_doc.tax_id
+			invoice_doc.custom_customer_alias = rebuilt_doc.custom_customer_alias
 			invoice_doc.pos_profile = rebuilt_doc.pos_profile
 			invoice_doc.company = rebuilt_doc.company
 			invoice_doc.currency = rebuilt_doc.currency

@@ -142,7 +142,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
                 ) as custom_last_visit
             FROM `tabCustomer` c
             WHERE {where_clause}
-            ORDER BY c.creation DESC
+            ORDER BY c.custom_is_walkin DESC, custom_total_orders DESC, c.creation DESC
             LIMIT %s OFFSET %s
         """
         

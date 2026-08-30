@@ -46,8 +46,6 @@ deliberately -- it's just normal incoming stock, no different from any other rec
 and needs no action here.
 """
 
-import contextlib
-
 import frappe
 from frappe import _
 from frappe.utils import cint, flt, nowdate, nowtime
@@ -60,10 +58,18 @@ from frappe.utils import cint, flt, nowdate, nowtime
 # audit-trail reason should be attributed to a dedicated service account, not to
 # whoever happened to be submitting a purchase document -- and not to "Administrator"
 # either, since that's a real login shared by actual humans, which makes "who did
-# this" ambiguous. Frappe unconditionally stamps owner/modified_by from
-# frappe.session.user on every insert/save (set_user_and_timestamp in
-# frappe/model/document.py) -- pre-setting the field on the document itself is silently
-# overwritten, so the session user has to actually change for the duration of the call.
+# this" ambiguous.
+#
+# _stamp_system_owner does this with a direct frappe.db.set_value() on
+# owner/modified_by AFTER the document is already inserted/submitted, rather than by
+# switching frappe.session.user for the call (an earlier version of this file did
+# exactly that via a now-removed _as_system_user() context manager). That caused a
+# real production incident: frappe.set_user() mid-request mutates the live HTTP
+# request's session/login state, and switching it back afterward does not fully undo
+# that -- it left whoever was actually logged in and submitting the purchase document
+# forced back to a login screen after every single one. A raw SQL UPDATE never
+# touches frappe.session or frappe.local.login_manager, so the real request's
+# identity is never disturbed.
 #
 # Kept as its own copy here (not imported from klik_pos.api.sales_invoice) for the same
 # reason the rest of this module avoids a module-level import from there -- see the
@@ -75,7 +81,9 @@ def _ensure_system_automation_user():
 	"""Create the dedicated System Oversell User the first time it's actually needed.
 	Idempotent; a no-op once the user exists. See the matching function in
 	klik_pos.api.sales_invoice for why this creates itself on demand rather than via a
-	migrate patch.
+	migrate patch. This user is never logged in as -- it exists purely so the Owner
+	field on auto-generated documents links to a real User record with a readable
+	full name.
 	"""
 	if frappe.db.exists("User", SYSTEM_AUTOMATION_USER):
 		return
@@ -89,18 +97,16 @@ def _ensure_system_automation_user():
 	user.insert(ignore_permissions=True)
 
 
-@contextlib.contextmanager
-def _as_system_user():
-	previous_user = frappe.session.user
-	if previous_user == SYSTEM_AUTOMATION_USER:
-		yield
-		return
+def _stamp_system_owner(doctype, name):
+	"""Re-attribute an already-inserted/submitted document to SYSTEM_AUTOMATION_USER.
+	Call this once, after every .insert()/.save()/.submit() call on the document is
+	done -- each of those re-stamps owner and/or modified_by from whoever is actually
+	logged in, so stamping any earlier would just get overwritten by the next call.
+	"""
 	_ensure_system_automation_user()
-	frappe.set_user(SYSTEM_AUTOMATION_USER)
-	try:
-		yield
-	finally:
-		frappe.set_user(previous_user)
+	frappe.db.set_value(
+		doctype, name, {"owner": SYSTEM_AUTOMATION_USER, "modified_by": SYSTEM_AUTOMATION_USER}
+	)
 
 
 def fulfill_backorders_on_purchase_receipt(doc, method=None):
@@ -192,8 +198,8 @@ def _assign_batch_to_delivery_note_row(dn_row, item_code, warehouse, qty):
 				"entries",
 				{"batch_no": entry.get("batch_no"), "qty": -abs(flt(entry.get("qty") or 0))},
 			)
-		with _as_system_user():
-			bundle.insert(ignore_permissions=True)
+		bundle.insert(ignore_permissions=True)
+		_stamp_system_owner(bundle.doctype, bundle.name)
 		dn_row.serial_and_batch_bundle = bundle.name
 	elif auto_batch:
 		dn_row.batch_no = auto_batch
@@ -256,9 +262,9 @@ def _fulfill_one_backorder(backorder_name, qty, source_doc, source_doctype):
 	# batch assigned here, or ERPNext will refuse to submit the Delivery Note at all.
 	_assign_batch_to_delivery_note_row(dn_row, backorder.item_code, backorder.warehouse, qty)
 
-	with _as_system_user():
-		dn.insert(ignore_permissions=True)
-		dn.submit()
+	dn.insert(ignore_permissions=True)
+	dn.submit()
+	_stamp_system_owner(dn.doctype, dn.name)
 
 	frappe.db.set_value(
 		"Sales Invoice Item",
@@ -285,5 +291,5 @@ def _fulfill_one_backorder(backorder_name, qty, source_doc, source_doctype):
 	)
 	backorder.pending_qty = flt(backorder.pending_qty) - flt(qty)
 	backorder.fulfilled_qty = flt(backorder.fulfilled_qty) + flt(qty)
-	with _as_system_user():
-		backorder.save(ignore_permissions=True)
+	backorder.save(ignore_permissions=True)
+	_stamp_system_owner(backorder.doctype, backorder.name)

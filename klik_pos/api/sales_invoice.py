@@ -1,4 +1,3 @@
-import contextlib
 import json
 
 import erpnext
@@ -446,9 +445,9 @@ def _reserve_stock_for_queued_invoice(doc):
 		sre.company = doc.company
 		sre.stock_uom = row.stock_uom or item_meta.stock_uom
 		sre.project = doc.project
-		with _as_system_user():
-			sre.save(ignore_permissions=True)
-			sre.submit()
+		sre.save(ignore_permissions=True)
+		sre.submit()
+		_stamp_system_owner(sre.doctype, sre.name)
 
 
 def get_reserved_qty_for_item_warehouse(item_code, warehouse, exclude_invoice=None):
@@ -561,16 +560,19 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 # documents to whichever cashier was logged in, which is misleading in an audit trail
 # (it looks like a cashier created a Stock Reconciliation by hand) and papers over the
 # fact that these actions are running outside that user's actual rights.
-# _as_system_user runs the wrapped block as SYSTEM_AUTOMATION_USER instead, so
-# owner/modified_by on what gets created honestly point at a dedicated service
-# account -- not "Administrator", which is a real login shared by actual humans (in
-# this deployment, literally the account used to test this feature by hand), so
-# "created by Administrator" is genuinely ambiguous about whether a person or the
-# system did it. This has to be done by switching frappe.session.user for the block:
-# Frappe's own set_user_and_timestamp() (frappe/model/document.py) unconditionally
-# stamps owner/modified_by from frappe.session.user on every insert/save, so
-# pre-setting doc.owner on the document itself before calling .insert() is silently
-# overwritten and does not work.
+#
+# _stamp_system_owner fixes that up with a direct frappe.db.set_value() on
+# owner/modified_by AFTER the document is already inserted/submitted, instead of
+# switching frappe.session.user for the call the way an earlier version of this file
+# did (via a now-removed _as_system_user() context manager). That earlier approach
+# caused a real production incident: frappe.set_user() mid-request mutates the live
+# HTTP request's session/login state, and switching it back in a `finally` block does
+# not fully undo that -- Frappe's own session/CSRF bookkeeping at the end of the
+# request can end up bound to the wrong user, which silently invalidated the
+# cashier's own session and forced a re-login after every single invoice. A raw SQL
+# UPDATE via frappe.db.set_value() achieves the exact same visible result (the
+# record's Owner shows the system account) without ever touching frappe.session or
+# frappe.local.login_manager, so the real request's identity is never disturbed.
 SYSTEM_AUTOMATION_USER = "system.oversell@klikpos.internal"
 
 
@@ -580,7 +582,9 @@ def _ensure_system_automation_user():
 	patches.txt to ever run -- this codebase has already been bitten by exactly that
 	(add_oversell_backorder_fields sat unregistered for a while) -- so this creates
 	itself on demand instead: no separate migration step to forget. Idempotent; a
-	no-op once the user exists.
+	no-op once the user exists. This user is never logged in as (see
+	_stamp_system_owner) -- it exists purely so the Owner field on auto-generated
+	documents links to a real User record with a readable full name.
 	"""
 	if frappe.db.exists("User", SYSTEM_AUTOMATION_USER):
 		return
@@ -594,18 +598,16 @@ def _ensure_system_automation_user():
 	user.insert(ignore_permissions=True)
 
 
-@contextlib.contextmanager
-def _as_system_user():
-	previous_user = frappe.session.user
-	if previous_user == SYSTEM_AUTOMATION_USER:
-		yield
-		return
+def _stamp_system_owner(doctype, name):
+	"""Re-attribute an already-inserted/submitted document to SYSTEM_AUTOMATION_USER.
+	Call this once, after every .insert()/.save()/.submit() call on the document is
+	done -- each of those re-stamps owner and/or modified_by from whoever is actually
+	logged in, so stamping any earlier would just get overwritten by the next call.
+	"""
 	_ensure_system_automation_user()
-	frappe.set_user(SYSTEM_AUTOMATION_USER)
-	try:
-		yield
-	finally:
-		frappe.set_user(previous_user)
+	frappe.db.set_value(
+		doctype, name, {"owner": SYSTEM_AUTOMATION_USER, "modified_by": SYSTEM_AUTOMATION_USER}
+	)
 
 
 def _process_backorders_after_submit(doc):
@@ -710,9 +712,9 @@ def _issue_delivery_note_for_available_qty(doc):
 			dn_row.serial_no = row.serial_no
 			dn_row.use_serial_batch_fields = 1
 
-	with _as_system_user():
-		dn.insert(ignore_permissions=True)
-		dn.submit()
+	dn.insert(ignore_permissions=True)
+	dn.submit()
+	_stamp_system_owner(dn.doctype, dn.name)
 
 	# Keep the Sales Invoice's own delivered-qty bookkeeping in sync even though it never
 	# went through its own update_stock flow -- other reports/screens key off these fields.
@@ -759,8 +761,8 @@ def _create_backorder_records(doc):
 		backorder.pending_qty = flt(row.qty)
 		backorder.fulfilled_qty = 0
 		backorder.status = "Open"
-		with _as_system_user():
-			backorder.insert(ignore_permissions=True)
+		backorder.insert(ignore_permissions=True)
+		_stamp_system_owner(backorder.doctype, backorder.name)
 
 
 def _update_queue_fields(doc, status, error_message=None, attempts=None):
@@ -2821,13 +2823,9 @@ def _create_stock_reconciliation(item_code, warehouse, qty, valuation_rate, comp
 	"""Create and submit a Stock Reconciliation setting absolute qty for item_code in
 	warehouse (optionally scoped to batch_no) to `qty`. Returns the document name.
 
-	Runs as the system automation user (see _as_system_user near the top of this file)
-	so owner/modified_by on the Stock Reconciliation honestly read "Administrator" --
-	this is a system-generated top-up to let an oversold/backordered sale go through,
-	not something the cashier on shift actually did by hand. Frappe's own
-	set_user_and_timestamp() stamps owner/modified_by from frappe.session.user on every
-	insert, so this has to run with the session user actually switched, not just by
-	setting doc.owner before insert (that gets silently overwritten).
+	Attributed to SYSTEM_AUTOMATION_USER via _stamp_system_owner (see near the top of
+	this file) after insert/submit -- this is a system-generated top-up to let an
+	oversold sale go through, not something the cashier on shift actually did by hand.
 	"""
 	from frappe.utils import nowdate, nowtime
 
@@ -2856,9 +2854,9 @@ def _create_stock_reconciliation(item_code, warehouse, qty, valuation_rate, comp
 		# when use_serial_batch_fields is explicitly set (the alternative is building a full Serial and
 		# Batch Bundle document first, which is unnecessary for this simple top-up).
 		row.use_serial_batch_fields = 1
-	with _as_system_user():
-		recon.insert(ignore_permissions=True)
-		recon.submit()
+	recon.insert(ignore_permissions=True)
+	recon.submit()
+	_stamp_system_owner(recon.doctype, recon.name)
 	return recon.name
 
 
@@ -2896,8 +2894,8 @@ def _ensure_stock_for_item(item_code, has_batch_no, required_qty, warehouse, com
 			batch_doc.batch_id = batch_no
 			batch_doc.item = item_code
 			batch_doc.expiry_date = add_months(nowdate(), 3)
-			with _as_system_user():
-				batch_doc.insert(ignore_permissions=True)
+			batch_doc.insert(ignore_permissions=True)
+			_stamp_system_owner(batch_doc.doctype, batch_doc.name)
 		existing_batch_qty = flt(get_batch_qty(batch_no=batch_no, warehouse=warehouse) or 0)
 		new_qty = existing_batch_qty + shortfall
 		_create_stock_reconciliation(item_code, warehouse, new_qty, valuation_rate, company, batch_no=batch_no)

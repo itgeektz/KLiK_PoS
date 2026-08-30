@@ -2227,6 +2227,14 @@ def build_sales_invoice_doc(
 
 	doc.set_taxes()
 	doc.set_missing_values()
+	if has_backorder:
+		# ERPNext's own set_missing_values() calls set_pos_fields() for any is_pos invoice,
+		# which unconditionally re-derives update_stock from the POS Profile's own "Update
+		# Stock" checkbox -- silently overwriting the update_stock = 0 this function set
+		# above the moment _split_oversold_items found a shortfall. Without reasserting it
+		# here, every oversold/backordered sale would go right back to trying to move real
+		# stock for a line that has none, exactly as if _split_oversold_items had never run.
+		doc.update_stock = 0
 	doc.calculate_taxes_and_totals()
 	apply_loyalty_redemption(doc, loyalty_redemption)
 	if loyalty_redemption:
@@ -2329,6 +2337,12 @@ def _update_existing_draft_invoice(
 
 	invoice_doc.set_taxes()
 	invoice_doc.set_missing_values()
+	if rebuilt_doc.update_stock == 0:
+		# Same reset as in build_sales_invoice_doc: set_missing_values() -> set_pos_fields()
+		# re-derives update_stock from the POS Profile the instant it sees is_pos, undoing
+		# the update_stock = 0 already copied from rebuilt_doc a few lines above whenever
+		# this draft has a backordered/oversold row.
+		invoice_doc.update_stock = 0
 	invoice_doc.calculate_taxes_and_totals()
 
 	# Payments must be applied after the first totals pass, then totals are recalculated
@@ -4513,6 +4527,11 @@ def submit_draft_invoice(invoice_id, data=None):
 
 			invoice_doc.set_taxes()
 			invoice_doc.set_missing_values()
+			if rebuilt_doc.update_stock == 0:
+				# set_missing_values() -> set_pos_fields() re-derives update_stock from the
+				# POS Profile the instant it sees is_pos, undoing the update_stock = 0 already
+				# copied from rebuilt_doc above whenever this invoice has a backordered row.
+				invoice_doc.update_stock = 0
 			invoice_doc.calculate_taxes_and_totals()
 
 			# Payments must be applied after the first totals pass, then totals are recalculated

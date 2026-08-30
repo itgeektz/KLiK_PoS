@@ -1279,6 +1279,96 @@ def mark_invoice_as_printed(invoice_name):
 
 
 @frappe.whitelist()
+def update_walkin_customer_info(invoice_name, alias=None, tax_id=None):
+	"""Update a walk-in sale's per-transaction Customer Name (Alias) and/or Tax ID,
+	whether the invoice is still a draft or has already been submitted.
+
+	Deliberately does NOT load the document and call doc.save() -- on a submitted
+	Sales Invoice that would re-run full validation and Frappe would reject changing
+	any field that isn't marked allow_on_submit (which is why custom_customer_alias
+	and tax_id both are, via the add_walkin_alias_taxid_fields patch -- but a raw
+	update sidesteps that machinery entirely, the same safe pattern already used by
+	_stamp_system_owner elsewhere in this file). No frappe.set_user() involved either,
+	for the same reason it was removed from the oversell attribution path: mutating
+	the request's identity mid-request is what caused the forced-logout incident --
+	this only ever writes as whoever is actually logged in.
+
+	Available to any user who can write Sales Invoice (i.e. any normal POS user) --
+	same as editing a draft. Every change is appended to custom_walkin_info_change_log
+	as a JSON array entry recording the old value, new value, who made the change, and
+	when, so a Tax ID corrected after the fact still leaves a clear trail on the
+	invoice -- only fields that actually changed get a log entry.
+	"""
+	if not frappe.db.exists("Sales Invoice", invoice_name):
+		frappe.throw(_("Sales Invoice {0} not found").format(invoice_name))
+
+	if not frappe.has_permission("Sales Invoice", "write", doc=invoice_name):
+		frappe.throw(_("You don't have permission to update this invoice"), frappe.PermissionError)
+
+	current = frappe.db.get_value(
+		"Sales Invoice",
+		invoice_name,
+		["tax_id", "custom_customer_alias", "custom_walkin_info_change_log"],
+		as_dict=True,
+	) or {}
+
+	updates = {}
+	log_entries = []
+
+	def _normalize(value):
+		value = (value or "").strip()
+		return value or None
+
+	new_alias = _normalize(alias) if alias is not None else None
+	new_tax_id = _normalize(tax_id).upper() if tax_id is not None else None
+
+	def _queue_change(fieldname, old_value, new_value):
+		old_value = _normalize(old_value)
+		if new_value == old_value:
+			return
+		updates[fieldname] = new_value
+		log_entries.append(
+			{
+				"field": fieldname,
+				"old_value": old_value,
+				"new_value": new_value,
+				"changed_by": frappe.session.user,
+				"changed_on": frappe.utils.now(),
+			}
+		)
+
+	if alias is not None:
+		_queue_change("custom_customer_alias", current.get("custom_customer_alias"), new_alias)
+	if tax_id is not None:
+		_queue_change("tax_id", current.get("tax_id"), new_tax_id)
+
+	if not updates:
+		# Nothing actually changed -- not an error, just nothing to do.
+		return {"success": True, "changed": False}
+
+	try:
+		existing_log = frappe.parse_json(current.get("custom_walkin_info_change_log") or "[]")
+		if not isinstance(existing_log, list):
+			existing_log = []
+	except Exception:
+		existing_log = []
+
+	updates["custom_walkin_info_change_log"] = frappe.as_json(existing_log + log_entries)
+	updates["modified"] = frappe.utils.now()
+	updates["modified_by"] = frappe.session.user
+
+	frappe.db.set_value("Sales Invoice", invoice_name, updates)
+
+	return {
+		"success": True,
+		"changed": True,
+		"custom_customer_alias": updates.get("custom_customer_alias", current.get("custom_customer_alias")),
+		"tax_id": updates.get("tax_id", current.get("tax_id")),
+		"change_log": existing_log + log_entries,
+	}
+
+
+@frappe.whitelist()
 def validate_checkout_invoice(data):
 	"""
 	Pre-validate invoice payload at checkout time without creating any document.

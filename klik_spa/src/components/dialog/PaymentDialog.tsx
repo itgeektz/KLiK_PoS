@@ -170,6 +170,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const [billDiscountPercentage, setBillDiscountPercentage] = useState(0);
   const [billDiscountAmount, setBillDiscountAmount] = useState(0);
   const [taxPin, setTaxPin] = useState("");
+  const [customerAlias, setCustomerAlias] = useState("");
   const [backendTaxPreview, setBackendTaxPreview] = useState<BackendTaxPreview | null>(null);
   const [isTaxPreviewLoading, setIsTaxPreviewLoading] = useState(false);
   const [taxPreviewError, setTaxPreviewError] = useState<string | null>(null);
@@ -643,6 +644,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       allow_partial_payment: allowPartialPayments,
       salesperson: currentSalesperson?.name || null,
       tax_id: taxPin || null,
+      custom_customer_alias: customerAlias || null,
       loyalty: appliedLoyalty
         ? {
             loyalty_program: appliedLoyalty.loyalty_program,
@@ -1376,6 +1378,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         businessType: posDetails?.business_type,
         salesperson: currentSalesperson?.name || null,
         tax_id: taxPin || null,
+        custom_customer_alias: customerAlias || null,
         loyalty: appliedLoyalty
           ? {
               loyalty_program: appliedLoyalty.loyalty_program,
@@ -1547,6 +1550,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
 
   useEffect(() => {
     if (isOpen) setTaxPin("");
+    if (isOpen) setCustomerAlias("");
   }, [isOpen]);
 
   useEffect(() => {
@@ -2030,6 +2034,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   isProcessingPayment={isProcessingPayment}
                   taxPin={taxPin}
                   onTaxPinChange={setTaxPin}
+                  customerAlias={customerAlias}
+                  onCustomerAliasChange={setCustomerAlias}
                   calculations={calculations}
                   displayCurrencySymbol={displayCurrencySymbol}
                   backendTaxPreview={backendTaxPreview}
@@ -2295,6 +2301,8 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   isProcessingPayment={isProcessingPayment}
                   taxPin={taxPin}
                   onTaxPinChange={setTaxPin}
+                  customerAlias={customerAlias}
+                  onCustomerAliasChange={setCustomerAlias}
                   calculations={calculations}
                   displayCurrencySymbol={displayCurrencySymbol}
                   backendTaxPreview={backendTaxPreview}

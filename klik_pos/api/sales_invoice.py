@@ -229,9 +229,20 @@ def _validate_change_payment_restrictions(doc):
 	if not getattr(doc, "payments", None):
 		return
 	total_paid = flt(sum(flt(row.amount or 0) for row in doc.payments))
-	grand_total = flt(doc.grand_total or 0)
-	overpayment = total_paid - grand_total
-	if overpayment <= 0.005:
+	# Use rounded_total (falling back to grand_total when rounding is disabled
+	# for this currency/POS Profile) -- this is the actual amount the cashier
+	# is shown and asked to collect. Comparing against the unrounded
+	# grand_total instead caused a no-win loop whenever rounding_adjustment
+	# was non-zero: e.g. grand_total 62.70 rounds up to rounded_total 63.00,
+	# so paying 63.00 (matching the on-screen Total) tripped this check as
+	# "0.30 over", while paying exactly 62.70 as instructed then tripped the
+	# separate frontend "insufficient payment" check, which correctly
+	# compares against the rounded, on-screen total.
+	bill_total = flt(doc.rounded_total or doc.grand_total or 0)
+	# Round to cents before comparing so ordinary floating-point noise
+	# (62.699999999999996-type sums) can never manufacture a fake overpayment.
+	overpayment = flt(total_paid - bill_total, 2)
+	if overpayment <= 0:
 		return
 
 	frappe.throw(
@@ -242,7 +253,7 @@ def _validate_change_payment_restrictions(doc):
 		).format(
 			frappe.bold(frappe.format_value(total_paid, {"fieldtype": "Currency"})),
 			frappe.bold(frappe.format_value(overpayment, {"fieldtype": "Currency"})),
-			frappe.bold(frappe.format_value(grand_total, {"fieldtype": "Currency"})),
+			frappe.bold(frappe.format_value(bill_total, {"fieldtype": "Currency"})),
 		)
 	)
 

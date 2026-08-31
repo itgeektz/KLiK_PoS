@@ -214,53 +214,35 @@ def validate_required_salesperson(doc):
 	frappe.throw(
 		_("Sales person is mandatory to complete this sale. Please enter a valid salesperson PIN before continuing.")
 	)
-# Payment modes allowed to receive change/overpayment on their own, without
-# going through Receive Payment. Kept as a plain set of Mode of Payment names
-# rather than a POS Profile checkbox for now -- update this if Virdi
-# Pharmacy renames or adds a mode that should behave the same way as Cash.
-CHANGE_ELIGIBLE_SOLO_MODES = {"Cash", "M-Pesa"}
-
-
 def _validate_change_payment_restrictions(doc):
-	"""Restrict which payment-mode combinations may receive change/overpayment
-	at checkout, so a shift's reconciliation never has to guess which mode
-	absorbed a customer's excess payment.
+	"""Require checkout payments to total exactly the bill amount -- no change,
+	on any payment mode, no exceptions. This removes payment-mode ambiguity at
+	the source instead of the Closing Shift screen (or Sales Dashboard) having
+	to guess which mode absorbed an overpayment: since no invoice can ever be
+	overpaid, every payment row always represents real sales value and nothing
+	needs netting downstream.
 
-	Change (paid_amount > grand_total) is allowed only when:
-	  - Cash is the only payment mode used, or
-	  - M-Pesa is the only payment mode used, or
-	  - Cash plus exactly one other payment mode are used together (the
-	    change is then always understood to have been handed back in cash).
-
-	Anything else that would leave change owed is rejected: Credit Card,
-	Cheque and Credit must be paid the exact amount due at checkout. An
-	intentional extra/advance payment on those goes through Receive Payment
-	(create_customer_payment_entry in payment.py) instead, which records it
-	against the customer's account rather than as invoice change.
+	An intentional extra/advance payment still has a route: Receive Payment
+	(create_customer_payment_entry in payment.py), which records it against
+	the customer's account rather than as invoice change.
 	"""
 	if not getattr(doc, "payments", None):
 		return
 	total_paid = flt(sum(flt(row.amount or 0) for row in doc.payments))
-	overpayment = total_paid - flt(doc.grand_total or 0)
+	grand_total = flt(doc.grand_total or 0)
+	overpayment = total_paid - grand_total
 	if overpayment <= 0.005:
-		return
-
-	modes_used = {row.mode_of_payment for row in doc.payments if flt(row.amount or 0) > 0}
-
-	if modes_used == {"Cash"} or modes_used == {"M-Pesa"}:
-		return
-	if "Cash" in modes_used and len(modes_used) == 2:
 		return
 
 	frappe.throw(
 		_(
-			"An amount greater than the bill total ({0}) was entered for {1}. Extra payment can "
-			"only be collected as Cash alone, M-Pesa alone, or Cash together with one other "
-			"method. Please collect the exact amount due instead, or use Receive Payment to "
-			"record extra as an advance on the customer's account."
+			"Amount entered ({0}) is {1} more than the bill total. Please enter exactly "
+			"{2}, or use Receive Payment to record the extra as an advance on the "
+			"customer's account."
 		).format(
-			frappe.format_value(doc.grand_total, {"fieldtype": "Currency"}),
-			frappe.bold(", ".join(sorted(modes_used))),
+			frappe.bold(frappe.format_value(total_paid, {"fieldtype": "Currency"})),
+			frappe.bold(frappe.format_value(overpayment, {"fieldtype": "Currency"})),
+			frappe.bold(frappe.format_value(grand_total, {"fieldtype": "Currency"})),
 		)
 	)
 

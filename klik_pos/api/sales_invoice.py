@@ -214,6 +214,57 @@ def validate_required_salesperson(doc):
 	frappe.throw(
 		_("Sales person is mandatory to complete this sale. Please enter a valid salesperson PIN before continuing.")
 	)
+# Payment modes allowed to receive change/overpayment on their own, without
+# going through Receive Payment. Kept as a plain set of Mode of Payment names
+# rather than a POS Profile checkbox for now -- update this if Virdi
+# Pharmacy renames or adds a mode that should behave the same way as Cash.
+CHANGE_ELIGIBLE_SOLO_MODES = {"Cash", "M-Pesa"}
+
+
+def _validate_change_payment_restrictions(doc):
+	"""Restrict which payment-mode combinations may receive change/overpayment
+	at checkout, so a shift's reconciliation never has to guess which mode
+	absorbed a customer's excess payment.
+
+	Change (paid_amount > grand_total) is allowed only when:
+	  - Cash is the only payment mode used, or
+	  - M-Pesa is the only payment mode used, or
+	  - Cash plus exactly one other payment mode are used together (the
+	    change is then always understood to have been handed back in cash).
+
+	Anything else that would leave change owed is rejected: Credit Card,
+	Cheque and Credit must be paid the exact amount due at checkout. An
+	intentional extra/advance payment on those goes through Receive Payment
+	(create_customer_payment_entry in payment.py) instead, which records it
+	against the customer's account rather than as invoice change.
+	"""
+	if not getattr(doc, "payments", None):
+		return
+	total_paid = flt(sum(flt(row.amount or 0) for row in doc.payments))
+	overpayment = total_paid - flt(doc.grand_total or 0)
+	if overpayment <= 0.005:
+		return
+
+	modes_used = {row.mode_of_payment for row in doc.payments if flt(row.amount or 0) > 0}
+
+	if modes_used == {"Cash"} or modes_used == {"M-Pesa"}:
+		return
+	if "Cash" in modes_used and len(modes_used) == 2:
+		return
+
+	frappe.throw(
+		_(
+			"An amount greater than the bill total ({0}) was entered for {1}. Extra payment can "
+			"only be collected as Cash alone, M-Pesa alone, or Cash together with one other "
+			"method. Please collect the exact amount due instead, or use Receive Payment to "
+			"record extra as an advance on the customer's account."
+		).format(
+			frappe.format_value(doc.grand_total, {"fieldtype": "Currency"}),
+			frappe.bold(", ".join(sorted(modes_used))),
+		)
+	)
+
+
 
 def _is_return_allowed_for_current_profile():
 	"""Return True unless POS Profile explicitly disables returns."""
@@ -975,7 +1026,8 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		select_fields = """name, posting_date, posting_time, owner, customer, customer_name,
 			base_grand_total, base_rounded_total, status, discount_amount,
 			total_taxes_and_charges, custom_pos_opening_entry, queue_status,
-			queue_error, queue_attempts, queue_last_attempt_at, pos_profile, currency, custom_is_printed"""
+			queue_error, queue_attempts, queue_last_attempt_at, pos_profile, currency, custom_is_printed,
+			change_amount"""
 		if has_zatca_status:
 			select_fields += ", custom_zatca_submit_status"
 		if has_custom_is_held:
@@ -1656,6 +1708,7 @@ def queue_sales_invoice(data):
 		)
 
 		validate_required_salesperson(doc)
+		_validate_change_payment_restrictions(doc)
 
 		paid_credit = flt(amount_paid) + flt(getattr(doc, "loyalty_amount", 0))
 		doc.base_paid_amount = paid_credit
@@ -2005,6 +2058,7 @@ def create_draft_invoice(data):
 			)
 
 			validate_required_salesperson(doc)
+			_validate_change_payment_restrictions(doc)
 			_apply_klik_invoice_flags(doc, is_held=True, is_submitted=False)
 			doc.insert(ignore_permissions=True)
 
@@ -2502,6 +2556,7 @@ def _update_existing_draft_invoice(
 	invoice_doc.calculate_taxes_and_totals()
 
 	validate_required_salesperson(invoice_doc)
+	_validate_change_payment_restrictions(invoice_doc)
 	_apply_klik_invoice_flags(invoice_doc, is_held=True, is_submitted=False)
 	invoice_doc.save(ignore_permissions=True)
 
@@ -4973,6 +5028,7 @@ def submit_draft_invoice(invoice_id, data=None):
 			invoice_doc.save(ignore_permissions=True)
 
 		validate_required_salesperson(invoice_doc)
+		_validate_change_payment_restrictions(invoice_doc)
 
 		if enable_background_submission:
 			_mark_invoice_queued(invoice_doc, frappe.session.user)

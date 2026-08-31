@@ -1391,6 +1391,12 @@ def update_walkin_customer_info(invoice_name, alias=None, tax_id=None):
 		# Nothing actually changed -- not an error, just nothing to do.
 		return {"success": True, "changed": False}
 
+	if "tax_id" in updates:
+		# Keep the eTIMS-override shadow field (custom_walkin_tax_id) in sync
+		# with any post-submit correction to tax_id -- no separate log entry,
+		# it's just a mirror of the same value.
+		updates["custom_walkin_tax_id"] = updates["tax_id"]
+
 	try:
 		existing_log = frappe.parse_json(current.get("custom_walkin_info_change_log") or "[]")
 		if not isinstance(existing_log, list):
@@ -2371,6 +2377,11 @@ def build_sales_invoice_doc(
 	# Set tax ID if provided
 	if tax_id:
 		doc.tax_id = tax_id
+		# Shadow copy on a plain custom field the eTIMS PIN override reads from
+		# (klik_pos/integrations/etims_walkin_pin.py) -- unlike tax_id itself,
+		# nothing in core ERPNext resets this during doc.submit(), so it's still
+		# correct by the time the on_submit hook chain runs.
+		doc.custom_walkin_tax_id = tax_id
 
 	# Walk-in-only per-transaction name (see TaxSection.tsx) -- same "only if
 	# provided" handling as tax_id right above, for the same reason: leaving it
@@ -2505,6 +2516,7 @@ def _update_existing_draft_invoice(
 	invoice_doc.enable_background_invoice_submission = rebuilt_doc.enable_background_invoice_submission
 	invoice_doc.custom_delivery_personnel = rebuilt_doc.custom_delivery_personnel
 	invoice_doc.tax_id = rebuilt_doc.tax_id
+	invoice_doc.custom_walkin_tax_id = rebuilt_doc.custom_walkin_tax_id
 	invoice_doc.custom_customer_alias = rebuilt_doc.custom_customer_alias
 	invoice_doc.pos_profile = rebuilt_doc.pos_profile
 	invoice_doc.company = rebuilt_doc.company

@@ -554,15 +554,32 @@ def _fetch_sales_data(pos_profile, opening_entry_name, opening_date, is_admin):
 
 
 def _fetch_daily_sales_data(pos_profile, opening_date):
-	"""Fetch all sales data for the day (admin view)."""
+	"""Fetch all sales data for the day (admin view).
+
+	Each invoice's real grand_total is prorated across whichever payment
+	rows it has, in proportion to what was entered against each mode
+	(SUM(sip.amount) per invoice via inv_totals). A single-mode invoice
+	gets 100% of its grand_total attributed to that one mode, so any
+	surplus entered on any mode -- cash change, or simply a wrong amount
+	typed against a non-cash mode -- is automatically excluded, with no
+	assumption about which mode is allowed to have "change". A genuinely
+	split-tender invoice gets each mode its proportional share, always
+	summing back to the real grand_total, for any number of payment
+	methods used on that invoice.
+	"""
 	rows = frappe.db.sql(
 		"""
         SELECT
             sip.mode_of_payment,
-            SUM(sip.amount) as total_amount,
+            SUM(sip.amount * si.grand_total / NULLIF(inv_totals.total_paid, 0)) as total_amount,
             COUNT(DISTINCT si.name) as transactions
         FROM `tabSales Invoice` si
         JOIN `tabSales Invoice Payment` sip ON si.name = sip.parent
+        JOIN (
+            SELECT parent, SUM(amount) as total_paid
+            FROM `tabSales Invoice Payment`
+            GROUP BY parent
+        ) inv_totals ON inv_totals.parent = si.name
         WHERE si.pos_profile = %s
           AND si.docstatus = 1
           AND si.posting_date = %s
@@ -577,15 +594,23 @@ def _fetch_daily_sales_data(pos_profile, opening_date):
 
 
 def _fetch_opening_sales_data(opening_entry_name):
-	"""Fetch sales data for specific opening entry (regular user view)."""
+	"""Fetch sales data for specific opening entry (regular user view).
+
+	Same proration as _fetch_daily_sales_data -- see that docstring for why.
+	"""
 	rows = frappe.db.sql(
 		"""
         SELECT
             sip.mode_of_payment,
-            SUM(sip.amount) as total_amount,
+            SUM(sip.amount * si.grand_total / NULLIF(inv_totals.total_paid, 0)) as total_amount,
             COUNT(DISTINCT si.name) as transactions
         FROM `tabSales Invoice` si
         JOIN `tabSales Invoice Payment` sip ON si.name = sip.parent
+        JOIN (
+            SELECT parent, SUM(amount) as total_paid
+            FROM `tabSales Invoice Payment`
+            GROUP BY parent
+        ) inv_totals ON inv_totals.parent = si.name
         WHERE si.custom_pos_opening_entry = %s
           AND si.docstatus = 1
         GROUP BY sip.mode_of_payment

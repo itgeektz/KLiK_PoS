@@ -1735,14 +1735,23 @@ def queue_sales_invoice(data):
 				invoice_name=doc.name,
 			)
 
+			_apply_klik_invoice_flags(doc, is_submitted=True)
+			doc.submit()
+
+			# Re-apply walk-in Alias/Tax ID AFTER submit, not before: doc.submit()
+			# re-runs Sales Invoice's own validate()/set_missing_values(), which
+			# re-pulls tax_id from the Customer master (blank for the shared
+			# walk-in "Cash Customer" record) and silently overwrites whatever
+			# was db_set beforehand. custom_customer_alias is a plain custom
+			# field nothing in core ERPNext touches, so it always survived --
+			# tax_id alone was getting wiped, which is why only the alias was
+			# sticking at checkout.
 			if tax_id:
 				doc.db_set("tax_id", tax_id)
 
 			if custom_customer_alias:
 				doc.db_set("custom_customer_alias", custom_customer_alias)
 
-			_apply_klik_invoice_flags(doc, is_submitted=True)
-			doc.submit()
 			doc.reload()
 
 			try:
@@ -1819,12 +1828,16 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 		attempts = int(getattr(doc, "queue_attempts", 0) or 0) + 1
 		_update_queue_fields(doc, QUEUE_STATUSES["processing"], attempts=attempts)
 		doc.save(ignore_permissions=True)
-		if tax_id:
-			doc.tax_id = tax_id
-		if custom_customer_alias:
-			doc.custom_customer_alias = custom_customer_alias
 		_apply_klik_invoice_flags(doc, is_submitted=True)
 		doc.submit()
+
+		# Same reasoning as queue_sales_invoice(): doc.submit() re-validates and
+		# can pull tax_id back from the Customer master, so it has to be forced
+		# back on with db_set() AFTER submit, not assigned in-memory before it.
+		if tax_id:
+			doc.db_set("tax_id", tax_id)
+		if custom_customer_alias:
+			doc.db_set("custom_customer_alias", custom_customer_alias)
 		doc.reload()
 		try:
 			_cancel_sales_invoice_reservations(doc.name)
@@ -4938,6 +4951,17 @@ def submit_draft_invoice(invoice_id, data=None):
 
 			invoice_doc.set_taxes()
 			invoice_doc.set_missing_values()
+
+			# set_missing_values() re-populates invoice_doc.tax_id from the
+			# Customer master (blank for the shared walk-in "Cash Customer"
+			# record), silently erasing the value assigned above from the
+			# checkout payload a few lines up. Re-apply both walk-in fields
+			# right after, before totals are calculated and the doc is saved.
+			if tax_id:
+				invoice_doc.tax_id = tax_id
+			if custom_customer_alias:
+				invoice_doc.custom_customer_alias = custom_customer_alias
+
 			invoice_doc.calculate_taxes_and_totals()
 
 			# Payments must be applied after the first totals pass, then totals are recalculated
@@ -4980,6 +5004,16 @@ def submit_draft_invoice(invoice_id, data=None):
 		else:
 			_apply_klik_invoice_flags(invoice_doc, is_submitted=True)
 			invoice_doc.submit()
+
+			# Same reasoning as queue_sales_invoice(): doc.submit() re-validates
+			# and can pull tax_id back from the Customer master again, so it has
+			# to be forced back on with db_set() AFTER submit, not left as an
+			# in-memory assignment made before it.
+			if tax_id:
+				invoice_doc.db_set("tax_id", tax_id)
+			if custom_customer_alias:
+				invoice_doc.db_set("custom_customer_alias", custom_customer_alias)
+
 			invoice_doc.reload()
 			try:
 				_cancel_sales_invoice_reservations(invoice_doc.name)

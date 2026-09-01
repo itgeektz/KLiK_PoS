@@ -9,6 +9,7 @@ from frappe.exceptions import ValidationError
 from frappe.utils import cint, flt, nowdate
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
+from klik_pos.overrides.etims_walkin_pin import reflect_walkin_pin_on_customer
 
 from .item.item_price import get_price_list_with_customer_priority
 from .loyalty import (
@@ -1788,16 +1789,18 @@ def queue_sales_invoice(data):
 			)
 
 			_apply_klik_invoice_flags(doc, is_submitted=True)
-			doc.submit()
+			# Reflecting the checkout PIN onto the walk-in Customer record for the
+			# duration of submit() means validate() picks up the real tax_id (and
+			# kenya_compliance_via_slade's eTIMS payload does too) the normal way --
+			# see klik_pos/overrides/etims_walkin_pin.py for the full reasoning and
+			# the concurrency note on why this is only safe for a single till today.
+			with reflect_walkin_pin_on_customer(doc.customer, tax_id):
+				doc.submit()
 
-			# Re-apply walk-in Alias/Tax ID AFTER submit, not before: doc.submit()
-			# re-runs Sales Invoice's own validate()/set_missing_values(), which
-			# re-pulls tax_id from the Customer master (blank for the shared
-			# walk-in "Cash Customer" record) and silently overwrites whatever
-			# was db_set beforehand. custom_customer_alias is a plain custom
-			# field nothing in core ERPNext touches, so it always survived --
-			# tax_id alone was getting wiped, which is why only the alias was
-			# sticking at checkout.
+			# Belt-and-suspenders: doc.tax_id should already be correct after the
+			# reflected submit() above, but force it back on in case reflect_walkin_
+			# pin_on_customer() took its no-op path for any reason (e.g. this
+			# customer wasn't flagged custom_is_walkin) -- same as before this change.
 			if tax_id:
 				doc.db_set("tax_id", tax_id)
 
@@ -1881,11 +1884,12 @@ def process_queued_sales_invoice(invoice_name, requested_by=None):
 		_update_queue_fields(doc, QUEUE_STATUSES["processing"], attempts=attempts)
 		doc.save(ignore_permissions=True)
 		_apply_klik_invoice_flags(doc, is_submitted=True)
-		doc.submit()
+		# See klik_pos/overrides/etims_walkin_pin.py -- same reasoning as the
+		# immediate-submit path in queue_sales_invoice().
+		with reflect_walkin_pin_on_customer(doc.customer, tax_id):
+			doc.submit()
 
-		# Same reasoning as queue_sales_invoice(): doc.submit() re-validates and
-		# can pull tax_id back from the Customer master, so it has to be forced
-		# back on with db_set() AFTER submit, not assigned in-memory before it.
+		# Belt-and-suspenders: see the matching comment in queue_sales_invoice().
 		if tax_id:
 			doc.db_set("tax_id", tax_id)
 		if custom_customer_alias:
@@ -5064,12 +5068,12 @@ def submit_draft_invoice(invoice_id, data=None):
 			}
 		else:
 			_apply_klik_invoice_flags(invoice_doc, is_submitted=True)
-			invoice_doc.submit()
+			# See klik_pos/overrides/etims_walkin_pin.py -- same reasoning as the
+			# immediate-submit path in queue_sales_invoice().
+			with reflect_walkin_pin_on_customer(invoice_doc.customer, tax_id):
+				invoice_doc.submit()
 
-			# Same reasoning as queue_sales_invoice(): doc.submit() re-validates
-			# and can pull tax_id back from the Customer master again, so it has
-			# to be forced back on with db_set() AFTER submit, not left as an
-			# in-memory assignment made before it.
+			# Belt-and-suspenders: see the matching comment in queue_sales_invoice().
 			if tax_id:
 				invoice_doc.db_set("tax_id", tax_id)
 			if custom_customer_alias:

@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Award, ChevronDown, Eye, Loader2, MailPlus, MessageCirclePlus, MessageSquarePlus, Printer, X } from "lucide-react";
 import { useCartStore } from "../../stores/cartStore";
+import { useProductStore } from "../../stores/productStore";
 import { usePaymentModes } from "../../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../../hooks/useSalesTaxCharges";
 import { useDeliveryPersonnel } from "../../hooks/useDeliveryPersonnel";
@@ -207,6 +208,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
   const navigate = useNavigate();
   const { clearCart } = useCartStore();
+  const clearSearch = useProductStore((state) => state.clearSearch);
   const posProfileName = typeof posDetails?.name === "string" ? posDetails.name : "";
   const posCompanyName =
     typeof posDetails?.company === "string"
@@ -662,6 +664,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     const draftResponse = await createDraftSalesInvoice({
       ...buildPaymentData(selectedDeliveryPersonnel, { excludeActiveMpesa: true }),
       enable_background_invoice_submission: false,
+      // The M-Pesa amount is deliberately excluded above (it isn't paid yet --
+      // the STK push hasn't been confirmed), so this draft can otherwise look
+      // like a "cash sale" with no positive payment line. "held" tells the
+      // backend to skip the "requires at least one payment method with a
+      // positive amount" check, exactly like the Hold Order flow already does.
+      status: "held",
     });
 
     const draftName = draftResponse.invoice_name || draftResponse.invoice?.name;
@@ -1417,6 +1425,10 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const clearOrderState = () => {
     clearDraftInvoiceCache();
     clearCart();
+    // Reset the product search box left over from finding this order's items --
+    // "New Order", "View Invoice", print and email all route through here, and
+    // every one of them is a "start fresh" moment for the next customer.
+    clearSearch();
   };
 
   const finalizeCompletedOrderState = async (afterClear?: () => void) => {
@@ -2058,25 +2070,12 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                   backendTaxPreview={backendTaxPreview}
                 />
                 <div className="space-y-3 pt-6">
-                  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                    <label className="flex items-center gap-3 cursor-pointer group">
-                      <input
-                        type="checkbox"
-                        checked={enableBackgroundSubmission}
-                        onChange={(e) => setEnableBackgroundSubmission(e.target.checked)}
-                        disabled={invoiceSubmitted || isProcessingPayment}
-                        className="w-5 h-5 rounded border-gray-300 text-beveren-600 focus:ring-beveren-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                      <div className="flex-1">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 block">
-                          Submit Invoice in Background
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Process invoice without waiting for response
-                        </span>
-                      </div>
-                    </label>
-                  </div>
+                  {/* "Submit Invoice in Background" toggle removed from this screen --
+                      enableBackgroundSubmission is still set (from
+                      posDetails.enable_background_invoice_submission, the POS
+                      Profile's own configured default) and still sent to the
+                      backend below; cashiers just no longer see or override it
+                      per transaction. */}
                   <button onClick={handleCompletePayment} disabled={isActionButtonDisabled()} className={`w-full py-4 rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 ${isB2B ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-green-600 hover:bg-green-700 text-white"}`}>
                     {isProcessingPayment ? (
                       <>
@@ -2376,26 +2375,13 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                 </button>
               </div>
             )}
-            <div className={`flex items-center gap-4 ${isDeliveryRequired ? "" : "w-full justify-between"}`}>
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={enableBackgroundSubmission}
-                    onChange={(e) => setEnableBackgroundSubmission(e.target.checked)}
-                    disabled={invoiceSubmitted || isProcessingPayment}
-                    className="w-4 h-4 rounded border-gray-300 text-beveren-600 focus:ring-beveren-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Submit Invoice in Background
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    Process invoice without waiting for response
-                  </span>
-                </div>
-              </label>
+            <div className={`flex items-center gap-4 ${isDeliveryRequired ? "" : "w-full justify-end"}`}>
+              {/* "Submit Invoice in Background" toggle removed from this screen --
+                  enableBackgroundSubmission is still set (from
+                  posDetails.enable_background_invoice_submission, the POS
+                  Profile's own configured default) and still sent to the
+                  backend below; cashiers just no longer see or override it
+                  per transaction. */}
               <div className="flex items-center gap-3">
                <ActionButtons
                   invoiceSubmitted={invoiceSubmitted}

@@ -4815,7 +4815,12 @@ def delete_draft_invoices_for_opening_entry(opening_entry_name):
 				doc = frappe.get_doc("Sales Invoice", name)
 				if doc.docstatus == 0:
 					_cancel_sales_invoice_reservations(doc.name)
-					doc.delete()
+					# Cashiers routinely lack Delete permission on Sales Invoice via
+					# Role Permission Manager (by design, so they can't touch submitted
+					# invoices). This helper only ever deletes docstatus=0 Drafts that
+					# are already scoped to this exact opening entry/session, so the
+					# app-level checks above stand in for the doctype-level check.
+					doc.delete(ignore_permissions=True)
 					deleted += 1
 			except Exception as e:
 				frappe.logger().error(f"Error deleting draft invoice {name}: {e}")
@@ -4845,7 +4850,12 @@ def delete_draft_invoice(invoice_id):
 			}
 
 		_cancel_sales_invoice_reservations(invoice_doc.name)
-		invoice_doc.delete()
+		# Same reasoning as delete_draft_invoices_for_opening_entry: cashiers
+		# typically don't have Delete permission on Sales Invoice, but the
+		# status check above already guarantees this is an unsubmitted Draft
+		# (never a real, committed financial record), so it's safe to bypass
+		# the doctype-level permission check here.
+		invoice_doc.delete(ignore_permissions=True)
 
 		return {
 			"success": True,

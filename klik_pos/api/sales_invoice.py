@@ -2407,17 +2407,12 @@ def build_sales_invoice_doc(
 
 	# Ensure batch/serial requirements are satisfied BEFORE building items
 	_validate_no_variant_templates(items)
-	# Tops up real stock via a submitted Stock Reconciliation for any item whose
-	# available qty is short of what's being sold (see _auto_provision_stock_for_items
-	# below) -- this is the mechanism confirmed working for both zero-stock and
-	# partial-stock oversells. The invoice that follows is then a completely normal,
-	# single-line, update_stock = 1 invoice: ERPNext moves stock itself as it always
-	# has, against the now-topped-up Bin/batch. Deliberately NOT using the
-	# split-into-backorder-row / Klik POS Backorder path here -- that mechanism stays
-	# in the codebase (see _split_oversold_items, _process_backorders_after_submit)
-	# but is on hold until we decide how the Klik POS Backorder doctype should relate
-	# to these auto-provisioning Stock Reconciliations.
-	_auto_provision_stock_for_items(items, pos_profile)
+	# Oversells (cart qty > real available qty) are no longer fabricated here via a
+	# phantom Stock Reconciliation -- see the removal note above _split_oversold_items.
+	# ERPNext's own negative-stock support (Item/Stock Settings "Allow Negative
+	# Stock", plus the CustomSerialAndBatchBundle override for batch items) now lets
+	# this invoice post a real negative stock movement instead, so nothing needs to
+	# run here before _validate_and_autofetch_batch_and_serial.
 	_validate_and_autofetch_batch_and_serial(items, pos_profile)
 	_validate_product_bundle_components(items, pos_profile)
 
@@ -2976,265 +2971,33 @@ def _is_oversell_allowed_for_item(item_db_data, pos_profile):
 	return bool(cint((item_db_data or {}).get("custom_allow_oversell") or 0))
 
 
-def _generate_provisional_batch_id(item_code, disambiguator=0):
-	"""Deterministic batch id for auto-provisioned stock: first 5 alnum chars of the
-	item code (uppercased) + today's date as DDMMYY, e.g. item 'COKE-500ML' -> 'COKE5280826'.
-	Reusing the same id for repeat out-of-stock/partial-stock sales of the same item on
-	the same day is intentional -- see _ensure_stock_for_item, which tops up an existing
-	batch rather than erroring on a duplicate name, so every oversell of that item today
-	lands in one traceable batch instead of a new one per sale.
-
-	disambiguator: 0 gives the plain "PREFIX+DDMMYY" id. Two different items whose codes
-	happen to truncate to the same 5-character prefix (e.g. "Aciclovir Eye Ointment 5g"
-	and another "Aciclovir ..." item both giving "ACICL") would otherwise collide on this
-	exact name on the same day -- whichever item sells first "claims" it, and ERPNext
-	then rejects every other item's Stock Reconciliation against it with "Batch {0} does
-	not belong to Item {1}". _ensure_stock_for_item detects that case (an existing batch
-	under this name linked to a DIFFERENT item) and retries with disambiguator=1, 2, ...
-	until it lands on a name that's either free or already correctly linked to this item.
-	"""
-	import re
-	from frappe.utils import nowdate, get_datetime
-
-	prefix = re.sub(r"[^A-Za-z0-9]", "", item_code or "")[:5].upper() or "ITEM"
-	date_part = get_datetime(nowdate()).strftime("%d%m%y")
-	suffix = f"-{disambiguator}" if disambiguator else ""
-	return f"{prefix}{date_part}{suffix}"
-
-
-def _get_provisioning_rate(item_code):
-	"""Valuation rate to record auto-provisioned stock at: most recent submitted
-	Purchase Invoice rate, else most recent submitted Purchase Receipt rate,
-	else the Item's own valuation_rate, else 0.
-	"""
-	rate = frappe.db.sql(
-		"""select rate from `tabPurchase Invoice Item`
-		   where item_code=%s and docstatus=1
-		   order by creation desc limit 1""",
-		item_code,
-	)
-	if rate and flt(rate[0][0]):
-		return flt(rate[0][0])
-
-	rate = frappe.db.sql(
-		"""select rate from `tabPurchase Receipt Item`
-		   where item_code=%s and docstatus=1
-		   order by creation desc limit 1""",
-		item_code,
-	)
-	if rate and flt(rate[0][0]):
-		return flt(rate[0][0])
-
-	return flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
-
-
-def _create_stock_reconciliation(item_code, warehouse, qty, valuation_rate, company, batch_no=None):
-	"""Create and submit a Stock Reconciliation setting absolute qty for item_code in
-	warehouse (optionally scoped to batch_no) to `qty`. Returns the document name.
-
-	Attributed to SYSTEM_AUTOMATION_USER via _stamp_system_owner (see near the top of
-	this file) after insert/submit -- this is a system-generated top-up to let an
-	oversold sale go through, not something the cashier on shift actually did by hand.
-	"""
-	from frappe.utils import nowdate, nowtime
-
-	recon = frappe.new_doc("Stock Reconciliation")
-	recon.company = company
-	recon.purpose = "Stock Reconciliation"
-	recon.posting_date = nowdate()
-	recon.posting_time = nowtime()
-	recon.set_posting_time = 1
-	recon.remarks = _(
-		"Auto-provisioned by Klik POS to cover an oversold/backordered sale for item {0} "
-		"in warehouse {1}. This is the record of how much was sold ahead of real stock -- "
-		"reconcile it down (or otherwise true it up) once a Purchase Receipt/Invoice for "
-		"this item actually lands."
-	).format(item_code, warehouse)
-	row = recon.append("items", {
-		"item_code": item_code,
-		"warehouse": warehouse,
-		"qty": qty,
-		"valuation_rate": valuation_rate,
-	})
-	if batch_no:
-		row.batch_no = batch_no
-		# Required for v15+/v16 -- without this, Stock Reconciliation.set_current_serial_and_batch_bundle
-		# throws "Please add Serial and Batch Bundle for Item X" because it only accepts a plain batch_no
-		# when use_serial_batch_fields is explicitly set (the alternative is building a full Serial and
-		# Batch Bundle document first, which is unnecessary for this simple top-up).
-		row.use_serial_batch_fields = 1
-	recon.insert(ignore_permissions=True)
-	recon.submit()
-	_stamp_system_owner(recon.doctype, recon.name)
-	return recon.name
-
-
-def _ensure_stock_for_item(item_code, has_batch_no, required_qty, warehouse, company):
-	"""If real available stock (actual - reserved) for item_code/warehouse is below
-	required_qty, top it up via a Stock Reconciliation for exactly the shortfall --
-	whether that shortfall is the item's entire quantity (zero stock on hand) or just
-	part of it (partial stock on hand): the math is the same either way, so both cases
-	are handled by this one path with no special-casing.
-
-	For batch-tracked items, auto-creates/reuses a provisional Batch (see
-	_generate_provisional_batch_id) expiring 3 months from today, and tops that
-	specific batch up -- returning its batch id so the caller can stamp it onto the
-	cart line. For non-batch items, tops up the plain item/warehouse qty and returns None.
-	Returns None if no provisioning was needed.
-	"""
-	from erpnext.stock.doctype.batch.batch import get_batch_qty
-	from frappe.utils import add_months, nowdate
-
-	actual_qty = flt(
-		frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty") or 0
-	)
-	reserved_qty = get_reserved_qty_for_item_warehouse(item_code, warehouse)
-	available_qty = flt(actual_qty - reserved_qty)
-	shortfall = flt(required_qty) - available_qty
-	if shortfall <= 1e-6:
-		return None
-
-	valuation_rate = _get_provisioning_rate(item_code)
-
-	if has_batch_no:
-		# See the disambiguator note on _generate_provisional_batch_id -- the plain
-		# name can collide across two different items on the same day. Walk forward
-		# through disambiguator=0, 1, 2, ... until landing on a batch id that either
-		# doesn't exist yet (safe to create fresh) or already exists AND is linked to
-		# THIS item_code (safe to reuse/top up). Never reuse one linked to a different
-		# item -- that's exactly what produced "Batch {0} does not belong to Item {1}".
-		disambiguator = 0
-		while True:
-			batch_no = _generate_provisional_batch_id(item_code, disambiguator)
-			existing_batch_item = frappe.db.get_value("Batch", batch_no, "item")
-			if existing_batch_item is None:
-				batch_doc = frappe.new_doc("Batch")
-				batch_doc.batch_id = batch_no
-				batch_doc.item = item_code
-				batch_doc.expiry_date = add_months(nowdate(), 3)
-				batch_doc.insert(ignore_permissions=True)
-				_stamp_system_owner(batch_doc.doctype, batch_doc.name)
-				break
-			if existing_batch_item == item_code:
-				break
-			disambiguator += 1
-		existing_batch_qty = flt(get_batch_qty(batch_no=batch_no, warehouse=warehouse) or 0)
-		new_qty = existing_batch_qty + shortfall
-		_create_stock_reconciliation(item_code, warehouse, new_qty, valuation_rate, company, batch_no=batch_no)
-
-		real_portion = flt(available_qty)
-		if real_portion <= 1e-6:
-			# Nothing genuinely on hand -- the whole line is fabricated, same as the
-			# proven zero-stock case: one explicit batch (the provisional one) covers
-			# the entire row.
-			return batch_no
-
-		# Partial stock: some of this row is genuinely on the shelf, in a real batch.
-		# Stamping only the provisional batch on the row (like the zero-stock case
-		# does) would leave that real batch's qty sitting untouched in the system even
-		# though the customer is walking out with it -- an understated stock exit.
-		# Instead, draw the genuinely-available portion from the real batch(es) via the
-		# same FIFO logic used everywhere else in this file, and only the shortfall
-		# from the provisional batch, then hand both to the multi-batch Serial and
-		# Batch Bundle path (see _create_batch_and_serial_bundle) exactly as a
-		# cashier's own multi-batch selection would be.
-		try:
-			real_fetch = _autofetch_batch_fifo(item_code, warehouse, real_portion, exclude_batch=batch_no)
-		except Exception:
-			# Real batch stock moved between the shortfall check above and now (e.g. a
-			# concurrent sale). Fall back to fabricating the whole line from the
-			# provisional batch alone rather than blocking this sale.
-			frappe.log_error(
-				frappe.get_traceback(),
-				f"Auto-provision: real batch fetch failed for {item_code} in {warehouse}, "
-				f"falling back to fully-provisional batch",
-			)
-			_create_stock_reconciliation(
-				item_code, warehouse, existing_batch_qty + flt(required_qty), valuation_rate, company, batch_no=batch_no
-			)
-			return batch_no
-
-		real_entries = (
-			real_fetch if isinstance(real_fetch, list) else [{"batch_no": real_fetch, "qty": real_portion}]
-		)
-		return real_entries + [{"batch_no": batch_no, "qty": shortfall}]
-
-	new_qty = actual_qty + shortfall
-	_create_stock_reconciliation(item_code, warehouse, new_qty, valuation_rate, company)
-	return None
-
-
-def _auto_provision_stock_for_items(items, pos_profile):
-	"""For any item on this sale whose available quantity is less than what's being
-	sold, and for which oversell is allowed (POS Profile.custom_allow_out_of_stock_sale
-	globally, or the item's own custom_allow_oversell -- see _is_oversell_allowed_for_item),
-	top up real stock via a submitted Stock Reconciliation BEFORE the existing stock/batch
-	validations run, so they pass naturally with no changes to them. This is the
-	confirmed-working mechanism for both zero-stock and partial-stock oversells; the
-	shortfall math in _ensure_stock_for_item is the same either way, and for a
-	batch-tracked item with some real stock still on the shelf, that real portion is
-	drawn from its own batch via FIFO instead of being silently left untouched (see
-	_ensure_stock_for_item for why).
-
-	Serial-tracked items are left untouched (out of scope; they keep requiring a real
-	serial). Mutates `items` in place: stamps `batchNumber` onto any line whose item
-	got a single provisioned batch, or `bundle_entries` onto a line that needed a mix
-	of a real batch plus the provisional one -- whichever the line doesn't already
-	have an explicit batch/serial selection for.
-	"""
-	if not items:
-		return
-
-	warehouse = getattr(pos_profile, "warehouse", None)
-	if not warehouse:
-		return
-	company = getattr(pos_profile, "company", None)
-
-	item_codes = [item.get("id") for item in items if item.get("id")]
-	if not item_codes:
-		return
-
-	item_data_map = _batch_fetch_item_data(item_codes)
-
-	required_by_item = {}
-	for item in items:
-		item_code = item.get("id")
-		if not item_code:
-			continue
-		item_db_data = item_data_map.get(item_code, {}) or {}
-		if not int(item_db_data.get("is_stock_item") or 0):
-			continue
-		if int(item_db_data.get("has_serial_no") or 0):
-			continue
-		if not _is_oversell_allowed_for_item(item_db_data, pos_profile):
-			continue
-		required_by_item[item_code] = flt(required_by_item.get(item_code, 0)) + flt(item.get("quantity") or 0)
-
-	provisioned = {}
-	for item_code, required_qty in required_by_item.items():
-		if required_qty <= 0:
-			continue
-		has_batch_no = int((item_data_map.get(item_code) or {}).get("has_batch_no") or 0)
-		result = _ensure_stock_for_item(item_code, has_batch_no, required_qty, warehouse, company)
-		if result:
-			provisioned[item_code] = result
-
-	if provisioned:
-		for item in items:
-			item_code = item.get("id")
-			if item_code not in provisioned:
-				continue
-			if item.get("batchNumber") or item.get("batch_no") or item.get("bundle_entries"):
-				continue
-			result = provisioned[item_code]
-			if isinstance(result, list):
-				# Partial stock on a batch-tracked item: the genuinely-available portion
-				# (real batch, via FIFO) plus the provisional batch for the shortfall --
-				# see _ensure_stock_for_item. Goes through the same multi-batch Serial
-				# and Batch Bundle path a cashier's own multi-batch selection would.
-				item["bundle_entries"] = result
-			else:
-				item["batchNumber"] = result
+# --- Removed: the fabricated-stock oversell mechanism ---------------------------
+# This file used to top up real stock via an auto-submitted Stock Reconciliation
+# (and, for batch items, a fabricated provisional Batch with a hardcoded 3-month
+# expiry) whenever a cart line outsold what was actually on hand -- see
+# _generate_provisional_batch_id / _get_provisioning_rate / _create_stock_reconciliation
+# / _ensure_stock_for_item / _auto_provision_stock_for_items in git history.
+#
+# That approach had two real problems: (1) it ran from validate_checkout_invoice,
+# which is supposed to be a side-effect-free preview -- so simply opening the
+# payment screen on an oversold cart permanently inflated stock even if the sale
+# was then abandoned or the cart cleared, with nothing anywhere to reverse it;
+# (2) it fabricated batches/expiry dates instead of using real ones.
+#
+# Klik POS now allows every sale to oversell -- batch-tracked or not -- via
+# ERPNext's own negative-stock support (Stock Settings/Item "Allow Negative
+# Stock") instead of fabricating documents. Item.allow_negative_stock and
+# Stock Settings.allow_negative_stock/allow_negative_stock_for_batch are
+# backfilled by klik_pos.patches.v16_0.enable_negative_stock_for_all_items.
+# For batch-tracked items, ERPNext 16's own SerialAndBatchBundle.validate()
+# does NOT actually honor those settings when deciding whether to block a
+# negative batch qty (it calls self.set_incoming_rate() with no arguments,
+# which hardcodes allow_negative_stock=False -- confirmed by ERPNext's own
+# test suite needing to monkeypatch validate_negative_batch to exercise this
+# scenario). klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle
+# (registered in hooks.py's extend_doctype_class) closes that gap so the
+# setting is actually honored for batch items too.
+# ----------------------------------------------------------------------------------
 
 
 def _split_oversold_items(items, pos_profile):
@@ -3381,17 +3144,16 @@ def _autofetch_batch_fifo(item_code, warehouse, qty, exclude_batch=None):
 	-- the exact same mechanism already used when a cashier manually selects more than
 	one batch for a line in the cart.
 
-	Raises if the item's total available stock across all its batches genuinely
-	can't cover `qty`. By the time this runs (after _split_oversold_items has already
-	trimmed any real stock-backed line down to what's actually on the shelf), that
-	should only trip if batch-level stock is out of sync with the Bin total -- worth
-	surfacing loudly rather than silently under-delivering stock.
+	If no non-expired batch (or combination of them) has enough real stock to cover
+	`qty` -- the zero-stock and partial-stock oversell cases -- the remainder is
+	assigned to the oldest eligible non-expired batch instead of raising, driving its
+	qty negative. That's intentional: Klik POS allows every stock item to oversell,
+	and CustomSerialAndBatchBundle (see klik_pos/overrides/serial_and_batch_bundle.py)
+	is what lets ERPNext actually post that negative qty instead of blocking it. This
+	only throws if the item has no non-expired batch to sell against at all -- there's
+	no batch_no left to record the sale under until one is created via a real receipt.
 
-	`exclude_batch`, when given, is left out of the candidate list entirely. Used by
-	_ensure_stock_for_item when fetching the *genuinely available* portion of a
-	partial-stock oversell, so that FIFO ordering can never accidentally pick the very
-	provisional batch it just fabricated the shortfall into (which would double-draw
-	from fabricated stock instead of the real batch this call is meant to find).
+	`exclude_batch`, when given, is left out of the candidate list entirely.
 	"""
 	from erpnext.stock.doctype.batch.batch import get_batch_qty
 	from frappe.utils import getdate, nowdate
@@ -3417,10 +3179,13 @@ def _autofetch_batch_fifo(item_code, warehouse, qty, exclude_batch=None):
 
 	remaining = required_qty
 	picked = []
+	non_expired_batches = []
 	for batch in batches:
-		if remaining <= 1e-6:
-			break
 		if batch.expiry_date and getdate(batch.expiry_date) < getdate(today):
+			continue
+		non_expired_batches.append(batch)
+
+		if remaining <= 1e-6:
 			continue
 
 		available_qty = flt(get_batch_qty(batch_no=batch.name, warehouse=warehouse) or 0)
@@ -3431,14 +3196,40 @@ def _autofetch_batch_fifo(item_code, warehouse, qty, exclude_batch=None):
 		picked.append({"batch_no": batch.name, "qty": take_qty})
 		remaining -= take_qty
 
-	if remaining > 1e-6 or not picked:
-		item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
-		frappe.throw(
-			_(
-				"No batch (or combination of batches) with sufficient stock found for item "
-				"{0} ({1}) in warehouse {2}. Required: {3}."
-			).format(item_name, item_code, warehouse, required_qty)
+	if remaining > 1e-6:
+		# No non-expired batch (or combination of them) had enough real stock to
+		# cover the qty. Klik POS allows every item to oversell -- see
+		# klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle,
+		# which lets a batch post negative stock -- so rather than block the sale
+		# here, assign the remainder to the oldest non-expired batch that isn't
+		# already fully picked above (FIFO/FEFO: the one that should be selling
+		# first), driving its qty negative instead of fabricating a new batch.
+		#
+		# This only throws if the item has NO non-expired batch at all to sell
+		# against -- there is no batch_no left to record the sale under, and one
+		# has to be created (with a real expiry date) via a Purchase Receipt/
+		# Invoice or a manual Batch entry before this item can be sold.
+		if not non_expired_batches:
+			item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
+			frappe.throw(
+				_(
+					"Item {0} ({1}) has no batch to sell against in warehouse {2}. "
+					"Receive it in (Purchase Receipt/Invoice, or a manual Batch entry) "
+					"at least once before it can be sold."
+				).format(item_name, item_code, warehouse)
+			)
+
+		already_picked_batches = {entry["batch_no"] for entry in picked}
+		fallback_batch = next(
+			(b for b in non_expired_batches if b.name not in already_picked_batches),
+			non_expired_batches[0],
 		)
+		existing_entry = next((entry for entry in picked if entry["batch_no"] == fallback_batch.name), None)
+		if existing_entry:
+			existing_entry["qty"] = flt(existing_entry["qty"]) + remaining
+		else:
+			picked.append({"batch_no": fallback_batch.name, "qty": remaining})
+		remaining = 0
 
 	if len(picked) == 1:
 		return picked[0]["batch_no"]

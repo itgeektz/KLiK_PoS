@@ -60,6 +60,10 @@ doc_events = {
 extend_doctype_class = {
     "Sales Invoice": "klik_pos.api.sales_invoice.CustomSalesInvoice",
     "POS Opening Entry": "klik_pos.overrides.pos_opening_entry.CustomPOSOpeningEntry",
+    # Makes Stock Settings/Item "Allow Negative Stock" actually apply to batch-tracked
+    # items -- see klik_pos/overrides/serial_and_batch_bundle.py for why core's own
+    # SerialAndBatchBundle.validate() doesn't honor those settings on its own.
+    "Serial and Batch Bundle": "klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle",
 }
 
 # Migration hooks

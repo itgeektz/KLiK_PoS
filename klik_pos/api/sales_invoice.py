@@ -3157,9 +3157,16 @@ def _autofetch_batch_fifo(item_code, warehouse, qty, exclude_batch=None):
 	assigned to the oldest eligible non-expired batch instead of raising, driving its
 	qty negative. That's intentional: Klik POS allows every stock item to oversell,
 	and CustomSerialAndBatchBundle (see klik_pos/overrides/serial_and_batch_bundle.py)
-	is what lets ERPNext actually post that negative qty instead of blocking it. This
-	only throws if the item has no non-expired batch to sell against at all -- there's
-	no batch_no left to record the sale under until one is created via a real receipt.
+	is what lets ERPNext actually post that negative qty instead of blocking it.
+
+	If the item has NO batch at all -- not even an expired one, i.e. it has never been
+	received via a Purchase Receipt/Invoice, Stock Entry, or manual Batch entry -- there
+	is no batch_no left to record the sale under, so one is auto-created on the spot by
+	_create_placeholder_batch_for_item() (see its docstring for exactly what it
+	fabricates, and why). This is deliberately different from the item having batches
+	that are ALL expired: that's real, existing physical stock past its expiry, and is
+	left blocking below -- a fresh sale should not be silently assigned to expired
+	inventory just because it's the only batch on file.
 
 	`exclude_batch`, when given, is left out of the candidate list entirely.
 	"""
@@ -3212,20 +3219,30 @@ def _autofetch_batch_fifo(item_code, warehouse, qty, exclude_batch=None):
 		# here, assign the remainder to the oldest non-expired batch that isn't
 		# already fully picked above (FIFO/FEFO: the one that should be selling
 		# first), driving its qty negative instead of fabricating a new batch.
-		#
-		# This only throws if the item has NO non-expired batch at all to sell
-		# against -- there is no batch_no left to record the sale under, and one
-		# has to be created (with a real expiry date) via a Purchase Receipt/
-		# Invoice or a manual Batch entry before this item can be sold.
 		if not non_expired_batches:
-			item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
-			frappe.throw(
-				_(
-					"Item {0} ({1}) has no batch to sell against in warehouse {2}. "
-					"Receive it in (Purchase Receipt/Invoice, or a manual Batch entry) "
-					"at least once before it can be sold."
-				).format(item_name, item_code, warehouse)
-			)
+			if not batches:
+				# The item has literally never had a batch created for it at all --
+				# no Purchase Receipt/Invoice, Stock Entry, or manual Batch entry has
+				# ever happened. There is no expired-vs-not distinction to make here;
+				# there's simply nothing to sell against yet. Auto-create one so this
+				# never has to block a sale -- see that function's docstring for the
+				# fabricated-expiry-date trade-off this deliberately accepts.
+				new_batch = _create_placeholder_batch_for_item(item_code, warehouse)
+				non_expired_batches = [new_batch]
+			else:
+				# The item HAS batch history, but every batch on file is expired.
+				# That's real physical stock past its expiry date, not a "never
+				# stocked" item -- silently assigning a fresh sale to expired
+				# inventory would be a genuine safety issue for a pharmacy, so this
+				# case is left blocking, same as before.
+				item_name = frappe.db.get_value("Item", item_code, "item_name") or item_code
+				frappe.throw(
+					_(
+						"Item {0} ({1}) only has expired batches in warehouse {2}. "
+						"Receive fresh stock (Purchase Receipt/Invoice, or a manual "
+						"Batch entry with a valid expiry date) before it can be sold."
+					).format(item_name, item_code, warehouse)
+				)
 
 		already_picked_batches = {entry["batch_no"] for entry in picked}
 		fallback_batch = next(
@@ -3242,6 +3259,129 @@ def _autofetch_batch_fifo(item_code, warehouse, qty, exclude_batch=None):
 	if len(picked) == 1:
 		return picked[0]["batch_no"]
 	return picked
+
+
+def _create_placeholder_batch_for_item(item_code, warehouse):
+	"""Auto-creates a real Batch record for an item that has never had one --
+	no Purchase Receipt/Invoice, Stock Entry, or manual Batch entry has ever
+	been recorded for it -- so _autofetch_batch_fifo always has a batch_no to
+	sell against instead of blocking the sale.
+
+	This is a deliberate, explicit trade-off, not a revival of the old
+	fabricated-stock mechanism this whole rework removed (see the removal note
+	above _split_oversold_items). The important distinction:
+
+	  - The OLD mechanism fabricated Stock Reconciliations -- i.e. it invented
+	    actual stock QUANTITY out of thin air, silently, as a side effect of
+	    just opening the checkout screen, and never reversed it if the cart
+	    was abandoned. That was the original bug report.
+	  - This function creates a Batch record with ZERO real qty impact of its
+	    own -- a Batch document with no Stock Ledger Entries against it has no
+	    stock or valuation effect. The actual sale that follows is what drives
+	    it negative, exactly the same way it would for any other item that
+	    already happens to have a batch on file. Nothing is fabricated here
+	    except the batch's identity and (see below) its expiry date.
+
+	The one real trade-off: ERPNext's own Batch.before_save() (see
+	erpnext/stock/doctype/batch/batch.py: set_expiry_date) refuses to save a
+	batch for an item with Item.has_expiry_date=1 unless it has an expiry_date,
+	and can only compute one automatically from a manufacturing_date +
+	Item.shelf_life_in_days -- which is 0/unset for items that have never been
+	received (there's no shelf life on file yet either). With no real receipt
+	to derive a real expiry from, the only way to let this item sell at all is
+	to supply a placeholder expiry date ourselves. This was an explicit,
+	informed choice (not a silent default) -- see the round-5 conversation for
+	the trade-off as presented to and chosen by the pharmacy's own team:
+	auto-create over requiring a manual one-time Batch entry per never-stocked
+	item, accepting that the placeholder expiry is NOT a real manufacturer
+	expiry until a real Purchase Receipt/Invoice corrects it.
+
+	To keep that placeholder auditable rather than indistinguishable from a
+	real batch:
+	  - The batch_id is prefixed "AUTO-" and is never mistakable for a real
+	    manufacturer/lot batch number.
+	  - The batch's description field states plainly that it's an
+	    auto-created placeholder with an unverified expiry date, pending a
+	    real receipt.
+	  - Every creation is logged via frappe.logger("klik_pos.negative_stock"),
+	    the same channel used everywhere else in this oversell mechanism, so
+	    these are all discoverable in one place for a periodic compliance
+	    review.
+	  - The placeholder expiry is 2 years out from today -- long enough that
+	    it won't itself start silently blocking sales again a few weeks later
+	    by rolling into "expired", short enough that it won't sit unnoticed
+	    for a decade. It still needs correcting (or the batch replacing) the
+	    first time this item is genuinely received.
+
+	Returns a frappe._dict shaped like the rows _autofetch_batch_fifo already
+	works with (`.name`, `.batch_id`, `.expiry_date`, `.creation`).
+	"""
+	from frappe.utils import add_days, now_datetime
+
+	item = frappe.db.get_value(
+		"Item",
+		item_code,
+		["item_name", "has_expiry_date", "stock_uom"],
+		as_dict=True,
+	) or frappe._dict()
+
+	batch_id = None
+	for _attempt in range(5):
+		candidate = f"AUTO-{frappe.generate_hash(length=8).upper()}"
+		if not frappe.db.exists("Batch", candidate):
+			batch_id = candidate
+			break
+	if not batch_id:
+		# Astronomically unlikely (5 collisions in a row), but never leave
+		# batch_id unset -- fall back to a timestamp-suffixed name instead of
+		# failing the sale outright.
+		batch_id = f"AUTO-{frappe.generate_hash(length=8).upper()}-{cint(now_datetime().timestamp())}"
+
+	placeholder_expiry = None
+	if cint(item.get("has_expiry_date")):
+		placeholder_expiry = add_days(nowdate(), 730)  # ~2 years out; see docstring above
+
+	batch_doc = frappe.get_doc(
+		{
+			"doctype": "Batch",
+			"item": item_code,
+			"batch_id": batch_id,
+			"item_name": item.get("item_name") or item_code,
+			"stock_uom": item.get("stock_uom"),
+			"expiry_date": placeholder_expiry,
+			"description": (
+				"AUTO-CREATED placeholder batch: no Purchase Receipt/Invoice, Stock "
+				"Entry, or manual Batch entry existed for this item before this sale "
+				"in warehouse "
+				f"{warehouse}. "
+				+ (
+					f"Expiry date ({placeholder_expiry}) is a PLACEHOLDER, not a real "
+					"manufacturer expiry -- correct it (or replace this batch) as soon "
+					"as this item is genuinely received."
+					if placeholder_expiry
+					else "This item is not expiry-tracked."
+				)
+			),
+		}
+	)
+	batch_doc.flags.ignore_permissions = True
+	batch_doc.insert(ignore_permissions=True)
+
+	frappe.logger("klik_pos.negative_stock").info(
+		f"Auto-created placeholder batch {batch_doc.name} for item {item_code} in "
+		f"warehouse {warehouse} (no prior batch history); placeholder expiry_date="
+		f"{placeholder_expiry}."
+	)
+
+	return frappe._dict(
+		{
+			"name": batch_doc.name,
+			"batch_id": batch_doc.batch_id,
+			"expiry_date": batch_doc.expiry_date,
+			"creation": batch_doc.creation,
+		}
+	)
+
 
 # def _autofetch_batch_fifo(item_code, warehouse, qty):
 # 	"""

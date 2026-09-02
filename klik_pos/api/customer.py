@@ -51,6 +51,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
         if has_customer_group_permissions and not permitted_customer_group_names:
             return {"success": True, "data": [], "total_count": 0}
 
+
         try:
             limit_val = int(limit) if limit else 100
         except Exception:

@@ -4035,6 +4035,17 @@ class CustomSalesInvoice(SalesInvoice):
 		self.validate_full_payment()
 
 	def validate_reserved_stock_availability(self):
+		# Klik POS: every stock item may be sold past zero/available stock (see the
+		# removal note above _split_oversold_items, and the log-only conversions of
+		# _validate_reserved_stock_for_items / _validate_product_bundle_components,
+		# for the full history). This method is a fourth, independent copy of that
+		# same availability check -- it duplicates _validate_reserved_stock_for_items
+		# almost exactly, but runs at submit time via before_submit rather than being
+		# called explicitly from queue_sales_invoice, which is why it was missed in
+		# earlier passes and kept blocking submissions ("Reserved stock protection...")
+		# after the other three checks had already been converted to log-only. Log
+		# the shortfall instead of blocking it, consistent with the rest of the
+		# oversell mechanism.
 		if not _should_reserve_stock(self):
 			return
 		if not self.update_stock or getattr(self, "is_return", 0):
@@ -4079,15 +4090,10 @@ class CustomSalesInvoice(SalesInvoice):
 			available_qty = flt(actual_qty - reserved_qty + flt(own_reserved_map.get((row.item_code, row.warehouse), 0)))
 
 			if required_qty > available_qty + 1e-9:
-				frappe.throw(
-					_(
-						"Reserved stock protection: item {0} in warehouse {1} has only {2} available after reservations, but {3} is required."
-					).format(
-						frappe.bold(row.item_code),
-						frappe.bold(row.warehouse),
-						flt(available_qty),
-						flt(required_qty),
-					)
+				frappe.logger("klik_pos.negative_stock").info(
+					f"Reserved stock protection bypassed: item {row.item_code} in warehouse "
+					f"{row.warehouse} has only {available_qty} available after reservations, "
+					f"but {required_qty} is required (Sales Invoice {self.name})."
 				)
 
 	def validate_full_payment(self):

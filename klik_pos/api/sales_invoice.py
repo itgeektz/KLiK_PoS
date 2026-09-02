@@ -464,17 +464,19 @@ def _reserve_stock_for_queued_invoice(doc):
 		)
 		available_to_reserve = flt(actual_qty - reserved_map.get((row.item_code, row.warehouse), 0))
 
-		if required_qty > available_to_reserve + 1e-9:
-			frappe.throw(
-				_(
-					"Insufficient stock to reserve for item {0} in warehouse {1}. Required: {2}, Available to reserve: {3}."
-				).format(
-					frappe.bold(row.item_code),
-					frappe.bold(row.warehouse),
-					flt(required_qty),
-					flt(available_to_reserve),
-				)
-			)
+		# Klik POS allows every item to oversell (see
+		# klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle and the
+		# Stock Settings "Allow Negative Stock" flags) -- Stock Reservation Entry itself
+		# is a hold against REAL, existing stock, though, and has no equivalent negative
+		# concept. Rather than block the queue here (the old behaviour) or try to force
+		# a reservation beyond what's real, reserve only the genuinely-available portion
+		# -- Stock Settings.allow_partial_reservation covers exactly this -- and simply
+		# don't reserve the oversold remainder, since there's nothing real to hold for
+		# stock that doesn't exist. The oversold qty still gets sold; it just isn't
+		# "reserved" first, the same as it wouldn't be for a non-queued checkout.
+		qty_to_reserve = min(required_qty, max(available_to_reserve, 0))
+		if qty_to_reserve <= 1e-6:
+			continue
 
 		sre = frappe.new_doc("Stock Reservation Entry")
 		sre.item_code = row.item_code
@@ -484,9 +486,9 @@ def _reserve_stock_for_queued_invoice(doc):
 		sre.voucher_type = "Sales Invoice"
 		sre.voucher_no = doc.name
 		sre.voucher_detail_no = row.name
-		sre.available_qty = available_to_reserve
+		sre.available_qty = max(available_to_reserve, 0)
 		sre.voucher_qty = required_qty
-		sre.reserved_qty = required_qty
+		sre.reserved_qty = qty_to_reserve
 		sre.company = doc.company
 		sre.stock_uom = row.stock_uom or item_meta.stock_uom
 		sre.project = doc.project
@@ -505,7 +507,21 @@ def get_reserved_qty_for_item_warehouse(item_code, warehouse, exclude_invoice=No
 
 
 def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
-	"""Validate stock considering quantities reserved via Stock Reservation Entry."""
+	"""Log (never block) stock that's short even after accounting for quantities
+	reserved via Stock Reservation Entry.
+
+	This used to frappe.throw() an "Insufficient stock" error here -- a *separate*
+	hard block from the old fabricated-Stock-Reconciliation oversell mechanism, and
+	one that survived removing that mechanism because nothing about it depended on
+	oversell being allowed. It compares straight against Bin.actual_qty (ignoring
+	Item/Stock Settings "Allow Negative Stock" entirely), so once real stock hit
+	zero this fired regardless of any oversell setting -- previously masked only
+	because the old fabrication code had already inflated actual_qty by the time
+	this ran. Klik POS allows every stock item to oversell now (see
+	klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle and the
+	patch that turns on Stock Settings' negative-stock flags), so this must not
+	block either -- it only logs, matching that override's own approach.
+	"""
 	if not _should_reserve_stock(doc):
 		return
 	if not getattr(doc, "items", None):
@@ -583,18 +599,12 @@ def _validate_reserved_stock_for_items(doc, exclude_invoice=None):
 			)
 
 	if insufficient:
-		first = insufficient[0]
-		frappe.throw(
-			_(
-				"Insufficient stock for item {0} in warehouse {1}. Required: {2}, Available (after stock reservations): {3}, Reserved: {4}."
-			).format(
-				frappe.bold(first["item_code"]),
-				frappe.bold(first["warehouse"]),
-				flt(first["required_qty"]),
-				flt(first["available_qty"]),
-				flt(first["reserved_qty"]),
+		for row in insufficient:
+			frappe.logger("klik_pos.negative_stock").info(
+				f"Oversell allowed past stock reservations for item {row['item_code']} in "
+				f"warehouse {row['warehouse']}: required {row['required_qty']}, available "
+				f"(after reservations) {row['available_qty']}, reserved {row['reserved_qty']}."
 			)
-		)
 
 
 # The cashier who checked out a POS sale is never going to hold create/submit rights
@@ -2940,16 +2950,14 @@ def _validate_product_bundle_components(items, pos_profile):
 				or 0
 			)
 			if available_qty < required_qty:
-				frappe.throw(
-					_(
-						"Insufficient stock for Product Bundle {0}. Component {1} requires {2}, but only {3} is available in warehouse {4}."
-					).format(
-						bundle_item_code,
-						component_name,
-						required_qty,
-						available_qty,
-						pos_profile.warehouse,
-					)
+				# Klik POS allows every stock item to oversell now (see
+				# klik_pos.overrides.serial_and_batch_bundle.CustomSerialAndBatchBundle and
+				# the Stock Settings negative-stock patch) -- a bundle component being short
+				# is no exception, so this only logs instead of blocking the sale.
+				frappe.logger("klik_pos.negative_stock").info(
+					f"Oversell allowed for Product Bundle {bundle_item_code} component "
+					f"{component_name}: required {required_qty}, available {available_qty} "
+					f"in warehouse {pos_profile.warehouse}."
 				)
 
 def _is_oversell_allowed_for_item(item_db_data, pos_profile):

@@ -19,7 +19,7 @@ import { createSalesReturn } from "../services/salesInvoice";
 import { useAllPaymentModes } from "../hooks/usePaymentModes";
 
 import { usePOSProfileStore } from "../stores/posProfileStore";
-import { useCreatePOSClosingEntry } from "../services/closingEntry";
+import { useCreatePOSClosingEntry, bulkDeleteDraftInvoicesForCurrentSession } from "../services/closingEntry";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { deleteDraftInvoice } from "../services/salesInvoice";
@@ -53,7 +53,32 @@ export default function ClosingShiftPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
 
+  // Bulk "delete all drafts" states (Closing Shift banner)
+  const [showBulkDeleteDraftsConfirm, setShowBulkDeleteDraftsConfirm] = useState(false);
+  const [isBulkDeletingDrafts, setIsBulkDeletingDrafts] = useState(false);
+
   const { invoices, isLoading,  error,  } = useSalesInvoices();
+  // Separate, filter-independent dataset for the payment reconciliation math (the
+  // summary tiles above the invoice list, and the "Expected"/"Variance" figures in
+  // the Close Shift modal). This deliberately does NOT share `invoices` above:
+  // that list is what the on-screen Status/Date/Payment/Search filters narrow down
+  // for browsing, and reusing it for the reconciliation totals meant "Expected"
+  // silently changed to match whatever filter a cashier happened to have selected
+  // (e.g. picking "Draft" in the Status dropdown made the tiles show draft
+  // invoices' amounts as if they were real cash owed). `submitted_only=true` asks
+  // the backend for docstatus=1 invoices only (excludes Draft and Cancelled) --
+  // see klik_pos.api.sales_invoice.get_sales_invoices -- so this dataset always
+  // reflects real, submitted transactions for the session regardless of what's
+  // showing in the list below. Note: this only fixes what the cashier SEES before
+  // confirming the close -- the POS Closing Entry document itself was always
+  // computed correctly server-side (klik_pos.api.pos_entry._calculate_payment_reconciliation
+  // already filters docstatus=1 independently of any frontend state), so past
+  // closing entries are not affected by this bug.
+  const {
+    invoices: submittedInvoicesForReconciliation,
+    isLoading: isLoadingReconciliation,
+    error: reconciliationError,
+  } = useSalesInvoices("", false, undefined, true);
   const { modes, isLoading: modesLoading, error: modesError } = useAllPaymentModes()
   const { posDetails } = usePOSProfileStore();
   const canProcessReturns = ![0, "0", false].includes(posDetails?.custom_allow_return as 0 | "0" | false);
@@ -157,8 +182,48 @@ export default function ClosingShiftPage() {
 
   }, [invoices, searchQuery, statusFilter, dateFilter, paymentFilter, isLoading, error, posDetails]);
 
+  // Invoices used for the payment reconciliation math (summary tiles + Close Shift
+  // modal). Scoped to the current POS profile/opening entry, same as the list
+  // above, but deliberately NOT narrowed by the on-screen Status/Date/Payment/Search
+  // filters -- those are for browsing the table, not for deciding what "real" cash
+  // was taken this session. Source data is already submitted-only (docstatus=1),
+  // see the useSalesInvoices(..., true) call above.
+  const reconciliationInvoices = useMemo(() => {
+    if (isLoadingReconciliation) return [];
+    if (reconciliationError) return [];
 
-  // Payment Stats Calculation - Calculate from filtered invoices
+    return submittedInvoicesForReconciliation.filter((invoice) => {
+      const matchesPOSProfile = !posDetails?.name || invoice.posProfile === posDetails.name;
+      const matchesOpeningEntry = !posDetails?.current_opening_entry ||
+        (invoice.custom_pos_opening_entry && invoice.custom_pos_opening_entry === posDetails.current_opening_entry);
+
+      return matchesPOSProfile && matchesOpeningEntry;
+    });
+  }, [submittedInvoicesForReconciliation, isLoadingReconciliation, reconciliationError, posDetails]);
+
+  // Draft invoices left over from the current session, surfaced as a "Delete all
+  // drafts" banner on this screen so the cashier can clear them explicitly before
+  // closing, rather than them silently carrying over into the next shift's
+  // invoice list. Sourced from `invoices` (not the submitted-only reconciliation
+  // dataset above) since drafts are exactly what that dataset excludes.
+  const draftInvoicesForSession = useMemo(() => {
+    if (isLoading) return [];
+    if (error) return [];
+
+    return invoices.filter((invoice) => {
+      if (invoice.status !== "Draft") return false;
+      const matchesPOSProfile = !posDetails?.name || invoice.posProfile === posDetails.name;
+      const matchesOpeningEntry = !posDetails?.current_opening_entry ||
+        (invoice.custom_pos_opening_entry && invoice.custom_pos_opening_entry === posDetails.current_opening_entry);
+
+      return matchesPOSProfile && matchesOpeningEntry;
+    });
+  }, [invoices, isLoading, error, posDetails]);
+
+  // Payment Stats Calculation - Calculate from reconciliationInvoices (submitted-only,
+  // filter-independent) so the summary tiles and Close Shift "Expected"/"Variance"
+  // always reflect real transactions, never whatever the Status/Date/Payment/Search
+  // filters on the invoice list below happen to be set to.
   const paymentStats = useMemo(() => {
     const stats: Record<string, {
       name: string;
@@ -190,8 +255,9 @@ export default function ClosingShiftPage() {
       ensurePaymentStat(modeName, openingAmount);
     });
 
-    // Calculate amounts and transactions from filtered invoices
-    filteredInvoices.forEach(invoice => {
+    // Calculate amounts and transactions from reconciliationInvoices (submitted-only,
+    // unaffected by the on-screen list filters -- see that useMemo's comment)
+    reconciliationInvoices.forEach(invoice => {
       // Check if invoice has multiple payment methods
       if (invoice.payment_methods && Array.isArray(invoice.payment_methods)) {
         //eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -225,12 +291,12 @@ export default function ClosingShiftPage() {
     });
 
     return stats;
-  }, [modes, filteredInvoices]);
+  }, [modes, reconciliationInvoices]);
   const total = Object.values(paymentStats).reduce((sum, stat) => sum + stat.amount, 0);
   const hasPaymentStats = Object.keys(paymentStats).length > 0;
 
   // Loading state
-  if (isLoading || modesLoading) {
+  if (isLoading || modesLoading || isLoadingReconciliation) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
@@ -296,6 +362,30 @@ export default function ClosingShiftPage() {
   const handleDeleteCancel = () => {
     setShowDeleteConfirm(false);
     setInvoiceToDelete(null);
+  };
+
+  // Bulk "delete all drafts" handlers (Closing Shift banner)
+  const handleBulkDeleteDraftsClick = () => {
+    setShowBulkDeleteDraftsConfirm(true);
+  };
+
+  const handleBulkDeleteDraftsConfirm = async () => {
+    setIsBulkDeletingDrafts(true);
+    try {
+      const result = await bulkDeleteDraftInvoicesForCurrentSession();
+      toast.success(result.message || `Deleted ${result.deleted_count ?? 0} draft invoice(s)`);
+      setShowBulkDeleteDraftsConfirm(false);
+      // Refresh the invoices list
+      window.location.reload();
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete draft invoices");
+      setIsBulkDeletingDrafts(false);
+    }
+  };
+
+  const handleBulkDeleteDraftsCancel = () => {
+    setShowBulkDeleteDraftsConfirm(false);
   };
 
   const handleRefund = (invoiceId: string) => {
@@ -455,6 +545,34 @@ export default function ClosingShiftPage() {
                     You can still close the shift, but payment summary will not be available.
                   </p>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Draft invoices left over from this session */}
+          {draftInvoicesForSession.length > 0 && (
+            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center">
+                  <div className="text-orange-600 dark:text-orange-400 mr-3">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                      {draftInvoicesForSession.length} draft invoice{draftInvoicesForSession.length === 1 ? '' : 's'} will be left behind
+                    </h3>
+                    <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+                      Draft invoices carry over into the next shift unless deleted now.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleBulkDeleteDraftsClick}
+                  className="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors whitespace-nowrap"
+                  type="button"
+                >
+                  Delete all drafts
+                </button>
               </div>
             </div>
           )}
@@ -771,6 +889,32 @@ export default function ClosingShiftPage() {
 
         {/* Bottom Navigation */}
         <BottomNavigation />
+
+        {/* Delete Confirmation Dialog (was missing on mobile -- state was wired via
+            handleDeleteClick but no dialog ever rendered in this branch, so tapping
+            Delete on a draft invoice silently did nothing on mobile) */}
+        <ConfirmDialog
+          isOpen={showDeleteConfirm}
+          onClose={handleDeleteCancel}
+          onConfirm={handleDeleteConfirm}
+          title="Delete Draft Invoice"
+          message={`Are you sure you want to delete draft invoice ${invoiceToDelete?.id}? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        />
+
+        {/* Bulk Delete Drafts Confirmation Dialog */}
+        <ConfirmDialog
+          isOpen={showBulkDeleteDraftsConfirm}
+          onClose={handleBulkDeleteDraftsCancel}
+          onConfirm={handleBulkDeleteDraftsConfirm}
+          title="Delete All Draft Invoices"
+          message={`Are you sure you want to delete all ${draftInvoicesForSession.length} draft invoice(s) for this session? This action cannot be undone.`}
+          confirmText={isBulkDeletingDrafts ? "Deleting..." : "Delete All"}
+          cancelText="Cancel"
+          confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        />
       </div>
     );
   }
@@ -812,6 +956,34 @@ export default function ClosingShiftPage() {
                     You can still close the shift, but payment summary will not be available.
                   </p>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Draft invoices left over from this session */}
+          {draftInvoicesForSession.length > 0 && (
+            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center">
+                  <div className="text-orange-600 dark:text-orange-400 mr-3">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                      {draftInvoicesForSession.length} draft invoice{draftInvoicesForSession.length === 1 ? '' : 's'} will be left behind
+                    </h3>
+                    <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+                      Draft invoices carry over into the next shift unless deleted now.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleBulkDeleteDraftsClick}
+                  className="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors whitespace-nowrap"
+                  type="button"
+                >
+                  Delete all drafts
+                </button>
               </div>
             </div>
           )}
@@ -1147,6 +1319,18 @@ export default function ClosingShiftPage() {
           title="Delete Draft Invoice"
           message={`Are you sure you want to delete draft invoice ${invoiceToDelete?.id}? This action cannot be undone.`}
           confirmText="Delete"
+          cancelText="Cancel"
+          confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        />
+
+        {/* Bulk Delete Drafts Confirmation Dialog */}
+        <ConfirmDialog
+          isOpen={showBulkDeleteDraftsConfirm}
+          onClose={handleBulkDeleteDraftsCancel}
+          onConfirm={handleBulkDeleteDraftsConfirm}
+          title="Delete All Draft Invoices"
+          message={`Are you sure you want to delete all ${draftInvoicesForSession.length} draft invoice(s) for this session? This action cannot be undone.`}
+          confirmText={isBulkDeletingDrafts ? "Deleting..." : "Delete All"}
           cancelText="Cancel"
           confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
         />

@@ -1026,6 +1026,7 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		has_custom_is_created_from_klik = any(
 			df.fieldname == "custom_is_created_from_klik" for df in sales_invoice_meta.fields
 		)
+		has_custom_pos_voided = any(df.fieldname == "custom_pos_voided" for df in sales_invoice_meta.fields)
 
 		select_fields = """name, posting_date, posting_time, owner, customer, customer_name,
 			base_grand_total, base_rounded_total, status, discount_amount,
@@ -1040,6 +1041,12 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 			select_fields += ", custom_is_submitted"
 		if has_custom_is_created_from_klik:
 			select_fields += ", custom_is_created_from_klik"
+		if has_custom_pos_voided:
+			# Voided drafts are kept forever for audit/KRA record-keeping (see
+			# delete_draft_invoice / delete_draft_invoices_for_opening_entry) --
+			# surfaced here so the frontend can tell a resolved/voided draft
+			# apart from one still awaiting action.
+			select_fields += ", custom_pos_voided, custom_pos_void_reason"
 
 		conditions = []
 		params = []
@@ -4797,8 +4804,23 @@ def create_multi_invoice_return(return_data):
 
 def delete_draft_invoices_for_opening_entry(opening_entry_name):
 	"""
-	Delete all draft Sales Invoices linked to the given POS Opening Entry (session).
-	Called on POS close when POS Profile has custom_clear_draft_invoices enabled.
+	VOID (not delete) every leftover draft Sales Invoice linked to the given
+	POS Opening Entry (session). Called on POS close when POS Profile has
+	custom_clear_draft_invoices enabled.
+
+	Kenyan tax record-keeping (KRA/eTIMS) expects every generated invoice
+	number to stay traceable -- physically deleting the row removes its
+	number from the table entirely, which is indistinguishable from a hidden
+	sale during an audit, even though this row was only ever an abandoned
+	cart that was never submitted (a Draft never posts GL or Stock Ledger
+	entries in the first place). So instead of doc.delete(), this flags the
+	draft via custom_pos_voided/custom_pos_void_reason/custom_pos_voided_by/
+	custom_pos_voided_on (added by the add_draft_invoice_void_fields patch --
+	run `bench migrate` before deploying this) and leaves the full document
+	-- customer, items, amounts, invoice number -- in the Sales Invoice table
+	permanently. It stays docstatus=0/status "Draft"; voiding only marks it
+	as resolved so it stops being counted as something the cashier still
+	needs to act on (see draftInvoicesForSession on the Closing Shift page).
 	"""
 	try:
 		drafts = frappe.get_all(
@@ -4806,29 +4828,33 @@ def delete_draft_invoices_for_opening_entry(opening_entry_name):
 			filters={
 				"docstatus": 0,
 				"custom_pos_opening_entry": opening_entry_name,
+				"custom_pos_voided": ("!=", 1),
 			},
 			pluck="name",
 		)
-		deleted = 0
+		voided = 0
 		for name in drafts:
 			try:
-				doc = frappe.get_doc("Sales Invoice", name)
-				if doc.docstatus == 0:
-					_cancel_sales_invoice_reservations(doc.name)
-					# Cashiers routinely lack Delete permission on Sales Invoice via
-					# Role Permission Manager (by design, so they can't touch submitted
-					# invoices). This helper only ever deletes docstatus=0 Drafts that
-					# are already scoped to this exact opening entry/session, so the
-					# app-level checks above stand in for the doctype-level check.
-					doc.delete(ignore_permissions=True)
-					deleted += 1
+				_cancel_sales_invoice_reservations(name)
+				frappe.db.set_value(
+					"Sales Invoice",
+					name,
+					{
+						"custom_pos_voided": 1,
+						"custom_pos_void_reason": "Left open at POS close",
+						"custom_pos_voided_by": frappe.session.user,
+						"custom_pos_voided_on": frappe.utils.now_datetime(),
+					},
+					update_modified=True,
+				)
+				voided += 1
 			except Exception as e:
-				frappe.logger().error(f"Error deleting draft invoice {name}: {e}")
-		if deleted:
-			frappe.logger().info(f"Cleared {deleted} draft invoice(s) for opening entry {opening_entry_name}")
-		return deleted
+				frappe.logger().error(f"Error voiding draft invoice {name}: {e}")
+		if voided:
+			frappe.logger().info(f"Voided {voided} draft invoice(s) for opening entry {opening_entry_name}")
+		return voided
 	except Exception:
-		frappe.log_error(frappe.get_traceback(), "Clear draft invoices on POS close")
+		frappe.log_error(frappe.get_traceback(), "Void draft invoices on POS close")
 		# Do not raise - closing entry already succeeded
 		return 0
 
@@ -4836,36 +4862,52 @@ def delete_draft_invoices_for_opening_entry(opening_entry_name):
 @frappe.whitelist()
 def delete_draft_invoice(invoice_id):
 	"""
-	Delete a draft sales invoice.
-	Only allows deletion of Draft status invoices.
+	VOID (not delete) a single draft sales invoice. Only allows voiding
+	Draft status invoices. See delete_draft_invoices_for_opening_entry()
+	above for why this no longer physically deletes the row -- KRA/eTIMS
+	record-keeping expects invoice numbers to stay traceable, so the row is
+	kept forever and just flagged as voided/resolved. Endpoint name and
+	response shape are unchanged so the existing frontend call sites (single
+	Delete button, InvoiceViewPage) keep working without any change on their
+	end.
 	"""
 	try:
-		# Get the invoice document
 		invoice_doc = frappe.get_doc("Sales Invoice", invoice_id)
 
 		if invoice_doc.status != "Draft":
 			return {
 				"success": False,
-				"error": f"Cannot delete invoice {invoice_id}. Only Draft invoices can be deleted. Current status: {invoice_doc.status}",
+				"error": f"Cannot void invoice {invoice_id}. Only Draft invoices can be voided. Current status: {invoice_doc.status}",
+			}
+
+		if invoice_doc.get("custom_pos_voided"):
+			return {
+				"success": True,
+				"message": f"Draft invoice {invoice_id} was already voided",
 			}
 
 		_cancel_sales_invoice_reservations(invoice_doc.name)
-		# Same reasoning as delete_draft_invoices_for_opening_entry: cashiers
-		# typically don't have Delete permission on Sales Invoice, but the
-		# status check above already guarantees this is an unsubmitted Draft
-		# (never a real, committed financial record), so it's safe to bypass
-		# the doctype-level permission check here.
-		invoice_doc.delete(ignore_permissions=True)
+		frappe.db.set_value(
+			"Sales Invoice",
+			invoice_doc.name,
+			{
+				"custom_pos_voided": 1,
+				"custom_pos_void_reason": "Voided by cashier",
+				"custom_pos_voided_by": frappe.session.user,
+				"custom_pos_voided_on": frappe.utils.now_datetime(),
+			},
+			update_modified=True,
+		)
 
 		return {
 			"success": True,
-			"message": f"Draft invoice {invoice_id} deleted successfully",
+			"message": f"Draft invoice {invoice_id} voided successfully",
 		}
 
 	except frappe.DoesNotExistError:
 		return {"success": False, "error": f"Invoice {invoice_id} not found"}
 	except Exception as e:
-		frappe.log_error(frappe.get_traceback(), f"Error deleting draft invoice {invoice_id}")
+		frappe.log_error(frappe.get_traceback(), f"Error voiding draft invoice {invoice_id}")
 		return {"success": False, "error": str(e)}
 
 

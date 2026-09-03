@@ -123,7 +123,11 @@ export default function InvoiceViewPage() {
 
   const isDraftInvoiceStatus = (status?: string) => status === "Draft" || status === "Pending"
 
-  // Delete invoice handlers
+  // Void invoice handlers (still named/called as "delete" at the API layer --
+  // deleteDraftInvoice() -- but the backend now VOIDS the draft, flagging it
+  // and keeping the row forever, instead of physically deleting it. KRA/
+  // eTIMS record-keeping expects invoice numbers to stay traceable. See
+  // klik_pos.api.sales_invoice.delete_draft_invoice.
   const handleDeleteClick = () => {
     if (requiresSalespersonPin && !activeSalesperson) {
       runWithSalespersonGate(handleDeleteClick)
@@ -132,7 +136,7 @@ export default function InvoiceViewPage() {
 
     if (!invoice) return;
     if (!isDraftInvoiceStatus(invoice.status)) {
-      toast.error("Only draft invoices can be deleted");
+      toast.error("Only draft invoices can be voided");
       return;
     }
     setShowDeleteConfirm(true);
@@ -148,13 +152,13 @@ export default function InvoiceViewPage() {
 
     try {
       await deleteDraftInvoice(invoice.name || invoice.id);
-      toast.success(`Draft invoice ${invoice.name || invoice.id} deleted successfully`);
+      toast.success(`Draft invoice ${invoice.name || invoice.id} voided successfully`);
       setShowDeleteConfirm(false);
       navigate('/invoice');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      console.error("Delete error:", error);
-      toast.error(error.message || "Failed to delete invoice");
+      console.error("Void error:", error);
+      toast.error(error.message || "Failed to void invoice");
     }
   };
 
@@ -354,7 +358,10 @@ export default function InvoiceViewPage() {
     queue_status?: string;
     queue_error?: string;
   };
-  const isDraftInvoice = isDraftInvoiceStatus(invoice.status);
+  // A voided draft is still status "Draft" underneath (voiding only flags it
+  // and keeps the row for audit purposes -- see delete_draft_invoice), but it
+  // should no longer be treated as an active, resumable cart.
+  const isDraftInvoice = isDraftInvoiceStatus(invoice.status) && !invoice.custom_pos_voided;
 
   const handleGoToCart = async () => {
     if (!invoice) return
@@ -1169,11 +1176,11 @@ export default function InvoiceViewPage() {
         isOpen={showDeleteConfirm}
         onClose={handleDeleteCancel}
         onConfirm={handleDeleteConfirm}
-        title="Delete Draft Invoice"
-        message={`Are you sure you want to delete draft invoice ${invoice?.name || invoice?.id}? This action cannot be undone.`}
-        confirmText="Delete"
+        title="Void Draft Invoice"
+        message={`Void draft invoice ${invoice?.name || invoice?.id}? It will no longer be resumable, but the record itself is kept permanently for your accounting/KRA audit trail -- nothing is deleted.`}
+        confirmText="Void"
         cancelText="Cancel"
-        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        confirmButtonClass="bg-orange-600 hover:bg-orange-700 text-white"
       />
 
       <SalespersonAuthModal

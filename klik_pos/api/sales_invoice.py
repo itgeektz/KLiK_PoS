@@ -4911,6 +4911,59 @@ def delete_draft_invoice(invoice_id):
 		return {"success": False, "error": str(e)}
 
 
+def _reassign_opening_entry_if_shift_closed(invoice_doc):
+	"""
+	A draft can sit around long enough that its original POS session (POS
+	Opening Entry) gets closed before the draft is finally submitted. That
+	session's Closing Entry is an immutable snapshot taken at close time
+	(see _populate_sales_invoices_to_closing_entry / _calculate_closing_entry_totals,
+	which only look at invoices linked to that specific opening entry at the
+	moment of closing), so an invoice submitted after the fact can never be
+	picked up by it -- the sale would otherwise be a valid, Paid invoice that
+	silently never appears in any shift's payment reconciliation.
+
+	To avoid that, if the draft's original session is no longer open, this
+	re-links custom_pos_opening_entry to whichever session is open right now
+	for the current user, so the sale is swept into that (still-open) shift's
+	reconciliation instead. If no session is open at all, submission is
+	blocked until the cashier opens one, since there would be nowhere valid
+	to reconcile the sale into.
+
+	Returns an error dict (same shape as this module's other whitelisted
+	responses) if submission should be blocked, or None if it's fine to
+	proceed.
+	"""
+	opening_entry_name = invoice_doc.get("custom_pos_opening_entry")
+	if not opening_entry_name:
+		return None
+
+	current_status = frappe.db.get_value("POS Opening Entry", opening_entry_name, "status")
+	if current_status == "Open":
+		return None  # original session is still open, nothing to do
+
+	current_opening_entry = get_current_pos_opening_entry()
+	if not current_opening_entry:
+		return {
+			"success": False,
+			"error": (
+				"The POS session this draft was created under has already been closed, "
+				"and you don't have an open POS session right now. Please open a POS "
+				"session before submitting this invoice, so the sale can be reconciled "
+				"correctly."
+			),
+		}
+
+	if current_opening_entry != opening_entry_name:
+		frappe.logger().info(
+			f"Invoice {invoice_doc.name}: original session {opening_entry_name} is no "
+			f"longer open; re-linking to currently open session {current_opening_entry} "
+			f"so it is included in that session's closing reconciliation."
+		)
+		invoice_doc.custom_pos_opening_entry = current_opening_entry
+
+	return None
+
+
 @frappe.whitelist()
 def submit_draft_invoice(invoice_id, data=None):
 	"""
@@ -4925,6 +4978,10 @@ def submit_draft_invoice(invoice_id, data=None):
 				"success": False,
 				"error": f"Cannot submit invoice {invoice_id}. Only Draft invoices can be submitted. Current status: {invoice_doc.status}",
 			}
+
+		reassign_error = _reassign_opening_entry_if_shift_closed(invoice_doc)
+		if reassign_error:
+			return reassign_error
 
 		if data:
 			(

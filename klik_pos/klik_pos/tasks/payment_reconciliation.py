@@ -49,7 +49,6 @@ def hourly_customer_payment_reconciliation() -> None:
             "company",
             "party",
             "paid_from as receivable_account",
-            "party_account_currency",
             "posting_date",
         ],
         order_by="posting_date asc, creation asc",
@@ -156,4 +155,3 @@ def _log_skip(payment_entry: str, reason: str) -> None:
     frappe.logger("klik_payment_reconciliation").warning(
         "Skipped Payment Entry %s: %s", payment_entry, reason
     )
-

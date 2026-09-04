@@ -213,6 +213,11 @@ before_install = "klik_pos.setup.install.before_install"
 
 # Scheduled Tasks
 # ---------------
+scheduler_events = {
+    "hourly_long": [
+        "klik_pos.tasks.payment_reconciliation.hourly_customer_payment_reconciliation",
+    ],
+}
 
 # scheduler_events = {
 # 	"all": [

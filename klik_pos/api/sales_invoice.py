@@ -1798,21 +1798,50 @@ def queue_sales_invoice(data):
 				"processing_time": round(processing_time, 2),
 			}
 		else:
-			doc.insert(ignore_permissions=True)
-			_update_checkout_request(
-				checkout_request_id,
-				status="Accepted",
-				invoice_name=doc.name,
-			)
+			# doc.submit() -> Document.save() writes docstatus=1 to this row
+			# (db_update()) *before* running on_submit hooks -- and it's an
+			# on_submit-time hook (ERPNext's own stock/batch/serial validation)
+			# that most commonly throws for a POS sale (insufficient batch qty,
+			# a batch bundle that couldn't be split/assigned, etc.). Without a
+			# savepoint, that half-finished submit is never undone: this
+			# function's own except block below catches the exception and
+			# returns a normal {"success": False} response instead of letting
+			# it propagate, so Frappe's request handler sees no error and
+			# commits the transaction at end of request anyway -- silently
+			# persisting a fully submitted, paid invoice while the cashier's
+			# screen says the sale failed. That is what let a cashier's retry
+			# (a new checkout each time) turn one sale into several duplicate
+			# paid invoices. process_queued_sales_invoice() below already
+			# guards its own doc.submit() with frappe.db.rollback() for this
+			# exact reason; mirror that here with a savepoint (rather than a
+			# full rollback) so the "Processing" Klik Checkout Request row
+			# claimed above survives to be marked Failed for the idempotency
+			# ledger. Deliberately scoped to insert()..submit() only -- the
+			# steps after a *successful* submit (reservation cleanup, backorder
+			# processing, payment-entry finalization) already catch and log
+			# their own failures instead of raising, so they can't trigger this
+			# rollback and can't undo a sale that genuinely went through.
+			submit_savepoint = f"klik_checkout_submit_{frappe.generate_hash(length=10)}"
+			frappe.db.savepoint(submit_savepoint)
+			try:
+				doc.insert(ignore_permissions=True)
+				_update_checkout_request(
+					checkout_request_id,
+					status="Accepted",
+					invoice_name=doc.name,
+				)
 
-			_apply_klik_invoice_flags(doc, is_submitted=True)
-			# Reflecting the checkout PIN onto the walk-in Customer record for the
-			# duration of submit() means validate() picks up the real tax_id (and
-			# kenya_compliance_via_slade's eTIMS payload does too) the normal way --
-			# see klik_pos/overrides/etims_walkin_pin.py for the full reasoning and
-			# the concurrency note on why this is only safe for a single till today.
-			with reflect_walkin_pin_on_customer(doc.customer, tax_id):
-				doc.submit()
+				_apply_klik_invoice_flags(doc, is_submitted=True)
+				# Reflecting the checkout PIN onto the walk-in Customer record for the
+				# duration of submit() means validate() picks up the real tax_id (and
+				# kenya_compliance_via_slade's eTIMS payload does too) the normal way --
+				# see klik_pos/overrides/etims_walkin_pin.py for the full reasoning and
+				# the concurrency note on why this is only safe for a single till today.
+				with reflect_walkin_pin_on_customer(doc.customer, tax_id):
+					doc.submit()
+			except Exception:
+				frappe.db.rollback(save_point=submit_savepoint)
+				raise
 
 			# Belt-and-suspenders: doc.tax_id should already be correct after the
 			# reflected submit() above, but force it back on in case reflect_walkin_
@@ -5121,11 +5150,29 @@ def submit_draft_invoice(invoice_id, data=None):
 				"invoice": invoice_doc,
 			}
 		else:
-			_apply_klik_invoice_flags(invoice_doc, is_submitted=True)
-			# See klik_pos/overrides/etims_walkin_pin.py -- same reasoning as the
-			# immediate-submit path in queue_sales_invoice().
-			with reflect_walkin_pin_on_customer(invoice_doc.customer, tax_id):
-				invoice_doc.submit()
+			# Same failure mode as queue_sales_invoice()'s direct-submit branch
+			# (see the comment there): invoice_doc.submit() can leave docstatus=1
+			# written to this row before ERPNext's own on_submit-time stock/batch
+			# validation throws, and without a savepoint that half-submitted
+			# state is never undone -- this function's except block below
+			# swallows the exception and returns a normal {"success": False},
+			# so nothing stops Frappe from committing it at end of request.
+			# This path (submit_draft_invoice) has no checkout_request_id
+			# idempotency ledger of its own -- it's used for M-Pesa draft
+			# submission and held-invoice submission, both of which retry by
+			# invoice_id, not a fresh request id -- so guarding against a
+			# phantom-submitted draft here matters just as much.
+			submit_savepoint = f"klik_draft_submit_{frappe.generate_hash(length=10)}"
+			frappe.db.savepoint(submit_savepoint)
+			try:
+				_apply_klik_invoice_flags(invoice_doc, is_submitted=True)
+				# See klik_pos/overrides/etims_walkin_pin.py -- same reasoning as the
+				# immediate-submit path in queue_sales_invoice().
+				with reflect_walkin_pin_on_customer(invoice_doc.customer, tax_id):
+					invoice_doc.submit()
+			except Exception:
+				frappe.db.rollback(save_point=submit_savepoint)
+				raise
 
 			# Belt-and-suspenders: see the matching comment in queue_sales_invoice().
 			if tax_id:

@@ -28,51 +28,56 @@ export default function PaymentMethods({
           font sizes are trimmed to keep the extra rows this creates from costing
           too much vertical space. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {paymentMethods.map((method) => (
-          <div
-            key={method.id}
-            className={`border border-gray-200 dark:border-gray-700 rounded-lg p-2.5 hover:border-beveren-300 transition-colors ${invoiceSubmitted || isProcessingPayment ? "bg-gray-50 dark:bg-gray-800" : ""}`}
-          >
-            <div className="flex items-center justify-between gap-1.5 mb-1.5">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <div className={`w-6 h-5 shrink-0 rounded-md ${method.color} text-white flex items-center justify-center`}>
-                  <div className="scale-[0.6]">{method.icon}</div>
+        {paymentMethods.map((method) => {
+          const isLocked = method.enabled === false;
+          const isDisabled = invoiceSubmitted || isProcessingPayment || isLocked;
+          return (
+            <div
+              key={method.id}
+              className={`border border-gray-200 dark:border-gray-700 rounded-lg p-2.5 transition-colors ${isLocked ? "opacity-50" : "hover:border-beveren-300"} ${invoiceSubmitted || isProcessingPayment || isLocked ? "bg-gray-50 dark:bg-gray-800" : ""}`}
+              title={isLocked ? "This customer settles on credit -- only the Credit method is available at checkout" : undefined}
+            >
+              <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className={`w-6 h-5 shrink-0 rounded-md ${method.color} text-white flex items-center justify-center`}>
+                    <div className="scale-[0.6]">{method.icon}</div>
+                  </div>
+                  <p className="font-medium text-gray-900 dark:text-white text-xs truncate">{method.name}</p>
                 </div>
-                <p className="font-medium text-gray-900 dark:text-white text-xs truncate">{method.name}</p>
+                <button
+                  onClick={() => onAutoFill(method.id)}
+                  disabled={isDisabled}
+                  className={`p-0.5 rounded shrink-0 ${isDisabled ? "cursor-not-allowed opacity-50" : "hover:bg-beveren-100 text-beveren-600"}`}
+                  title="Auto-fill with grand total"
+                >
+                  <CheckCircle size={14} />
+                </button>
               </div>
-              <button
-                onClick={() => onAutoFill(method.id)}
-                disabled={invoiceSubmitted || isProcessingPayment}
-                className={`p-0.5 rounded shrink-0 ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : "hover:bg-beveren-100 text-beveren-600"}`}
-                title="Auto-fill with grand total"
-              >
-                <CheckCircle size={14} />
-              </button>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={method.amount || ""}
+                onChange={(e) => {
+                  setActiveMethodId(method.id);
+                  const inputValue = e.target.value;
+                  const numValue = inputValue === "" ? 0 : parseFloat(inputValue);
+                  onAmountChange(method.id, isNaN(numValue) ? "0" : numValue.toString());
+                }}
+                onBlur={(e) => {
+                  setActiveMethodId(method.id);
+                  const numValue = parseFloat(e.target.value);
+                  if (!isNaN(numValue)) {
+                    onAmountChange(method.id, parseFloat(numValue.toFixed(2)).toString());
+                  }
+                }}
+                placeholder="0.00"
+                disabled={isDisabled}
+                className={`w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm ${isDisabled ? "cursor-not-allowed opacity-50" : ""}`}
+              />
             </div>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={method.amount || ""}
-              onChange={(e) => {
-                setActiveMethodId(method.id);
-                const inputValue = e.target.value;
-                const numValue = inputValue === "" ? 0 : parseFloat(inputValue);
-                onAmountChange(method.id, isNaN(numValue) ? "0" : numValue.toString());
-              }}
-              onBlur={(e) => {
-                setActiveMethodId(method.id);
-                const numValue = parseFloat(e.target.value);
-                if (!isNaN(numValue)) {
-                  onAmountChange(method.id, parseFloat(numValue.toFixed(2)).toString());
-                }
-              }}
-              placeholder="0.00"
-              disabled={invoiceSubmitted || isProcessingPayment}
-              className={`w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

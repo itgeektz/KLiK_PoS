@@ -34,7 +34,7 @@ import PaymentDialog from "../components/dialog/PaymentDialog";
 import { useCustomerDetails } from "../hooks/useCustomers";
 import EditDraftInvoiceDialog from "../components/EditDraftInvoiceDialog";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
-import { reorderInvoiceToCart } from "../utils/reorderInvoiceToCart";
+import { reorderInvoiceToCart } from "../utils/reorderInvoiceToCart.ts";
 import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
 import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";

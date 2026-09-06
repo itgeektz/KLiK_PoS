@@ -272,7 +272,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     if (posCurrencySymbol) return posCurrencySymbol;
     const posCurrency = typeof posDetails?.currency === "string" ? posDetails.currency.trim() : "";
     if (posCurrency) return getCurrencySymbol(posCurrency);
-    return "$";
+    return "";
   }, [invoiceData, externalInvoiceData, posDetails]);
 
   const selectedTaxTemplate = useMemo(
@@ -306,6 +306,19 @@ export default function PaymentDialog(props: PaymentDialogProps) {
       selectedTaxTemplate,
     });
   }, [isTaxIncludedInBasicRate, itemDiscounts, selectedTaxLineMap, selectedTaxTemplate]);
+
+  // Final, tax-inclusive unit price per item (after per-item discounts), keyed by
+  // item code/id, so the checkout preview panel can show the same discounted price
+  // per line that the totals below are actually calculated from -- instead of the
+  // raw, undiscounted cart price.
+  const effectiveDisplayRateByItem = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of cartItems) {
+      const key = item.item_code || item.id;
+      if (key) map[key] = getEffectiveDisplayRate(item);
+    }
+    return map;
+  }, [cartItems, getEffectiveDisplayRate]);
 
   const calculations: Calculations = useMemo(() => {
     // subtotal uses exclusive (pre-tax) prices so the tax line is separately visible
@@ -392,6 +405,31 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     minute: "2-digit",
   });
 
+  // A customer flagged as a credit account (Customer.is_credit_customer) settles
+  // through the "Credit" Mode of Payment only -- actual cash/M-Pesa/etc. is
+  // collected later via the separate "Receive Payment" flow, not at checkout.
+  const isCreditCustomerSelected = Boolean((selectedCustomer as { isCreditCustomer?: boolean } | null)?.isCreditCustomer);
+
+  const isCreditModeName = useCallback(
+    (modeOfPayment: string | undefined | null) => (modeOfPayment || "").trim().toLowerCase() === "credit",
+    []
+  );
+
+  const creditModeOfPayment = useMemo(
+    () => modes.find((mode) => isCreditModeName(mode.mode_of_payment))?.mode_of_payment,
+    [modes, isCreditModeName]
+  );
+
+  // While a credit customer is selected, every method except "Credit" is locked --
+  // the cashier can't key in cash/M-Pesa/etc. for an account customer at checkout.
+  const isMethodLockedForCreditCustomer = useCallback(
+    // Only lock cash/etc. out when a "Credit" method actually exists on this till --
+    // otherwise a credit customer would be unable to pay by any method at all on a
+    // POS Profile that hasn't been given a "Credit" Mode of Payment.
+    (methodId: string) => isCreditCustomerSelected && Boolean(creditModeOfPayment) && !isCreditModeName(methodId),
+    [isCreditCustomerSelected, creditModeOfPayment, isCreditModeName]
+  );
+
   const paymentMethods = useMemo(() => {
     const sortedModes = [...modes].sort((a, b) => {
       if (a.idx !== undefined && b.idx !== undefined) {
@@ -408,11 +446,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         name: mode.mode_of_payment,
         icon,
         color,
-        enabled: true,
+        enabled: !isMethodLockedForCreditCustomer(mode.mode_of_payment),
         amount: paymentAmounts[mode.mode_of_payment] || 0,
       };
     });
-  }, [modes, paymentAmounts]);
+  }, [modes, paymentAmounts, isMethodLockedForCreditCustomer]);
 
   const orderedPaymentMethodIds = useMemo(() => {
     const sortedModes = [...modes].sort((a, b) => {
@@ -875,7 +913,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   };
 
   const handlePaymentAmountChange = (methodId: string, amount: string) => {
-    if (invoiceSubmitted || isProcessingPayment) return;
+    if (invoiceSubmitted || isProcessingPayment || isMethodLockedForCreditCustomer(methodId)) return;
     const numericAmount = roundCurrency(parseFloat(amount) || 0);
     setLastModifiedMethodId(methodId);
     setPaymentAmounts((prev) => {
@@ -885,7 +923,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   };
 
   const handleAutoFillPayment = (methodId: string) => {
-    if (invoiceSubmitted || isProcessingPayment) return;
+    if (invoiceSubmitted || isProcessingPayment || isMethodLockedForCreditCustomer(methodId)) return;
     const newPaymentAmounts: PaymentAmount = {};
     paymentMethods.forEach((method) => { newPaymentAmounts[method.id] = 0; });
     newPaymentAmounts[methodId] = checkoutPayableTotal;
@@ -895,7 +933,7 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   };
 
   const handleManualAmountChange = (methodId: string, amount: string) => {
-    if (invoiceSubmitted || isProcessingPayment) return;
+    if (invoiceSubmitted || isProcessingPayment || isMethodLockedForCreditCustomer(methodId)) return;
     const numericAmount = roundCurrency(parseFloat(amount) || 0);
     setLastModifiedMethodId(methodId);
     setPaymentAmounts((prev) => {
@@ -1571,16 +1609,26 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     }
   }, [isOpen, defaultTax, selectedSalesTaxCharges]);
 
+  // Payment method amounts start blank for every customer -- the cashier types
+  // (or taps a method's auto-fill checkmark for) whatever was actually tendered,
+  // rather than the full total being silently pre-filled into a default method.
+  // The one exception is a credit-account customer: there's nothing to tender at
+  // checkout for them, so "Credit" is selected automatically for the full amount
+  // and every other method is locked (see isMethodLockedForCreditCustomer above)
+  // -- real money is collected later through the separate Receive Payment flow.
   useEffect(() => {
-    if (isOpen && modes.length > 0 && !isCreditSale) {
-      const defaultMode = modes.find((mode) => mode.default === 1);
-      if (defaultMode && Object.keys(paymentAmounts).length === 0) {
-        const defaultAmount = parseFloat(checkoutPayableTotal.toFixed(2));
-        setLastModifiedMethodId(defaultMode.mode_of_payment);
-        setPaymentAmounts({ [defaultMode.mode_of_payment]: defaultAmount });
-      }
+    if (
+      isOpen &&
+      isCreditCustomerSelected &&
+      !isCreditSale &&
+      creditModeOfPayment &&
+      Object.keys(paymentAmounts).length === 0
+    ) {
+      const creditAmount = parseFloat(checkoutPayableTotal.toFixed(2));
+      setLastModifiedMethodId(creditModeOfPayment);
+      setPaymentAmounts({ [creditModeOfPayment]: creditAmount });
     }
-  }, [isOpen, modes, checkoutPayableTotal, isB2B, isB2C, paymentAmounts, isCreditSale]);
+  }, [isOpen, isCreditCustomerSelected, creditModeOfPayment, checkoutPayableTotal, paymentAmounts, isCreditSale]);
 
   useEffect(() => {
     if (!isOpen || invoiceSubmitted || isProcessingPayment || isCreditSale) {
@@ -1607,16 +1655,19 @@ export default function PaymentDialog(props: PaymentDialogProps) {
         return prev;
       }
 
-      const defaultMode = modes.find((mode) => mode.default === 1)?.mode_of_payment;
-      if (entries.length === 1 && defaultMode && entries[0]?.[0] === defaultMode) {
-        return { [defaultMode]: roundCurrency(checkoutPayableTotal) };
+      // Whichever single method is currently populated (the cashier's own entry for
+      // a normal sale, or the auto-selected "Credit" method for a credit customer)
+      // gets kept in sync as the total moves -- e.g. a discount applied afterwards.
+      if (entries.length === 1) {
+        const [onlyMethodId] = entries[0];
+        return { [onlyMethodId]: roundCurrency(checkoutPayableTotal) };
       }
 
       return prev;
     });
 
     previousCheckoutGrandTotalRef.current = checkoutPayableTotal;
-  }, [checkoutPayableTotal, isOpen, invoiceSubmitted, isProcessingPayment, isCreditSale, modes]);
+  }, [checkoutPayableTotal, isOpen, invoiceSubmitted, isProcessingPayment, isCreditSale]);
 
   useEffect(() => {
     if (invoiceSubmitted && invoiceData && print_receipt_on_order_complete) {
@@ -1947,8 +1998,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Methods</h2>
                   </div>
                   <div className="flex space-x-3 overflow-x-auto pb-2">
-                    {paymentMethods.map((method) => (
-                      <div key={method.id} className={`${paymentMethods.length <= 3 ? "flex-1 min-w-0" : "min-w-[280px] max-w-[280px] flex-shrink-0"} border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-beveren-300 transition-colors ${invoiceSubmitted || isProcessingPayment ? "bg-gray-50 dark:bg-gray-800" : ""}`}>
+                    {paymentMethods.map((method) => {
+                      const isLocked = method.enabled === false;
+                      const isDisabled = invoiceSubmitted || isProcessingPayment || isLocked;
+                      return (
+                      <div key={method.id} className={`${paymentMethods.length <= 3 ? "flex-1 min-w-0" : "min-w-[280px] max-w-[280px] flex-shrink-0"} border border-gray-200 dark:border-gray-700 rounded-lg p-4 transition-colors ${isLocked ? "opacity-50" : "hover:border-beveren-300"} ${invoiceSubmitted || isProcessingPayment || isLocked ? "bg-gray-50 dark:bg-gray-800" : ""}`} title={isLocked ? "This customer settles on credit -- only the Credit method is available at checkout" : undefined}>
                         <div className="flex items-center space-x-3 mb-3">
                           <div className={`w-10 h-10 rounded-lg ${method.color} text-white flex items-center justify-center`}>
                             <div className="scale-75">{method.icon}</div>
@@ -1959,10 +2013,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Amount</label>
-                          <input type="number" value={method.amount.toFixed(2) || ""} onChange={(e) => handlePaymentAmountChange(method.id, e.target.value)} placeholder="0.00" disabled={invoiceSubmitted || isProcessingPayment} className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${invoiceSubmitted || isProcessingPayment ? "cursor-not-allowed opacity-50" : ""}`} />
+                          <input type="number" value={method.amount.toFixed(2) || ""} onChange={(e) => handlePaymentAmountChange(method.id, e.target.value)} placeholder="0.00" disabled={isDisabled} className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${isDisabled ? "cursor-not-allowed opacity-50" : ""}`} />
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
                 {renderLoyaltyRedemption()}
@@ -2360,6 +2415,9 @@ export default function PaymentDialog(props: PaymentDialogProps) {
               isB2B={isB2B}
               isB2C={isB2C}
               currentDate={currentDate}
+              itemDiscounts={itemDiscounts}
+              effectiveDisplayRateByItem={effectiveDisplayRateByItem}
+              backendTaxPreview={backendTaxPreview}
             />
           </div>
         </div>

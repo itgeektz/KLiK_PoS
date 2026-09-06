@@ -985,7 +985,9 @@ def get_current_pos_opening_entry():
 
 
 @frappe.whitelist(allow_guest=True)
-def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=False, cashier_name=None, submitted_only=False):
+def get_sales_invoices(
+	limit=100, start=0, search="", skip_opening_entry_filter=False, cashier_name=None, submitted_only=False, customer=None
+):
 	"""
 	Get sales invoices with proper filtering based on user role and POS opening entry.
 
@@ -993,6 +995,11 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		skip_opening_entry_filter: If True, skip filtering by opening entry (for Invoice History page)
 		cashier_name: Filter by cashier name (full name). If provided, only returns invoices for that cashier.
 		submitted_only: If True, only return submitted invoices (docstatus=1). Use for Sales Dashboard; excludes Draft and Cancelled.
+		customer: Exact Customer doctype name (id, not customer_name label). If provided, only returns
+			invoices for that customer -- use this instead of `search` when you already know the customer's
+			id (e.g. the Customer Detail page); `search` is a fuzzy LIKE across name/customer_name/customer
+			and isn't a reliable way to isolate one customer's invoices, and its total_count reflects the
+			broader fuzzy match rather than this customer's real invoice count.
 	"""
 	try:
 		if isinstance(skip_opening_entry_filter, str):
@@ -1075,6 +1082,10 @@ def get_sales_invoices(limit=100, start=0, search="", skip_opening_entry_filter=
 		if current_pos_profile and not is_admin_user:
 			conditions.append("si.pos_profile = %s")
 			params.append(current_pos_profile)
+
+		if customer and str(customer).strip():
+			conditions.append("si.customer = %s")
+			params.append(str(customer).strip())
 
 		if search and search.strip():
 			search_term = f"%{search.strip()}%"
@@ -1515,6 +1526,14 @@ def validate_checkout_invoice(data):
 				"grand_total": flt(preview_doc.grand_total or 0),
 				"rounded_total": flt(preview_doc.rounded_total or 0),
 				"disable_rounded_total": int(preview_doc.disable_rounded_total or 0),
+				# Whole-invoice ("bill-level") discount actually applied by
+				# calculate_taxes_and_totals(), so the checkout preview can show it as its
+				# own line instead of silently folding it into the grand total. ERPNext
+				# always resolves additional_discount_percentage into a concrete
+				# doc.discount_amount once totals are calculated, regardless of whether the
+				# cashier entered a percentage or a flat amount.
+				"discount_amount": flt(preview_doc.discount_amount or 0),
+				"additional_discount_percentage": flt(preview_doc.additional_discount_percentage or 0),
 			},
 		}
 

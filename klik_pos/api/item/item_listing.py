@@ -18,6 +18,7 @@ def get_items(
     category: str | None = None,
     customer: str | None = None,
     price_list: str | None = None,
+    item_codes: str | None = None,
 ):
     try:
         limit = int(limit) if limit else 1000
@@ -134,6 +135,24 @@ def get_items(
             count_query.append("AND i.item_group = %s")
             params_list.append(category)
             count_params.append(category)
+
+        # Restrict to a specific set of item codes -- used by "Reorder" (see
+        # reorderInvoiceToCart.ts) to re-look-up an old invoice's items through this
+        # same endpoint, so they get today's price/stock and go through the normal
+        # disabled/item-group/stock availability rules. Previously this parameter
+        # wasn't declared here at all, so Frappe silently dropped it from every
+        # request and Reorder got back an unrelated page of default-sorted items
+        # instead -- which then looked like every single item on the old invoice
+        # had become unavailable, even when none of them actually had.
+        requested_item_codes = [
+            code.strip() for code in (item_codes or "").split(",") if code.strip()
+        ]
+        if requested_item_codes:
+            placeholders = ", ".join(["%s"] * len(requested_item_codes))
+            base_query.append(f"AND i.name IN ({placeholders})")
+            count_query.append(f"AND i.name IN ({placeholders})")
+            params_list.extend(requested_item_codes)
+            count_params.extend(requested_item_codes)
 
         enhanced_search = bool(getattr(pos_doc, "custom_enhanced_search", False))
         search_clauses, search_params = build_item_search_conditions(search or "", enhanced_search)

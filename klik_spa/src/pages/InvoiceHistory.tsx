@@ -16,8 +16,8 @@ import {
   Edit,
   Users,
   RotateCcw,
-  Check,
   FileMinus,
+  ShoppingCart,
 } from "lucide-react";
 
 import InvoiceViewModal from "../components/InvoiceViewModal";
@@ -39,7 +39,7 @@ import { createSalesReturn, retryQueuedInvoice } from "../services/salesInvoice"
 import { useAllPaymentModes } from "../hooks/usePaymentModes";
 import PaymentDialog from "../components/dialog/PaymentDialog";
 import { addDraftInvoiceToCart } from "../utils/draftInvoiceToCart";
-import { loadCachedItemsToCart } from "../utils/draftInvoiceCache";
+import { reorderInvoiceToCart } from "../utils/reorderInvoiceToCart";
 import { useCartStore } from "../stores/cartStore";
 import { isToday, isThisWeek, isThisMonth, isThisYear } from "../utils/time";
 import { exportInvoicesToCSV, getExportFilename, type ExportableInvoice } from "../utils/exportUtils";
@@ -74,9 +74,12 @@ const DEFAULT_INVOICE_HISTORY_FILTERS: InvoiceHistoryFiltersState = {
  * Turns the dateFilter dropdown's value into a { fromDate, toDate } pair of
  * "YYYY-MM-DD" strings (system/UTC-day boundaries, matching isToday/isThisWeek/etc.
  * below) for the backend's posting_date range filter. "all" returns {} so no date
- * restriction is sent. Scoping the query itself (rather than fetching everything
- * and filtering client-side, as this page used to) is what keeps a growing
- * invoice history from overloading the page.
+ * restriction is sent -- the page defaults to "Today" (see
+ * DEFAULT_INVOICE_HISTORY_FILTERS/getInitialInvoiceHistoryFilters below) purely to
+ * keep the common case fast; anyone who explicitly picks "All Time" still gets the
+ * full history. Scoping the query itself for the narrower ranges (rather than
+ * fetching everything and filtering client-side, as this page used to) is what
+ * keeps a growing invoice history from overloading the page by default.
  */
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const toDateKey = (d: Date) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
@@ -114,6 +117,7 @@ const getDateRangeForFilter = (dateFilter: string): { fromDate?: string; toDate?
     return { fromDate: `${now.getUTCFullYear()}-01-01`, toDate: `${now.getUTCFullYear()}-12-31` };
   }
 
+  // "all" (or anything unrecognized): no date restriction.
   return {};
 };
 
@@ -600,9 +604,6 @@ const getStatusBadge = (status: string) => {
                 <th className="px-6 py-3 w-48 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Customer
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Cashier
-                </th>
                 <th className="px-6 py-3 w-40 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Payment
                 </th>
@@ -634,9 +635,6 @@ const getStatusBadge = (status: string) => {
                   </td>
                   <td className="px-6 py-4 max-w-[12rem]">
                     <div title={invoice.customer} className="block truncate text-sm text-gray-900 dark:text-white">{invoice.customer}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {invoice.cashier}
                   </td>
                   <td className="px-6 py-4 max-w-[10rem]">
                     <span title={invoice.paymentMethod} className="block truncate text-sm text-gray-900 dark:text-white">{invoice.paymentMethod}</span>
@@ -672,22 +670,13 @@ const getStatusBadge = (status: string) => {
                         <span>View</span>
                       </button>
                       {invoice.status === "Draft" && !invoice.custom_pos_voided && (
-                        <>
-                          <button
-                            onClick={() => void handleGoToCart(invoice)}
-                            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 flex items-center space-x-1"
-                          >
-                            <Edit className="w-4 h-4" />
-                            <span>Edit</span>
-                          </button>
-                          <button
-                            onClick={() => void handleSubmitDirect(invoice)}
-                            className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 flex items-center space-x-1"
-                          >
-                            <Check className="w-4 h-4" />
-                            <span>Submit</span>
-                          </button>
-                        </>
+                        <button
+                          onClick={() => void handleGoToCart(invoice)}
+                          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 flex items-center space-x-1"
+                        >
+                          <Edit className="w-4 h-4" />
+                          <span>Edit</span>
+                        </button>
                       )}
                       {/* @ts-expect-error just ignore */}
                       {canProcessReturns && ["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
@@ -698,6 +687,17 @@ const getStatusBadge = (status: string) => {
                         >
                           <RotateCcw className="w-4 h-4" />
                           <span>Return</span>
+                        </button>
+                      )}
+                      {/* @ts-expect-error just ignore */}
+                      {["Paid", "Unpaid", "Overdue", "Partly Paid"].includes(invoice.status) && !invoice.is_return && (
+                        <button
+                          onClick={() => void handleReorderToCart(invoice)}
+                          title="Add this invoice's items to the cart, re-priced from the current price list"
+                          className="text-teal-600 hover:text-teal-900 dark:text-teal-400 dark:hover:text-teal-300 flex items-center space-x-1"
+                        >
+                          <ShoppingCart className="w-4 h-4" />
+                          <span>Reorder</span>
                         </button>
                       )}
 
@@ -745,10 +745,6 @@ const getStatusBadge = (status: string) => {
                   <span className="text-gray-900 dark:text-white">{invoice.date}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Cashier:</span>
-                  <span className="text-gray-900 dark:text-white">{invoice.cashier}</span>
-                </div>
-                <div className="flex justify-between text-sm">
                   <span className="text-gray-600 dark:text-gray-400">POS Profile:</span>
                   <span className="text-gray-900 dark:text-white">{invoice.posProfile}</span>
                 </div>
@@ -761,22 +757,13 @@ const getStatusBadge = (status: string) => {
                   View
                 </button>
                 {invoice.status === "Draft" && !invoice.custom_pos_voided && (
-                  <>
-                    <button
-                      onClick={() => void handleGoToCart(invoice)}
-                      className="flex-1 text-xs px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center space-x-1"
-                    >
-                      <Edit className="w-3 h-3" />
-                      <span>Edit</span>
-                    </button>
-                    <button
-                      onClick={() => void handleSubmitDirect(invoice)}
-                      className="flex-1 text-xs px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center justify-center space-x-1"
-                    >
-                      <Check className="w-3 h-3" />
-                      <span>Submit</span>
-                    </button>
-                  </>
+                  <button
+                    onClick={() => void handleGoToCart(invoice)}
+                    className="flex-1 text-xs px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center space-x-1"
+                  >
+                    <Edit className="w-3 h-3" />
+                    <span>Edit</span>
+                  </button>
                 )}
                   {canProcessReturns && ["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && hasReturnableItems(invoice) && (
                   <button
@@ -784,6 +771,17 @@ const getStatusBadge = (status: string) => {
                     className="flex-1 text-xs px-3 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors"
                   >
                     Return
+                  </button>
+                )}
+                {/* @ts-expect-error just ignore */}
+                {["Paid", "Unpaid", "Overdue", "Partly Paid"].includes(invoice.status) && !invoice.is_return && (
+                  <button
+                    onClick={() => void handleReorderToCart(invoice)}
+                    title="Add this invoice's items to the cart, re-priced from the current price list"
+                    className="flex-1 text-xs px-3 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 transition-colors flex items-center justify-center space-x-1"
+                  >
+                    <ShoppingCart className="w-3 h-3" />
+                    <span>Reorder</span>
                   </button>
                 )}
                 {((invoice as SalesInvoice & { queueStatus?: string }).queueStatus || "").toLowerCase() === "failed" && (
@@ -894,29 +892,26 @@ const getStatusBadge = (status: string) => {
     }
   };
 
-  const handleSubmitDirect = async (invoice: SalesInvoice) => {
-    const draftInvoiceId = invoice.id || invoice.name;
-    if (!draftInvoiceId) {
-      toast.error("Unable to submit draft invoice: missing invoice identifier");
-      return;
-    }
+  // Draft invoices are no longer directly submittable from this list (Submit button
+  // removed) -- staff go through Edit -> the normal cart/checkout flow instead, so
+  // there's no path that skips the usual checkout validation.
 
-    if (requiresSalespersonPin && !activeSalesperson) {
-      runWithSalespersonGate(() => handleSubmitDirect(invoice));
-      return;
-    }
-
+  // Reorder a past submitted invoice: adds its items to the current cart, freshly
+  // re-priced and re-checked against current stock (see utils/reorderInvoiceToCart.ts)
+  // rather than reusing the old invoice's frozen rate/batch numbers.
+  const handleReorderToCart = async (invoice: SalesInvoice) => {
     try {
-      const success = await addDraftInvoiceToCart(draftInvoiceId);
-      if (success) {
-        await loadCachedItemsToCart();
-        setShowDraftPaymentDialog(true);
+      const result = await reorderInvoiceToCart(invoice, invoice.customerId || undefined);
+      if (result.addedCount > 0) {
+        toast.success(`${result.addedCount} item(s) added to cart from ${invoice.id}`);
+        navigate("/pos");
+      } else if (result.skippedItemCodes.length === 0) {
+        toast.error("Nothing could be added to the cart from this invoice");
       }
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      console.error("Error opening payment dialog for draft invoice:", error);
-      const errorMessage = extractErrorFromException(error, "Failed to load invoice for payment");
-      toast.error(errorMessage);
+      console.error("Error reordering invoice to cart:", error);
+      toast.error(extractErrorFromException(error, "Failed to add items to cart"));
     }
   };
 

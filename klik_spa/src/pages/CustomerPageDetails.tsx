@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import { usePOSProfileStore } from "../stores/posProfileStore";
@@ -80,6 +80,48 @@ export default function CustomerDetailsPage() {
   // custom_total_orders/custom_total_spent fields) showed real totals for the same customer.
   const { invoices, isLoading, error, hasMore, totalLoaded, loadMore } = useCustomerInvoices(customer?.id || "");
   const { posDetails } = usePOSProfileStore();
+
+  // The real accounts-receivable balance for this customer, straight from General
+  // Ledger entries (same source as ERPNext's own Customer Balances Summary report)
+  // -- fetched separately because it can include debt that has no matching Sales
+  // Invoice at all (an opening-balance Journal Entry from data migration, a Debit
+  // Note, an invoice raised directly in the desk instead of through a POS shift).
+  // customerMetrics.outstandingAmount below is only ever a fallback for when this
+  // call hasn't returned yet or fails -- it's derived purely from this page's own
+  // Unpaid/Overdue Sales Invoices, so it silently under-reports whenever debt like
+  // that exists.
+  const [glOutstandingBalance, setGlOutstandingBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    const customerId = customer?.id;
+    if (!customerId) {
+      setGlOutstandingBalance(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch(
+      `/api/method/klik_pos.api.customer.get_customer_outstanding_balance?customer=${encodeURIComponent(customerId)}`,
+      { method: "GET", credentials: "include" }
+    )
+      .then((res) => res.json())
+      .then((resData) => {
+        if (cancelled) return;
+        if (resData?.message?.success) {
+          setGlOutstandingBalance(Number(resData.message.balance) || 0);
+        } else {
+          setGlOutstandingBalance(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setGlOutstandingBalance(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customer?.id]);
 
 
   const filterInvoiceByDate = (invoiceDateStr: string) => {
@@ -306,13 +348,24 @@ export default function CustomerDetailsPage() {
       .reduce((sum, inv) => sum + inv.totalAmount, 0);
     const avgOrderValue = totalInvoices > 0 ? totalRevenue / totalInvoices : 0;
 
+    // Prefer the real GL balance once it's loaded; fall back to the Sales-Invoice-only
+    // total (see the fetch above) while it's loading or if the call fails.
+    const displayOutstandingBalance = glOutstandingBalance !== null ? glOutstandingBalance : outstandingAmount;
+    // Flag debt the GL balance carries that isn't backed by any Unpaid/Overdue Sales
+    // Invoice this page loaded -- a Journal Entry, Debit Note, opening balance, or an
+    // invoice raised outside a POS shift. Small rounding gaps (<1 currency unit) don't count.
+    const unexplainedBalanceGap =
+      glOutstandingBalance !== null ? Math.max(0, glOutstandingBalance - outstandingAmount) : 0;
+
     return {
       totalInvoices,
       totalRevenue,
       outstandingAmount,
+      displayOutstandingBalance,
+      unexplainedBalanceGap,
       avgOrderValue
     };
-  }, [customerInvoices]);
+  }, [customerInvoices, glOutstandingBalance]);
 
   // Loading state
   if (isLoadingC) {
@@ -937,10 +990,18 @@ export default function CustomerDetailsPage() {
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Outstanding Balance</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
+                      {formatCurrencyWithSymbol(customerMetrics.displayOutstandingBalance, posDetails?.currency || 'USD')}
                     </p>
+                    {customerMetrics.unexplainedBalanceGap > 1 && (
+                      <p
+                        className="text-xs text-amber-600 dark:text-amber-400 mt-1"
+                        title="This customer's real ledger balance is higher than what their Unpaid/Overdue invoices below add up to -- the difference is likely a Journal Entry, Debit Note, opening balance, or an invoice raised outside a POS shift, none of which show up in this invoice list."
+                      >
+                        Incl. {formatCurrencyWithSymbol(customerMetrics.unexplainedBalanceGap, posDetails?.currency || 'USD')} not shown below
+                      </p>
+                    )}
                   </div>
-                  <AlertCircle className={`w-8 h-8 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                  <AlertCircle className={`w-8 h-8 ${customerMetrics.displayOutstandingBalance > 0 ? 'text-red-600' : 'text-gray-400'}`} />
                 </div>
               </button>
 

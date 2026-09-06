@@ -4,6 +4,7 @@ import frappe
 from erpnext.setup.utils import get_exchange_rate
 from erpnext.accounts.party import get_party_details
 from frappe import _
+from frappe.utils import flt
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 from klik_pos.api.loyalty import get_customer_loyalty_summary
@@ -906,6 +907,36 @@ def get_customer_statistics(customer_id):
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Error fetching customer statistics")
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_customer_outstanding_balance(customer):
+    """The customer's real accounts-receivable balance, straight from General Ledger
+    entries -- the same source ERPNext's own "Customer Balances Summary" / Accounts
+    Receivable reports use.
+
+    The Customer Detail page's own "Outstanding Balance" card is computed client-side
+    by summing that page's *Unpaid/Overdue Sales Invoices*, which only covers debt
+    that has a matching Sales Invoice raised through Klik POS. It will under-report
+    (sometimes drastically) whenever a customer also owes money through something
+    that isn't a Klik Sales Invoice at all -- most commonly an opening-balance
+    Journal Entry from data migration, a Debit Note, or a Sales Invoice raised
+    directly in the ERPNext desk rather than through a POS shift. This endpoint
+    returns the true, full balance so the frontend can show it (or flag the gap)
+    instead of silently trusting the narrower Sales-Invoice-only total.
+    """
+    if not customer or not str(customer).strip():
+        return {"success": False, "error": "customer is required"}
+
+    try:
+        from erpnext.accounts.utils import get_balance_on
+
+        company = get_user_company_and_currency()[0]
+        balance = get_balance_on(party_type="Customer", party=str(customer).strip(), company=company)
+        return {"success": True, "balance": flt(balance)}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Error fetching customer outstanding balance")
         return {"success": False, "error": str(e)}
 
 

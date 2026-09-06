@@ -1,0 +1,325 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "LEGACY-SI-.#####",
+ "creation": "2026-09-03 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "legacy_header_id",
+  "legacy_saleno",
+  "legacy_refno",
+  "column_break_ident",
+  "posting_date",
+  "posting_time",
+  "section_break_customer",
+  "customer",
+  "customer_match_status",
+  "column_break_customer",
+  "legacy_customer_name",
+  "legacy_customer_code",
+  "served_by",
+  "section_break_amounts",
+  "gross_amount",
+  "vat_amount",
+  "column_break_amounts",
+  "net_amount",
+  "costing_amount",
+  "section_break_payment",
+  "cash_amount",
+  "invoice_amount",
+  "cheque_amount",
+  "column_break_payment",
+  "credit_card_amount",
+  "voucher_amount",
+  "sales_return_amount",
+  "section_break_items",
+  "items",
+  "section_break_meta",
+  "branch",
+  "source_system",
+  "migration_batch",
+  "column_break_meta",
+  "imported_on",
+  "archive_status"
+ ],
+ "fields": [
+  {
+   "description": "The old system's own row ID (its true, always-unique primary key) -- this is what the importer uses to decide whether a bill has already been archived, so re-running the import never creates duplicates.",
+   "fieldname": "legacy_header_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Legacy Header ID",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "legacy_saleno",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Old Sale No",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "legacy_refno",
+   "fieldtype": "Data",
+   "label": "Old System Ref / KRA Invoice No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ident",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Bill Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "posting_time",
+   "fieldtype": "Time",
+   "label": "Bill Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_customer",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Set only when the old-system name was matched to a real Customer during import. Must be the Customer document ID (e.g. CUST-2026-00003) -- never its display name.",
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "default": "Unmatched",
+   "fieldname": "customer_match_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Match Status",
+   "options": "Matched\nWalk-in\nUnmatched",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_customer",
+   "fieldtype": "Column Break"
+  },
+  {
+   "bold": 1,
+   "fieldname": "legacy_customer_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Old System Customer Name",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "legacy_customer_code",
+   "fieldtype": "Data",
+   "label": "Old System Customer Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "served_by",
+   "fieldtype": "Data",
+   "label": "Served By (old system)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_amounts",
+   "fieldtype": "Section Break",
+   "label": "Amounts"
+  },
+  {
+   "fieldname": "gross_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Gross Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "vat_amount",
+   "fieldtype": "Currency",
+   "label": "VAT Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_amounts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "net_amount",
+   "fieldtype": "Currency",
+   "label": "Net Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "costing_amount",
+   "fieldtype": "Currency",
+   "label": "Costing (internal)",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_payment",
+   "fieldtype": "Section Break",
+   "label": "Payment Breakdown (old system)"
+  },
+  {
+   "fieldname": "cash_amount",
+   "fieldtype": "Currency",
+   "label": "Cash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "invoice_amount",
+   "fieldtype": "Currency",
+   "label": "On Account / Invoice",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cheque_amount",
+   "fieldtype": "Currency",
+   "label": "Cheque",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_payment",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "credit_card_amount",
+   "fieldtype": "Currency",
+   "label": "Card",
+   "read_only": 1
+  },
+  {
+   "fieldname": "voucher_amount",
+   "fieldtype": "Currency",
+   "label": "Voucher",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_return_amount",
+   "fieldtype": "Currency",
+   "label": "Returned",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_items",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Klik Legacy Sales Invoice Item",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_meta",
+   "fieldtype": "Section Break",
+   "label": "Import Details"
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Data",
+   "label": "Branch (old system)",
+   "read_only": 1
+  },
+  {
+   "default": "Legacy Sales Manager",
+   "fieldname": "source_system",
+   "fieldtype": "Data",
+   "label": "Source System",
+   "read_only": 1
+  },
+  {
+   "description": "Free-text tag for the import run that created this record (e.g. \"2026-09-legacy-2023to2026\"), so a batch can be identified/audited later.",
+   "fieldname": "migration_batch",
+   "fieldtype": "Data",
+   "label": "Migration Batch",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_meta",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "imported_on",
+   "fieldtype": "Datetime",
+   "label": "Imported On",
+   "read_only": 1
+  },
+  {
+   "default": "Ready",
+   "fieldname": "archive_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Archive Status",
+   "options": "Ready\nReady with Unmapped Items\nNeeds Review",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-09-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "KLiK PoS",
+ "name": "Klik Legacy Sales Invoice",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager"
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "legacy_customer_name,legacy_saleno,legacy_refno,customer,legacy_customer_code",
+ "sort_field": "posting_date",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "legacy_customer_name",
+ "track_changes": 0
+}

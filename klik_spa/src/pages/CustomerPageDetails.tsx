@@ -42,6 +42,7 @@ import AddCustomerModal from "../components/customer/AddCustomerModal";
 import CustomerPaymentEntryModal from "../components/customer/CustomerPaymentEntryModal";
 import BottomNavigation from "../components/BottomNavigation";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import LegacyInvoicesPanel from "../components/customer/LegacyInvoicesPanel";
 
 export default function CustomerDetailsPage() {
   const navigate = useNavigate();
@@ -123,6 +124,10 @@ export default function CustomerDetailsPage() {
     };
   }, [customer?.id]);
 
+  // "New System Bills" (this Frappe/ERPNext instance, default) vs "Old System Bills"
+  // (read-only history imported from the pre-migration system). Defaults to new
+  // per the agreed design -- old bills are a fallback, not the primary view.
+  const [invoiceSource, setInvoiceSource] = useState<"new" | "old">("new");
 
   const filterInvoiceByDate = (invoiceDateStr: string) => {
     if (dateFilter === "all") return true;
@@ -338,6 +343,35 @@ export default function CustomerDetailsPage() {
     setShowAddModal(false);
     setSelectedCustomer(null);
   };
+
+  // Shared "New System Bills" / "Old System Bills" tab switcher, rendered above the
+  // invoices table in both the mobile and desktop layouts below.
+  const renderInvoiceSourceTabs = () => (
+    <div className="flex items-center gap-1 px-4 pt-3 lg:px-6 lg:pt-4 border-b border-gray-200 dark:border-gray-700">
+      <button
+        type="button"
+        onClick={() => setInvoiceSource("new")}
+        className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+          invoiceSource === "new"
+            ? "border-beveren-600 text-beveren-600 dark:text-beveren-400"
+            : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        }`}
+      >
+        New System Bills
+      </button>
+      <button
+        type="button"
+        onClick={() => setInvoiceSource("old")}
+        className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+          invoiceSource === "old"
+            ? "border-beveren-600 text-beveren-600 dark:text-beveren-400"
+            : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        }`}
+      >
+        Old System Bills
+      </button>
+    </div>
+  );
 
   // Calculate customer metrics
   const customerMetrics = useMemo(() => {
@@ -623,112 +657,119 @@ export default function CustomerDetailsPage() {
 
           {/* Customer Invoices Table */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Customer Invoices ({customerInvoices.length})
-              </h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Invoice
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Amount
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-                  {customerInvoices.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                        No invoices found for this customer
-                      </td>
-                    </tr>
-                  ) : (
-                    customerInvoices.map((invoice) => (
-                      <tr key={invoice.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {invoice.date} {invoice.time}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {formatCurrencyWithSymbol(invoice.totalAmount, invoice.currency)}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => handleViewInvoice(invoice)}
-                              className="text-beveren-600 hover:text-beveren-900 dark:text-beveren-400 dark:hover:text-beveren-300"
-                            >
-                              View
-                            </button>
-                                                  {/* @ts-expect-error just ignore */}
-                            {invoice.status === "Draft" && (
-                              <button
-                                onClick={() => handleEditInvoice(invoice)}
-                                className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                              >
-                                Edit
-                              </button>
-                            )}
-                            {Number((invoice as any).amountDue || 0) > 0 && (
-                              <button
-                                onClick={() => setSelectedInvoiceForPayment(invoice)}
-                                className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
-                              >
-                                Pay
-                              </button>
-                            )}
-                                                  {/* @ts-expect-error just ignore */}
-                            {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
-                              <button
-                                onClick={() => handleSingleReturnClick(invoice)}
-                                className="text-orange-600 hover:text-orange-900 dark:text-orange-400 dark:hover:text-orange-300"
-                              >
-                                Return
-                              </button>
-                            )}
-                                                  {/* @ts-expect-error just ignore */}
-                            {["Paid", "Unpaid", "Overdue", "Partly Paid"].includes(invoice.status) && !invoice.is_return && (
-                              <button
-                                onClick={() => handleReorderToCart(invoice)}
-                                title="Add this invoice's items to the cart, re-priced from the current price list"
-                                className="flex items-center gap-1 text-teal-600 hover:text-teal-900 dark:text-teal-400 dark:hover:text-teal-300"
-                              >
-                                <ShoppingCart className="w-3.5 h-3.5" />
-                                Reorder
-                              </button>
-                            )}
-                          </div>
-                        </td>
+            {renderInvoiceSourceTabs()}
+            {invoiceSource === "new" ? (
+              <>
+                <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Customer Invoices ({customerInvoices.length})
+                  </h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 dark:bg-gray-700">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Invoice
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Amount
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Actions
+                        </th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                      {customerInvoices.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                            No invoices found for this customer
+                          </td>
+                        </tr>
+                      ) : (
+                        customerInvoices.map((invoice) => (
+                          <tr key={invoice.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div>
+                                <div className="text-sm font-medium text-gray-900 dark:text-white">{invoice.id}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {invoice.date} {invoice.time}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900 dark:text-white">
+                                {formatCurrencyWithSymbol(invoice.totalAmount, invoice.currency)}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className={getStatusBadge(invoice.status)}>{invoice.status}</span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                              <div className="flex space-x-2">
+                                <button
+                                  onClick={() => handleViewInvoice(invoice)}
+                                  className="text-beveren-600 hover:text-beveren-900 dark:text-beveren-400 dark:hover:text-beveren-300"
+                                >
+                                  View
+                                </button>
+                                                      {/* @ts-expect-error just ignore */}
+                                {invoice.status === "Draft" && (
+                                  <button
+                                    onClick={() => handleEditInvoice(invoice)}
+                                    className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+                                  >
+                                    Edit
+                                  </button>
+                                )}
+                                {Number((invoice as any).amountDue || 0) > 0 && (
+                                  <button
+                                    onClick={() => setSelectedInvoiceForPayment(invoice)}
+                                    className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
+                                  >
+                                    Pay
+                                  </button>
+                                )}
+                                                      {/* @ts-expect-error just ignore */}
+                                {["Paid", "Unpaid", "Overdue", "Partly Paid", "Credit Note Issued"].includes(invoice.status) && !invoice.is_return && hasReturnableItems(invoice) && (
+                                  <button
+                                    onClick={() => handleSingleReturnClick(invoice)}
+                                    className="text-orange-600 hover:text-orange-900 dark:text-orange-400 dark:hover:text-orange-300"
+                                  >
+                                    Return
+                                  </button>
+                                )}
+                                                      {/* @ts-expect-error just ignore */}
+                                {["Paid", "Unpaid", "Overdue", "Partly Paid"].includes(invoice.status) && !invoice.is_return && (
+                                  <button
+                                    onClick={() => handleReorderToCart(invoice)}
+                                    title="Add this invoice's items to the cart, re-priced from the current price list"
+                                    className="flex items-center gap-1 text-teal-600 hover:text-teal-900 dark:text-teal-400 dark:hover:text-teal-300"
+                                  >
+                                    <ShoppingCart className="w-3.5 h-3.5" />
+                                    Reorder
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <LegacyInvoicesPanel customerId={customer.id} customer={customer} isMobile />
+            )}
           </div>
 
           {/* Load More Button for Customer Invoices */}
-          {hasMore && (
+          {invoiceSource === "new" && hasMore && (
             <div className="flex justify-center mt-4">
               <button
                 onClick={loadMore}
@@ -752,7 +793,7 @@ export default function CustomerDetailsPage() {
           )}
 
           {/* Show message when all customer invoices are loaded */}
-          {!hasMore && totalLoaded > 0 && (
+          {invoiceSource === "new" && !hasMore && totalLoaded > 0 && (
             <div className="text-center mt-4 py-2">
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 All {totalLoaded} customer invoices loaded
@@ -1061,6 +1102,9 @@ export default function CustomerDetailsPage() {
 
             {/* Customer Invoices Table */}
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              {renderInvoiceSourceTabs()}
+              {invoiceSource === "new" ? (
+                <>
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Customer Invoices ({customerInvoices.length})
@@ -1197,11 +1241,15 @@ export default function CustomerDetailsPage() {
                   </tbody>
                 </table>
               </div>
+                </>
+              ) : (
+                <LegacyInvoicesPanel customerId={customer.id} customer={customer} />
+              )}
             </div>
           </div>
 
           {/* Load More Button for Customer Invoices */}
-          {hasMore && (
+          {invoiceSource === "new" && hasMore && (
             <div className="flex justify-center mt-6">
               <button
                 onClick={loadMore}
@@ -1225,7 +1273,7 @@ export default function CustomerDetailsPage() {
           )}
 
           {/* Show message when all customer invoices are loaded */}
-          {!hasMore && totalLoaded > 0 && (
+          {invoiceSource === "new" && !hasMore && totalLoaded > 0 && (
             <div className="text-center mt-6 py-4">
               <p className="text-gray-600 dark:text-gray-400">
                 All {totalLoaded} customer invoices loaded

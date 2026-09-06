@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-09-03 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "line_no",
+  "item_code_legacy",
+  "item_name_legacy",
+  "item_group_legacy",
+  "column_break_qty",
+  "qty",
+  "rate",
+  "amount",
+  "cost",
+  "section_break_match",
+  "matched_item",
+  "match_method",
+  "add_to_cart_eligible",
+  "column_break_vat",
+  "vat_code",
+  "vat_rate",
+  "legacy_barcode"
+ ],
+ "fields": [
+  {
+   "fieldname": "line_no",
+   "fieldtype": "Int",
+   "label": "#",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_code_legacy",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Old Item Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_name_legacy",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Old Item Name",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_group_legacy",
+   "fieldtype": "Data",
+   "label": "Old Item Group",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_qty",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Rate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cost",
+   "fieldtype": "Currency",
+   "label": "Cost (internal)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_match",
+   "fieldtype": "Section Break",
+   "label": "Catalog Match"
+  },
+  {
+   "fieldname": "matched_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Matched Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "match_method",
+   "fieldtype": "Select",
+   "label": "Match Method",
+   "options": "Barcode\nItem Code\nName\nNone",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Set at import/resolve time: matched_item exists, isn't disabled, and is a sellable item. Cashier-facing add-to-cart only offers lines where this is checked; everything else needs a manual line.",
+   "fieldname": "add_to_cart_eligible",
+   "fieldtype": "Check",
+   "label": "Add to Cart Eligible",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_vat",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "vat_code",
+   "fieldtype": "Data",
+   "label": "VAT Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "vat_rate",
+   "fieldtype": "Percent",
+   "label": "VAT Rate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "legacy_barcode",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Old Barcode",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "KLiK PoS",
+ "name": "Klik Legacy Sales Invoice Item",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

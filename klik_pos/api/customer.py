@@ -87,9 +87,9 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
             search_term = f"%{search}%"
             where_conditions.append("(c.customer_name LIKE %s OR c.name LIKE %s OR c.email_id LIKE %s OR c.mobile_no LIKE %s)")
             params.extend([search_term, search_term, search_term, search_term])
-        
+
         where_clause = " AND ".join(where_conditions)
-        
+
         count_query = f"""
             SELECT COUNT(c.name) as total
             FROM `tabCustomer` c
@@ -98,9 +98,20 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
         count_query = apply_sql_permissions(count_query)
         total_count_result = frappe.db.sql(count_query, tuple(params), as_dict=True)
         total_count = total_count_result[0]["total"] if total_count_result else 0
-        
+
+        # is_credit_customer is a site-specific custom field (not shipped by this
+        # app), so only select it where it actually exists -- otherwise the raw
+        # SQL below would fail with an "Unknown column" error on every site that
+        # doesn't have it.
+        has_is_credit_customer = any(
+            df.fieldname == "is_credit_customer" for df in frappe.get_meta("Customer").fields
+        )
+        is_credit_customer_column = (
+            "c.is_credit_customer," if has_is_credit_customer else "0 as is_credit_customer,"
+        )
+
         data_query = f"""
-            SELECT 
+            SELECT
                 c.name,
                 c.customer_name,
                 c.customer_type,
@@ -111,6 +122,7 @@ def get_customers(limit: int = 100, start: int = 0, search: str = ""):
                 c.mobile_no,
                 c.tax_id,
                 c.custom_is_walkin as is_walkin,
+                {is_credit_customer_column}
                 COALESCE((
                     SELECT COUNT(*)
                     FROM `tabSales Invoice` si
@@ -378,6 +390,7 @@ def get_customer_info(customer_name: str):
             "contact_data": contact_data,
             "address_data": address_data,
             "is_walkin": getattr(customer, "custom_is_walkin", 0),
+            "is_credit_customer": getattr(customer, "is_credit_customer", 0),
             "tax_id": customer.tax_id,
             "loyalty": get_customer_loyalty_summary(
                 customer.name,

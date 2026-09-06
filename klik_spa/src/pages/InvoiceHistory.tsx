@@ -60,10 +60,61 @@ interface InvoiceHistoryFiltersState {
 const DEFAULT_INVOICE_HISTORY_FILTERS: InvoiceHistoryFiltersState = {
   activeTab: "all",
   searchTerm: "",
-  dateFilter: "all",
+  // Defaults to "Today" (rather than "all") so a fresh visit to Invoice History
+  // fetches just today's invoices from the server instead of the site's entire
+  // invoice history -- see getDateRangeForFilter, which turns this into the
+  // from_date/to_date query params useSalesInvoices actually sends.
+  dateFilter: "today",
   customerFilter: "",
   paymentFilter: "all",
   cashierFilter: "all",
+};
+
+/**
+ * Turns the dateFilter dropdown's value into a { fromDate, toDate } pair of
+ * "YYYY-MM-DD" strings (system/UTC-day boundaries, matching isToday/isThisWeek/etc.
+ * below) for the backend's posting_date range filter. "all" returns {} so no date
+ * restriction is sent. Scoping the query itself (rather than fetching everything
+ * and filtering client-side, as this page used to) is what keeps a growing
+ * invoice history from overloading the page.
+ */
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const toDateKey = (d: Date) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+
+const getDateRangeForFilter = (dateFilter: string): { fromDate?: string; toDate?: string } => {
+  const now = new Date();
+
+  if (dateFilter === "today") {
+    const today = toDateKey(now);
+    return { fromDate: today, toDate: today };
+  }
+
+  if (dateFilter === "yesterday") {
+    const yesterday = new Date(now);
+    yesterday.setUTCDate(now.getUTCDate() - 1);
+    const key = toDateKey(yesterday);
+    return { fromDate: key, toDate: key };
+  }
+
+  if (dateFilter === "week") {
+    const startOfWeek = new Date(now);
+    startOfWeek.setUTCDate(now.getUTCDate() - now.getUTCDay());
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setUTCDate(startOfWeek.getUTCDate() + 6);
+    return { fromDate: toDateKey(startOfWeek), toDate: toDateKey(endOfWeek) };
+  }
+
+  if (dateFilter === "month") {
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const endOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+    return { fromDate: toDateKey(startOfMonth), toDate: toDateKey(endOfMonth) };
+  }
+
+  if (dateFilter === "year") {
+    return { fromDate: `${now.getUTCFullYear()}-01-01`, toDate: `${now.getUTCFullYear()}-12-31` };
+  }
+
+  return {};
 };
 
 const getInitialInvoiceHistoryFilters = (): InvoiceHistoryFiltersState => {
@@ -82,6 +133,14 @@ const getInitialInvoiceHistoryFilters = (): InvoiceHistoryFiltersState => {
       ...DEFAULT_INVOICE_HISTORY_FILTERS,
       ...parsed,
       customerFilter: parsed.customerFilter === "all" ? "" : (parsed.customerFilter || ""),
+      // Always start each visit on "Today" regardless of whatever date range was
+      // last selected (or was already saved in the browser from before this
+      // safeguard existed, e.g. a stale "all"). This invoice list only grows, so
+      // silently carrying over "All Time" as the startup default risks pulling
+      // the entire history into the browser again on every page load. The
+      // dropdown can still be changed for the current visit -- it just won't be
+      // remembered as next time's starting point.
+      dateFilter: "today",
     };
   } catch {
     return DEFAULT_INVOICE_HISTORY_FILTERS;
@@ -126,9 +185,14 @@ export default function InvoiceHistoryPage() {
   const [showSalespersonAuthModal, setShowSalespersonAuthModal] = useState(false);
   const pendingSalespersonActionRef = useRef<null | (() => void)>(null);
 
+  // Turn the dateFilter dropdown into actual from_date/to_date query params so the
+  // default "Today" view (and Yesterday/Week/Month/Year) only pulls the matching
+  // invoices from the server, instead of the page's whole history.
+  const { fromDate, toDate } = useMemo(() => getDateRangeForFilter(dateFilter), [dateFilter]);
+
   // Skip opening entry filter for Invoice History - show all invoices for cashier regardless of opening entry
   // Pass cashier filter to API so it filters on server side (more efficient)
-  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore, refetch } = useSalesInvoices(searchTerm, true, cashierFilter);
+  const { invoices, isLoading, isLoadingMore, error, hasMore, totalLoaded, totalCount, loadMore, refetch } = useSalesInvoices(searchTerm, true, cashierFilter, false, fromDate, toDate);
   const { modes } = useAllPaymentModes();
   const { cartItems, selectedCustomer: cartCustomer } = useCartStore();
   const { customers } = useCustomers();

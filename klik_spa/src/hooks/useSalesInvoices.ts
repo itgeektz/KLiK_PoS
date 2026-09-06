@@ -5,7 +5,9 @@ export function useSalesInvoices(
   searchTerm: string = "",
   skipOpeningEntryFilter: boolean = false,
   cashierName?: string,
-  submittedOnly: boolean = false
+  submittedOnly: boolean = false,
+  fromDate?: string,
+  toDate?: string
 ) {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,8 +49,13 @@ export function useSalesInvoices(
       const cashierParam = cashierName && cashierName !== 'all' ? `&cashier_name=${encodeURIComponent(cashierName)}` : '';
       // Only submitted invoices (exclude Draft and Cancelled) - for Sales Dashboard
       const submittedOnlyParam = submittedOnly ? '&submitted_only=true' : '';
+      // Date range (e.g. "Today") -- scopes the query itself so the Invoice History
+      // page's default view doesn't have to pull the entire invoice history and
+      // filter it down in the browser.
+      const fromDateParam = fromDate ? `&from_date=${encodeURIComponent(fromDate)}` : '';
+      const toDateParam = toDate ? `&to_date=${encodeURIComponent(toDate)}` : '';
       const response = await fetch(
-        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${searchParam}${skipOpeningFilter}${cashierParam}${submittedOnlyParam}`,
+        `/api/method/klik_pos.api.sales_invoice.get_sales_invoices?limit=${LIMIT}&start=${start}${searchParam}${skipOpeningFilter}${cashierParam}${submittedOnlyParam}${fromDateParam}${toDateParam}`,
         {
           method: 'GET',
           headers: {
@@ -178,7 +185,7 @@ export function useSalesInvoices(
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [debouncedSearchTerm, skipOpeningEntryFilter, cashierName, submittedOnly]);
+  }, [debouncedSearchTerm, skipOpeningEntryFilter, cashierName, submittedOnly, fromDate, toDate]);
 
   const loadMore = useCallback(() => {
     if (!isLoadingMore && hasMore) {

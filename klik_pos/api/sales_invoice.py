@@ -986,7 +986,15 @@ def get_current_pos_opening_entry():
 
 @frappe.whitelist(allow_guest=True)
 def get_sales_invoices(
-	limit=100, start=0, search="", skip_opening_entry_filter=False, cashier_name=None, submitted_only=False, customer=None
+	limit=100,
+	start=0,
+	search="",
+	skip_opening_entry_filter=False,
+	cashier_name=None,
+	submitted_only=False,
+	customer=None,
+	from_date=None,
+	to_date=None,
 ):
 	"""
 	Get sales invoices with proper filtering based on user role and POS opening entry.
@@ -1000,6 +1008,11 @@ def get_sales_invoices(
 			id (e.g. the Customer Detail page); `search` is a fuzzy LIKE across name/customer_name/customer
 			and isn't a reliable way to isolate one customer's invoices, and its total_count reflects the
 			broader fuzzy match rather than this customer's real invoice count.
+		from_date: "YYYY-MM-DD". If provided, only returns invoices with posting_date >= this date.
+		to_date: "YYYY-MM-DD". If provided, only returns invoices with posting_date <= this date.
+			Used by the Invoice History page's date-range dropdown (Today/Yesterday/Week/Month/Year)
+			so the default "Today" view fetches just today's invoices from the database instead of
+			pulling the site's entire invoice history and filtering it down in the browser.
 	"""
 	try:
 		if isinstance(skip_opening_entry_filter, str):
@@ -1086,6 +1099,14 @@ def get_sales_invoices(
 		if customer and str(customer).strip():
 			conditions.append("si.customer = %s")
 			params.append(str(customer).strip())
+
+		if from_date and str(from_date).strip():
+			conditions.append("si.posting_date >= %s")
+			params.append(str(from_date).strip())
+
+		if to_date and str(to_date).strip():
+			conditions.append("si.posting_date <= %s")
+			params.append(str(to_date).strip())
 
 		if search and search.strip():
 			search_term = f"%{search.strip()}%"

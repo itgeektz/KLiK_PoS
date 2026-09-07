@@ -20,6 +20,7 @@ import {
   AlertCircle,
   Banknote,
   ShoppingCart,
+  Printer,
 
 } from "lucide-react";
 
@@ -95,7 +96,15 @@ export default function CustomerDetailsPage() {
 
   useEffect(() => {
     const customerId = customer?.id;
-    if (!customerId) {
+    // "Cash Customer" (and any other record flagged is_walkin) is a shared placeholder
+    // reused across every anonymous walk-in sale -- it isn't one economic entity, so a
+    // single running GL balance for it doesn't mean "money owed by a customer" the way
+    // it does for a real, named customer. Pooling ~100+ unrelated transactions (plus
+    // returns, rounding, and the risk of more than one "Cash Customer" record existing
+    // with the same display name but different document IDs) can easily net to a
+    // nonzero -- even negative -- number that has no actionable meaning. Skip the fetch
+    // and let the balance card below show an explanatory note instead of a number.
+    if (!customerId || customer?.is_walkin == 1) {
       setGlOutstandingBalance(null);
       return;
     }
@@ -122,7 +131,7 @@ export default function CustomerDetailsPage() {
     return () => {
       cancelled = true;
     };
-  }, [customer?.id]);
+  }, [customer?.id, customer?.is_walkin]);
 
   // "New System Bills" (this Frappe/ERPNext instance, default) vs "Old System Bills"
   // (read-only history imported from the pre-migration system). Defaults to new
@@ -480,6 +489,14 @@ export default function CustomerDetailsPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => navigate(`/customers/${customer.id}/statement`)}
+                  title="Print Statement"
+                  className="flex items-center p-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm"
+                  type="button"
+                >
+                  <Printer className="w-4 h-4" />
+                </button>
+                <button
                   onClick={() => setShowPaymentModal(true)}
                   className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
                   type="button"
@@ -565,12 +582,7 @@ export default function CustomerDetailsPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => navigate(`/customers/${customer.id}/payments`)}
-              title="View this customer's payment history"
-              className="text-left bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:border-beveren-400 hover:shadow-sm transition-colors"
-            >
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Total Revenue</p>
@@ -580,24 +592,23 @@ export default function CustomerDetailsPage() {
                 </div>
                 <Wallet className="w-6 h-6 text-green-600" />
               </div>
-            </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => navigate(`/customers/${customer.id}/payments`)}
-              title="View this customer's payment history"
-              className="text-left bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:border-beveren-400 hover:shadow-sm transition-colors"
-            >
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Outstanding</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {formatCurrencyWithSymbol(customerMetrics.outstandingAmount, posDetails?.currency || 'USD')}
-                  </p>
+                  {customer.is_walkin == 1 ? (
+                    <p className="text-lg font-bold text-gray-400 dark:text-gray-500">&mdash;</p>
+                  ) : (
+                    <p className="text-lg font-bold text-gray-900 dark:text-white">
+                      {formatCurrencyWithSymbol(customerMetrics.displayOutstandingBalance, posDetails?.currency || 'USD')}
+                    </p>
+                  )}
                 </div>
-                <AlertCircle className={`w-6 h-6 ${customerMetrics.outstandingAmount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                <AlertCircle className={`w-6 h-6 ${customer.is_walkin != 1 && customerMetrics.displayOutstandingBalance > 0 ? 'text-red-600' : 'text-gray-400'}`} />
               </div>
-            </button>
+            </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
@@ -891,6 +902,14 @@ export default function CustomerDetailsPage() {
               </div>
               <div className="flex items-center gap-3">
                 <button
+                  onClick={() => navigate(`/customers/${customer.id}/statement`)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  type="button"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Statement</span>
+                </button>
+                <button
                   onClick={() => setShowPaymentModal(true)}
                   className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                   type="button"
@@ -1004,12 +1023,7 @@ export default function CustomerDetailsPage() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => navigate(`/customers/${customer.id}/payments`)}
-                title="View this customer's payment history"
-                className="text-left bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-beveren-400 hover:shadow-sm transition-colors"
-              >
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
@@ -1019,32 +1033,41 @@ export default function CustomerDetailsPage() {
                   </div>
                   <Wallet className="w-8 h-8 text-green-600" />
                 </div>
-              </button>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => navigate(`/customers/${customer.id}/payments`)}
-                title="View this customer's payment history"
-                className="text-left bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-beveren-400 hover:shadow-sm transition-colors"
-              >
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Outstanding Balance</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {formatCurrencyWithSymbol(customerMetrics.displayOutstandingBalance, posDetails?.currency || 'USD')}
-                    </p>
-                    {customerMetrics.unexplainedBalanceGap > 1 && (
-                      <p
-                        className="text-xs text-amber-600 dark:text-amber-400 mt-1"
-                        title="This customer's real ledger balance is higher than what their Unpaid/Overdue invoices below add up to -- the difference is likely a Journal Entry, Debit Note, opening balance, or an invoice raised outside a POS shift, none of which show up in this invoice list."
-                      >
-                        Incl. {formatCurrencyWithSymbol(customerMetrics.unexplainedBalanceGap, posDetails?.currency || 'USD')} not shown below
-                      </p>
+                    {customer.is_walkin == 1 ? (
+                      <>
+                        <p className="text-2xl font-bold text-gray-400 dark:text-gray-500">&mdash;</p>
+                        <p
+                          className="text-xs text-gray-500 dark:text-gray-400 mt-1"
+                          title="This is a shared walk-in account used across many unrelated sales, not one customer's running account -- a single balance for it wouldn't mean money owed by a customer, so it isn't tracked here."
+                        >
+                          Not tracked for shared walk-in accounts
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                          {formatCurrencyWithSymbol(customerMetrics.displayOutstandingBalance, posDetails?.currency || 'USD')}
+                        </p>
+                        {customerMetrics.unexplainedBalanceGap > 1 && (
+                          <p
+                            className="text-xs text-amber-600 dark:text-amber-400 mt-1"
+                            title="This customer's real ledger balance is higher than what their Unpaid/Overdue invoices below add up to -- the difference is likely a Journal Entry, Debit Note, opening balance, or an invoice raised outside a POS shift, none of which show up in this invoice list."
+                          >
+                            Incl. {formatCurrencyWithSymbol(customerMetrics.unexplainedBalanceGap, posDetails?.currency || 'USD')} not shown below
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
-                  <AlertCircle className={`w-8 h-8 ${customerMetrics.displayOutstandingBalance > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                  <AlertCircle className={`w-8 h-8 ${customer.is_walkin != 1 && customerMetrics.displayOutstandingBalance > 0 ? 'text-red-600' : 'text-gray-400'}`} />
                 </div>
-              </button>
+              </div>
 
               <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">

@@ -4,7 +4,7 @@ import frappe
 from erpnext.setup.utils import get_exchange_rate
 from erpnext.accounts.party import get_party_details
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, add_days, getdate, nowdate, cstr
 
 from klik_pos.klik_pos.utils import get_current_pos_profile
 from klik_pos.api.loyalty import get_customer_loyalty_summary
@@ -937,6 +937,114 @@ def get_customer_outstanding_balance(customer):
         return {"success": True, "balance": flt(balance)}
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Error fetching customer outstanding balance")
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_customer_statement(customer, from_date=None, to_date=None):
+    """A printable Statement of Account for one customer -- every General Ledger
+    entry posted against them (same source as get_customer_outstanding_balance
+    above), with a running balance, over an optional date range.
+
+    - from_date omitted -> statement covers "all time"; opening_balance is 0 and
+      the running balance naturally ends at the customer's true all-time balance.
+    - from_date given -> opening_balance is the customer's real GL balance as of
+      the day *before* from_date (via the same get_balance_on ERPNext uses for
+      Customer Balances Summary / statements), so entries before from_date are
+      folded into one opening line instead of silently disappearing.
+    - to_date omitted -> defaults to today.
+
+    Closing balance always equals get_customer_outstanding_balance's number when
+    to_date is today (and from_date is anything, or omitted) -- opening_balance
+    plus this range's entries covers exactly the same GL Entries that function's
+    single aggregate sums, just broken out row by row.
+    """
+    if not customer or not str(customer).strip():
+        return {"success": False, "error": "customer is required"}
+
+    customer = str(customer).strip()
+
+    try:
+        parsed_to_date = getdate(to_date) if to_date else getdate(nowdate())
+        parsed_from_date = getdate(from_date) if from_date else None
+
+        if parsed_from_date and parsed_from_date > parsed_to_date:
+            return {"success": False, "error": "from_date cannot be after to_date"}
+
+        from erpnext.accounts.utils import get_balance_on
+
+        company = get_user_company_and_currency()[0]
+        currency = get_user_company_and_currency()[1]
+
+        opening_balance = 0.0
+        if parsed_from_date:
+            opening_balance = flt(
+                get_balance_on(
+                    party_type="Customer",
+                    party=customer,
+                    company=company,
+                    date=add_days(parsed_from_date, -1),
+                )
+            )
+
+        conditions = [
+            ["party_type", "=", "Customer"],
+            ["party", "=", customer],
+            ["company", "=", company],
+            ["is_cancelled", "=", 0],
+            ["posting_date", "<=", parsed_to_date],
+        ]
+        if parsed_from_date:
+            conditions.append(["posting_date", ">=", parsed_from_date])
+
+        rows = frappe.get_all(
+            "GL Entry",
+            filters=conditions,
+            fields=[
+                "posting_date",
+                "voucher_type",
+                "voucher_no",
+                "against_voucher_type",
+                "against_voucher",
+                "debit_in_account_currency as debit",
+                "credit_in_account_currency as credit",
+                "remarks",
+            ],
+            order_by="posting_date asc, creation asc",
+        )
+
+        running_balance = flt(opening_balance)
+        entries = []
+        for row in rows:
+            debit = flt(row.debit)
+            credit = flt(row.credit)
+            running_balance = flt(running_balance + debit - credit)
+            entries.append(
+                {
+                    "posting_date": cstr(row.posting_date),
+                    "voucher_type": row.voucher_type,
+                    "voucher_no": row.voucher_no,
+                    "against_voucher": row.against_voucher,
+                    "debit": debit,
+                    "credit": credit,
+                    "balance": running_balance,
+                    "remarks": row.remarks,
+                }
+            )
+
+        return {
+            "success": True,
+            "customer": customer,
+            "company": company,
+            "currency": currency,
+            "from_date": cstr(parsed_from_date) if parsed_from_date else None,
+            "to_date": cstr(parsed_to_date),
+            "opening_balance": flt(opening_balance),
+            "closing_balance": flt(running_balance),
+            "entries": entries,
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Error generating customer statement")
         return {"success": False, "error": str(e)}
 
 

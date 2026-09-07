@@ -955,9 +955,9 @@ def get_customer_statement(customer, from_date=None, to_date=None):
     - to_date omitted -> defaults to today.
 
     Closing balance always equals get_customer_outstanding_balance's number when
-    to_date is today (and from_date is anything, or omitted) -- opening_balance
-    plus this range's entries covers exactly the same GL Entries that function's
-    single aggregate sums, just broken out row by row.
+    to_date is today (and from_date is anything, or omitted) -- every GL Entry in
+    the range still feeds the running/closing balance math, even ones that don't
+    get their own row (see displayed_voucher_types below).
     """
     if not customer or not str(customer).strip():
         return {"success": False, "error": "customer is required"}
@@ -1013,12 +1013,21 @@ def get_customer_statement(customer, from_date=None, to_date=None):
             order_by="posting_date asc, creation asc",
         )
 
+        # Only Sales Invoices and Payment Entries are shown as line items -- Journal
+        # Entries here are almost always an internal accounting adjustment (e.g. an
+        # automated credit-bill posting) rather than something the customer needs to
+        # see as a transaction. They still count towards the running/closing balance
+        # below (so the numbers stay correct), they just don't get their own row.
+        displayed_voucher_types = {"Sales Invoice", "Payment Entry"}
+
         running_balance = flt(opening_balance)
         entries = []
         for row in rows:
             debit = flt(row.debit)
             credit = flt(row.credit)
             running_balance = flt(running_balance + debit - credit)
+            if row.voucher_type not in displayed_voucher_types:
+                continue
             entries.append(
                 {
                     "posting_date": cstr(row.posting_date),

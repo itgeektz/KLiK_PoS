@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Printer, Loader2 } from "lucide-react";
+import { ArrowLeft, Printer, Loader2, Calendar, RotateCcw } from "lucide-react";
 import { formatCurrencyWithSymbol } from "../utils/currency";
 import { usePOSProfileStore } from "../stores/posProfileStore";
 import { useCustomerDetails } from "../hooks/useCustomers";
@@ -26,13 +26,17 @@ interface StatementData {
   entries: StatementEntry[];
 }
 
-// A printable Statement of Account for one customer -- every General Ledger entry
-// posted against them, with a running balance, over a date range the user picks.
-// Built natively here (rather than linking into Frappe Desk's own Accounts
-// Receivable / General Ledger reports) because POS cashiers typically don't have
-// the Desk/accounting permissions those reports require, and this way the numbers
-// are guaranteed to come from the exact same source as the Customer Detail page's
-// own "Outstanding Balance" card.
+// A printable Statement of Account for one customer -- Sales Invoices and Payment
+// Entries only, with a running balance, over a date range the user picks. Built
+// natively here (rather than linking into Frappe Desk's own Accounts Receivable /
+// General Ledger reports) because POS cashiers typically don't have the
+// Desk/accounting permissions those reports require, and this way the numbers are
+// guaranteed to come from the exact same source as the Customer Detail page's own
+// "Outstanding Balance" card.
+//
+// Note this page renders inside the app's normal layout (RetailSidebar is a fixed,
+// 80px-wide bar on desktop, rendered by App.tsx around every route) -- everything
+// here is offset with lg:ml-20 so it doesn't sit underneath that sidebar.
 export default function CustomerStatementPage() {
   const { id } = useParams();
   const customerId = id ?? "";
@@ -93,6 +97,8 @@ export default function CustomerStatementPage() {
     setAppliedToDate("");
   };
 
+  const hasActiveFilter = Boolean(appliedFromDate || appliedToDate || fromDate || toDate);
+
   const currency = statement?.currency || posDetails?.currency || "USD";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const companySummary = (posDetails as any)?.company_summary;
@@ -103,20 +109,30 @@ export default function CustomerStatementPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <style>{`
+        @page { size: A4; margin: 12mm; }
         @media print {
           .statement-no-print { display: none !important; }
-          .statement-print-area { box-shadow: none !important; border: none !important; margin: 0 !important; }
+          .statement-page-shell { margin-left: 0 !important; padding: 0 !important; }
+          .statement-content-wrapper { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+          .statement-print-area { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; border-radius: 0 !important; font-size: 11px; }
+          .statement-print-area table { font-size: 11px; width: 100% !important; }
+          .statement-print-area th, .statement-print-area td { padding: 4px 6px !important; }
+          .statement-print-area thead { display: table-header-group; }
+          .statement-print-area tfoot { display: table-footer-group; }
+          .statement-print-area tr { page-break-inside: avoid; }
           body { background: white !important; }
         }
       `}</style>
 
-      {/* Header / controls -- hidden when printing */}
-      <div className="statement-no-print sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+      {/* Header / controls -- hidden when printing. lg:ml-20 clears the app's fixed
+          left sidebar (RetailSidebar, w-20, only shown at the lg breakpoint). */}
+      <div className="statement-no-print statement-page-shell lg:ml-20 sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <div className="px-4 sm:px-6 py-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center space-x-3">
             <button
               onClick={() => navigate(-1)}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              title="Back"
+              className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800 transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -127,42 +143,53 @@ export default function CustomerStatementPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              max={toDate || undefined}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
-            />
-            <span className="text-gray-400 text-sm">to</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              min={fromDate || undefined}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-beveren-500 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
-            />
+            <div className="flex items-center gap-2 bg-beveren-50 dark:bg-gray-800 border border-beveren-200 dark:border-gray-700 rounded-xl px-3 py-2">
+              <Calendar className="w-4 h-4 text-beveren-500 dark:text-beveren-400 shrink-0" />
+              <div className="flex flex-col leading-tight">
+                <label className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">From</label>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  max={toDate || undefined}
+                  className="bg-transparent text-sm text-gray-900 dark:text-white focus:outline-none"
+                />
+              </div>
+              <div className="w-px h-8 bg-beveren-200 dark:bg-gray-700" />
+              <div className="flex flex-col leading-tight">
+                <label className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">To</label>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  min={fromDate || undefined}
+                  className="bg-transparent text-sm text-gray-900 dark:text-white focus:outline-none"
+                />
+              </div>
+            </div>
             <button
               type="button"
               onClick={handleApply}
-              className="px-3 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm"
+              className="px-4 py-2 bg-beveren-600 text-white rounded-lg hover:bg-beveren-700 transition-colors text-sm font-medium shadow-sm"
             >
               Apply
             </button>
-            {(appliedFromDate || appliedToDate || fromDate || toDate) && (
+            {hasActiveFilter && (
               <button
                 type="button"
                 onClick={handleClear}
-                className="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white text-sm"
+                title="Clear filter, show all time"
+                className="flex items-center gap-1 px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors text-sm"
               >
-                All Time
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>All Time</span>
               </button>
             )}
             <button
               type="button"
               onClick={() => window.print()}
               disabled={!statement}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Printer className="w-4 h-4" />
               <span>Print</span>
@@ -171,7 +198,7 @@ export default function CustomerStatementPage() {
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto">
+      <div className="statement-content-wrapper lg:ml-20 px-4 sm:px-6 py-6 max-w-4xl mx-auto">
         {/* @ts-expect-error is_walkin isn't declared on the Customer type but the API sets it */}
         {customer?.is_walkin == 1 && (
           <div className="statement-no-print mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-300">
@@ -265,13 +292,13 @@ export default function CustomerStatementPage() {
                             <span className="text-gray-400 dark:text-gray-500"> (against {entry.against_voucher})</span>
                           )}
                         </td>
-                        <td className="py-2 pr-3 text-right text-gray-900 dark:text-white">
+                        <td className="py-2 pr-3 text-right text-gray-900 dark:text-white whitespace-nowrap">
                           {entry.debit ? formatCurrencyWithSymbol(entry.debit, currency) : ""}
                         </td>
-                        <td className="py-2 pr-3 text-right text-gray-900 dark:text-white">
+                        <td className="py-2 pr-3 text-right text-gray-900 dark:text-white whitespace-nowrap">
                           {entry.credit ? formatCurrencyWithSymbol(entry.credit, currency) : ""}
                         </td>
-                        <td className="py-2 pl-3 text-right font-medium text-gray-900 dark:text-white">
+                        <td className="py-2 pl-3 text-right font-medium text-gray-900 dark:text-white whitespace-nowrap">
                           {formatCurrencyWithSymbol(entry.balance, currency)}
                         </td>
                       </tr>
@@ -283,7 +310,7 @@ export default function CustomerStatementPage() {
                     <td colSpan={5} className="py-3 pr-3 text-right font-semibold text-gray-900 dark:text-white">
                       Closing Balance
                     </td>
-                    <td className="py-3 pl-3 text-right font-bold text-lg text-gray-900 dark:text-white">
+                    <td className="py-3 pl-3 text-right font-bold text-lg text-gray-900 dark:text-white whitespace-nowrap">
                       {formatCurrencyWithSymbol(statement.closing_balance, currency)}
                     </td>
                   </tr>

@@ -4763,33 +4763,85 @@ def create_partial_return(
 		if current_opening_entry:
 			return_doc.custom_pos_opening_entry = current_opening_entry
 
-		# Filter items to only include selected ones with return quantities
+		# Filter items to only include selected ones with return quantities.
+		#
+		# This used to just trust the caller's return_qty outright, with nothing
+		# checking it against how much of that item is actually still available to
+		# return on this invoice. That let the same items on the same invoice be
+		# returned more than once (each attempt looked "clean" on its own, so two
+		# in-flight submissions, or a retry after an unrelated error further down
+		# this function, could each go through and over-return the same stock) --
+		# each item is now checked against returned_qty() (the same source the
+		# frontend's own available_qty already comes from) before it's allowed
+		# into this return.
 		filtered_items = []
 		for return_item in return_items:
-			if return_item.get("return_qty", 0) > 0:
-				for item in return_doc.items:
-					if item.item_code == return_item["item_code"]:
-						item.qty = -abs(return_item["return_qty"])
-						filtered_items.append(item)
-						break
+			return_qty = flt(return_item.get("return_qty", 0))
+			if return_qty <= 0:
+				continue
+			item_code = return_item.get("item_code")
+			for item in return_doc.items:
+				if item.item_code == item_code:
+					# item.qty is still the *original* sold qty at this point --
+					# we only overwrite it below, once the check below passes.
+					originally_sold_qty = flt(item.qty)
+					already_returned_qty = flt(
+						returned_qty(original_invoice.customer, invoice_name, item_code).get(
+							"total_returned_qty", 0
+						)
+					)
+					available_qty = flt(originally_sold_qty - already_returned_qty, 6)
+					if flt(return_qty, 6) - available_qty > 0.000001:
+						frappe.throw(
+							f"Cannot return {return_qty} of {item_code} on {invoice_name}: "
+							f"only {available_qty} is still available to return "
+							f"(already returned: {already_returned_qty})."
+						)
+					item.qty = -abs(return_qty)
+					filtered_items.append(item)
+					break
+
+		if not filtered_items:
+			frappe.throw("Nothing to return: no valid, returnable items were selected.")
 
 		return_doc.items = filtered_items
 
 		# Clear existing payments
 		return_doc.payments = []
 
-		# Calculate total returned amount (baseline expected refund)
-		# Prefer client-provided expected amount; fallback to backend computation
-		if expected_return_amount is not None:
+		# The refund amount always comes from what the (now qty-validated) returned
+		# items actually add up to -- never straight from the client. A client-
+		# supplied return_amount/expected_return_amount is only used as a sanity
+		# check: if it disagrees with the computed total by more than a small
+		# rounding tolerance, the return is rejected rather than silently recording
+		# a refund for a different amount than the stock/GL impact it's paired
+		# with. This also closes the gap where a return_amount of 0 (a stale UI
+		# calculation, a free/zero-rate item, etc.) used to reach here and produce
+		# a fully submitted return with *no* payment row at all -- the customer's
+		# ledger and the till's cash count would then never see that refund.
+		total_returned_amount = flt(
+			sum(abs(item.qty * item.rate) for item in return_doc.items),
+			return_doc.precision("grand_total") or 2,
+		)
+
+		if total_returned_amount <= 0:
+			frappe.throw("Nothing to return: the selected items have no returnable value.")
+
+		client_amount = return_amount if return_amount is not None else expected_return_amount
+		if client_amount is not None:
 			try:
-				total_returned_amount = flt(expected_return_amount, return_doc.precision("grand_total") or 2)
+				requested_amount = flt(client_amount, return_doc.precision("grand_total") or 2)
 			except Exception:
-				total_returned_amount = sum(abs(item.qty * item.rate) for item in return_doc.items)
-		else:
-			total_returned_amount = sum(abs(item.qty * item.rate) for item in return_doc.items)
+				requested_amount = total_returned_amount
+			tolerance = max(1, total_returned_amount * 0.01)
+			if abs(requested_amount - total_returned_amount) > tolerance:
+				frappe.throw(
+					f"Return amount mismatch on {invoice_name}: the selected items total "
+					f"{total_returned_amount}, but a refund of {requested_amount} was requested. "
+					"Refusing to process a return whose refund amount doesn't match its items."
+				)
 
-		final_return_amount = return_amount if return_amount is not None else total_returned_amount
-
+		final_return_amount = total_returned_amount
 		final_payment_method = payment_method if payment_method else "Cash"
 
 		# Optionally persist the auto-calculated expected refund if a custom field exists
@@ -4802,23 +4854,36 @@ def create_partial_return(
 		except Exception:
 			pass
 
-		if final_return_amount > 0:
-			return_doc.append(
-				"payments",
-				{
-					"mode_of_payment": final_payment_method,
-					"amount": -abs(final_return_amount),
-				},
-			)
-		print("Mko 3", -abs(final_return_amount))
+		return_doc.append(
+			"payments",
+			{
+				"mode_of_payment": final_payment_method,
+				"amount": -abs(final_return_amount),
+			},
+		)
+
 		# Recalculate totals (payment amount stays as user entered)
 		try:
 			return_doc.calculate_taxes_and_totals()
 		except Exception:
 			pass
 
-		return_doc.save(ignore_permissions=True)
-		return_doc.submit()
+		# doc.submit() writes docstatus=1 to the row before running on_submit hooks
+		# (ERPNext's own stock/batch/serial validation among them) -- without a
+		# savepoint, an exception raised from inside submit() (e.g. a missing
+		# serial/batch) still leaves that half-finished submit committed once this
+		# function's own except block below swallows the error and returns a normal
+		# {"success": False}. That is exactly what let a return look like it failed
+		# on screen while it had, in fact, already gone through -- see the matching,
+		# already-fixed version of this exact bug in queue_sales_invoice() above.
+		return_submit_savepoint = f"klik_return_submit_{frappe.generate_hash(length=10)}"
+		frappe.db.savepoint(return_submit_savepoint)
+		try:
+			return_doc.save(ignore_permissions=True)
+			return_doc.submit()
+		except Exception:
+			frappe.db.rollback(save_point=return_submit_savepoint)
+			raise
 
 		return {
 			"success": True,

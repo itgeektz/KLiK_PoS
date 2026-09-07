@@ -42,7 +42,7 @@ export default function RetailSidebar() {
   }
 
   if (!posDetails) return (
-    <div className="hidden lg:flex fixed h-screen w-20 top-0 left-0 bg-white dark:bg-gray-800 shadow-lg flex-col border-r border-gray-200 dark:border-gray-700 z-50">
+    <div className="hidden lg:flex print:hidden fixed h-screen w-20 top-0 left-0 bg-white dark:bg-gray-800 shadow-lg flex-col border-r border-gray-200 dark:border-gray-700 z-50">
       <div
           className="h-20 flex items-center justify-center border-gray-100 dark:border-gray-700 cursor-pointer active:scale-90 transition-transform duration-150"
           onClick={() => navigate("/")}

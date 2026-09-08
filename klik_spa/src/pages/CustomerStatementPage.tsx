@@ -27,12 +27,12 @@ interface StatementData {
 }
 
 // A printable Statement of Account for one customer -- Sales Invoices and Payment
-// Entries only, with a running balance, over a date range the user picks. Built
+// allocations only, with a running balance, over a date range the user picks. Built
 // natively here (rather than linking into Frappe Desk's own Accounts Receivable /
 // General Ledger reports) because POS cashiers typically don't have the
 // Desk/accounting permissions those reports require, and this way the numbers are
-// guaranteed to come from the exact same source as the Customer Detail page's own
-// "Outstanding Balance" card.
+// from customer-facing documents instead of raw GL posting rows, which can contain
+// multiple internal rows for one POS invoice.
 //
 // Note this page renders inside the app's normal layout (RetailSidebar is a fixed,
 // 80px-wide bar on desktop, rendered by App.tsx around every route) -- everything
@@ -105,6 +105,11 @@ export default function CustomerStatementPage() {
   const customerLabel =
     // @ts-expect-error customer_name isn't declared on the Customer type but the API sets it
     customer?.customer_name || customer?.name || customerId;
+
+  const formatStatementDate = (value: string) => {
+    const [year, month, day] = value.split("-");
+    return year && month && day ? `${day}-${month}-${year}` : value;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -241,7 +246,9 @@ export default function CustomerStatementPage() {
               <div className="text-right">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Statement of Account</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {statement.from_date ? `${statement.from_date} to ${statement.to_date}` : `As of ${statement.to_date}`}
+                  {statement.from_date
+                    ? `${formatStatementDate(statement.from_date)} to ${formatStatementDate(statement.to_date)}`
+                    : `As of ${formatStatementDate(statement.to_date)}`}
                 </p>
               </div>
             </div>
@@ -265,16 +272,15 @@ export default function CustomerStatementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {statement.from_date && (
-                    <tr className="border-b border-gray-200 dark:border-gray-700">
-                      <td className="py-2 pr-3 text-gray-500 dark:text-gray-400" colSpan={5}>
-                        Opening Balance (as of {statement.from_date})
-                      </td>
-                      <td className="py-2 pl-3 text-right font-medium text-gray-900 dark:text-white">
-                        {formatCurrencyWithSymbol(statement.opening_balance, currency)}
-                      </td>
-                    </tr>
-                  )}
+                  <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <td className="py-2 pr-3 text-gray-500 dark:text-gray-400" colSpan={5}>
+                      Opening Balance
+                      {statement.from_date && ` (before ${formatStatementDate(statement.from_date)})`}
+                    </td>
+                    <td className="py-2 pl-3 text-right font-medium text-gray-900 dark:text-white">
+                      {formatCurrencyWithSymbol(statement.opening_balance, currency)}
+                    </td>
+                  </tr>
                   {statement.entries.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-6 text-center text-gray-400 dark:text-gray-500">
@@ -284,7 +290,9 @@ export default function CustomerStatementPage() {
                   ) : (
                     statement.entries.map((entry, idx) => (
                       <tr key={idx} className="border-b border-gray-100 dark:border-gray-700/50">
-                        <td className="py-2 pr-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">{entry.posting_date}</td>
+                        <td className="py-2 pr-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                          {formatStatementDate(entry.posting_date)}
+                        </td>
                         <td className="py-2 pr-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">{entry.voucher_type}</td>
                         <td className="py-2 pr-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">
                           {entry.voucher_no}
@@ -308,7 +316,7 @@ export default function CustomerStatementPage() {
                 <tfoot>
                   <tr className="border-t-2 border-gray-300 dark:border-gray-600">
                     <td colSpan={5} className="py-3 pr-3 text-right font-semibold text-gray-900 dark:text-white">
-                      Closing Balance
+                      Balance Due
                     </td>
                     <td className="py-3 pl-3 text-right font-bold text-lg text-gray-900 dark:text-white whitespace-nowrap">
                       {formatCurrencyWithSymbol(statement.closing_balance, currency)}
@@ -318,9 +326,16 @@ export default function CustomerStatementPage() {
               </table>
             </div>
 
-            <p className="mt-6 text-xs text-gray-400 dark:text-gray-500">
-              Generated {new Date().toLocaleString()} &middot; A positive balance is owed by the customer.
-            </p>
+            <div className="mt-6 space-y-1 text-xs text-gray-400 dark:text-gray-500">
+              <p>
+                This statement includes credit sales, direct account invoices, and payments allocated
+                to those invoices. POS invoices fully settled by cash, card, or M-Pesa at the time of
+                sale are excluded.
+              </p>
+              <p>
+                Generated {new Date().toLocaleString()} &middot; A positive balance is owed by the customer.
+              </p>
+            </div>
           </div>
         )}
       </div>

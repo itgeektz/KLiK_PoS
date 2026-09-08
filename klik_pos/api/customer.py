@@ -940,24 +940,85 @@ def get_customer_outstanding_balance(customer):
         return {"success": False, "error": str(e)}
 
 
-@frappe.whitelist(allow_guest=True)
+def _build_customer_statement_entries(invoices, payments, opening_balance=0):
+    """Combine customer-facing documents and calculate their running balance.
+
+    A GL Entry is an accounting posting, not a customer statement transaction.
+    In particular, a POS Sales Invoice can have both a debit and a settlement GL
+    row under the same voucher number.  Building from documents prevents those
+    internal rows from appearing as duplicate invoices on the statement.
+    """
+    transactions = []
+
+    for invoice in invoices or []:
+        amount = abs(flt(invoice.get("amount")))
+        is_return = int(invoice.get("is_return") or 0) == 1
+        transactions.append(
+            {
+                "posting_date": cstr(invoice.get("posting_date")),
+                "posting_time": cstr(invoice.get("posting_time") or "00:00:00"),
+                "creation": cstr(invoice.get("creation") or ""),
+                "sort_order": 0,
+                "voucher_type": "Credit Note" if is_return else "Invoice",
+                "voucher_no": invoice.get("voucher_no"),
+                "against_voucher": invoice.get("return_against") if is_return else None,
+                "debit": 0.0 if is_return else amount,
+                "credit": amount if is_return else 0.0,
+                "remarks": invoice.get("remarks"),
+            }
+        )
+
+    for payment in payments or []:
+        amount = abs(flt(payment.get("amount")))
+        is_refund = payment.get("payment_type") == "Pay"
+        transactions.append(
+            {
+                "posting_date": cstr(payment.get("posting_date")),
+                "posting_time": cstr(payment.get("posting_time") or "00:00:00"),
+                "creation": cstr(payment.get("creation") or ""),
+                "sort_order": 1,
+                "voucher_type": "Refund" if is_refund else "Payment",
+                "voucher_no": payment.get("voucher_no"),
+                "against_voucher": payment.get("against_voucher"),
+                "debit": amount if is_refund else 0.0,
+                "credit": 0.0 if is_refund else amount,
+                "remarks": payment.get("remarks"),
+            }
+        )
+
+    transactions.sort(
+        key=lambda row: (
+            row["posting_date"],
+            row["posting_time"],
+            row["creation"],
+            row["sort_order"],
+            cstr(row["voucher_no"]),
+            cstr(row["against_voucher"]),
+        )
+    )
+
+    running_balance = flt(opening_balance)
+    entries = []
+    for transaction in transactions:
+        running_balance = flt(
+            running_balance + transaction["debit"] - transaction["credit"]
+        )
+        transaction["balance"] = running_balance
+        transaction.pop("posting_time", None)
+        transaction.pop("creation", None)
+        transaction.pop("sort_order", None)
+        entries.append(transaction)
+
+    return entries, running_balance
+
+
+@frappe.whitelist()
 def get_customer_statement(customer, from_date=None, to_date=None):
-    """A printable Statement of Account for one customer -- every General Ledger
-    entry posted against them (same source as get_customer_outstanding_balance
-    above), with a running balance, over an optional date range.
+    """Return the credit-account statement shown by Customer Balances Summary.
 
-    - from_date omitted -> statement covers "all time"; opening_balance is 0 and
-      the running balance naturally ends at the customer's true all-time balance.
-    - from_date given -> opening_balance is the customer's real GL balance as of
-      the day *before* from_date (via the same get_balance_on ERPNext uses for
-      Customer Balances Summary / statements), so entries before from_date are
-      folded into one opening line instead of silently disappearing.
-    - to_date omitted -> defaults to today.
-
-    Closing balance always equals get_customer_outstanding_balance's number when
-    to_date is today (and from_date is anything, or omitted) -- every GL Entry in
-    the range still feeds the running/closing balance math, even ones that don't
-    get their own row (see displayed_voucher_types below).
+    The visible lines are customer transactions: qualifying credit/direct Sales
+    Invoices and the Payment Entry allocations made against those invoices.
+    Fully settled cash/card/M-Pesa POS invoices are intentionally excluded.
     """
     if not customer or not str(customer).strip():
         return {"success": False, "error": "customer is required"}
@@ -987,84 +1048,100 @@ def get_customer_statement(customer, from_date=None, to_date=None):
                 )
             )
 
-        conditions = [
-            ["party_type", "=", "Customer"],
-            ["party", "=", customer],
-            ["company", "=", company],
-            ["is_cancelled", "=", 0],
-            ["posting_date", "<=", parsed_to_date],
-        ]
-        if parsed_from_date:
-            conditions.append(["posting_date", ">=", parsed_from_date])
-
-        rows = frappe.get_all(
-            "GL Entry",
-            filters=conditions,
-            fields=[
-                "posting_date",
-                "voucher_type",
-                "voucher_no",
-                "against_voucher_type",
-                "against_voucher",
-                "debit_in_account_currency as debit",
-                "credit_in_account_currency as credit",
-                "remarks",
-            ],
-            order_by="posting_date asc, creation asc",
+        date_condition = "AND si.posting_date >= %(from_date)s" if parsed_from_date else ""
+        invoices = frappe.db.sql(
+            f"""
+            SELECT
+                si.posting_date,
+                si.posting_time,
+                si.creation,
+                si.name AS voucher_no,
+                si.grand_total AS amount,
+                si.is_return,
+                si.return_against,
+                si.remarks
+            FROM `tabSales Invoice` si
+            WHERE si.docstatus = 1
+              AND si.customer = %(customer)s
+              AND si.company = %(company)s
+              AND si.posting_date <= %(to_date)s
+              {date_condition}
+              AND (
+                    IFNULL(si.is_pos, 0) = 0
+                    OR IFNULL(si.is_return, 0) = 1
+                    OR ABS(IFNULL(si.outstanding_amount, 0)) >= 0.005
+                    OR EXISTS (
+                        SELECT 1
+                        FROM `tabSales Invoice Payment` sip
+                        WHERE sip.parent = si.name
+                          AND LOWER(IFNULL(sip.mode_of_payment, '')) = 'credit'
+                          AND ABS(IFNULL(sip.amount, 0)) >= 0.005
+                    )
+              )
+            """,
+            {
+                "customer": customer,
+                "company": company,
+                "from_date": parsed_from_date,
+                "to_date": parsed_to_date,
+            },
+            as_dict=True,
         )
 
-        # Only Sales Invoices and Payment Entries are shown as line items -- Journal
-        # Entries here are almost always an internal accounting adjustment (e.g. an
-        # automated credit-bill posting) rather than something the customer needs to
-        # see as a transaction. They still count towards the running/closing balance
-        # below (so the numbers stay correct), they just don't get their own row.
-        displayed_voucher_types = {"Sales Invoice", "Payment Entry"}
+        payment_date_condition = (
+            "AND pe.posting_date >= %(from_date)s" if parsed_from_date else ""
+        )
+        payments = frappe.db.sql(
+            f"""
+            SELECT
+                pe.posting_date,
+                TIME(pe.creation) AS posting_time,
+                pe.creation,
+                pe.name AS voucher_no,
+                pe.payment_type,
+                per.reference_name AS against_voucher,
+                per.allocated_amount AS amount,
+                pe.remarks
+            FROM `tabPayment Entry` pe
+            INNER JOIN `tabPayment Entry Reference` per ON per.parent = pe.name
+            INNER JOIN `tabSales Invoice` si ON si.name = per.reference_name
+            WHERE pe.docstatus = 1
+              AND pe.party_type = 'Customer'
+              AND pe.party = %(customer)s
+              AND pe.company = %(company)s
+              AND pe.payment_type IN ('Receive', 'Pay')
+              AND per.reference_doctype = 'Sales Invoice'
+              AND ABS(IFNULL(per.allocated_amount, 0)) >= 0.005
+              AND pe.posting_date <= %(to_date)s
+              {payment_date_condition}
+              AND si.docstatus = 1
+              AND si.customer = %(customer)s
+              AND si.company = %(company)s
+              AND (
+                    IFNULL(si.is_pos, 0) = 0
+                    OR IFNULL(si.is_return, 0) = 1
+                    OR ABS(IFNULL(si.outstanding_amount, 0)) >= 0.005
+                    OR EXISTS (
+                        SELECT 1
+                        FROM `tabSales Invoice Payment` sip
+                        WHERE sip.parent = si.name
+                          AND LOWER(IFNULL(sip.mode_of_payment, '')) = 'credit'
+                          AND ABS(IFNULL(sip.amount, 0)) >= 0.005
+                    )
+              )
+            """,
+            {
+                "customer": customer,
+                "company": company,
+                "from_date": parsed_from_date,
+                "to_date": parsed_to_date,
+            },
+            as_dict=True,
+        )
 
-        # A Sales Invoice that was paid in full at the till (cash/card/M-Pesa) posts
-        # its own settlement as GL Entry rows against itself -- same voucher_type
-        # "Sales Invoice", same voucher_no as the sale -- which together net to zero.
-        # That invoice never actually entered the customer's running balance, so
-        # showing it as a line item is just noise (and reads, to a clerk, exactly
-        # like the Journal Entry "artifacts" above). The standard printed Statement
-        # of Account excludes these outright ("POS invoices settled in full ... are
-        # excluded, as they never entered your account balance"), so we do the same:
-        # sum each Sales Invoice's own net GL contribution first, and only give it a
-        # row below if that net is materially non-zero (i.e. it left a real balance,
-        # such as a credit sale, a partially-paid sale, or one later returned).
-        si_net_by_voucher = {}
-        for row in rows:
-            if row.voucher_type == "Sales Invoice":
-                net = flt(row.debit) - flt(row.credit)
-                si_net_by_voucher[row.voucher_no] = flt(
-                    si_net_by_voucher.get(row.voucher_no, 0) + net
-                )
-
-        running_balance = flt(opening_balance)
-        entries = []
-        for row in rows:
-            debit = flt(row.debit)
-            credit = flt(row.credit)
-            running_balance = flt(running_balance + debit - credit)
-            if row.voucher_type not in displayed_voucher_types:
-                continue
-            if (
-                row.voucher_type == "Sales Invoice"
-                and abs(si_net_by_voucher.get(row.voucher_no, 0)) < 0.005
-            ):
-                # Fully settled at time of sale -- never entered the account balance.
-                continue
-            entries.append(
-                {
-                    "posting_date": cstr(row.posting_date),
-                    "voucher_type": row.voucher_type,
-                    "voucher_no": row.voucher_no,
-                    "against_voucher": row.against_voucher,
-                    "debit": debit,
-                    "credit": credit,
-                    "balance": running_balance,
-                    "remarks": row.remarks,
-                }
-            )
+        entries, running_balance = _build_customer_statement_entries(
+            invoices, payments, opening_balance
+        )
 
         return {
             "success": True,

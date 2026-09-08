@@ -17,7 +17,7 @@ import HomePage from "../pages/HomePage";
 import InvoiceHistoryPage from "../pages/InvoiceHistory";
 import InvoiceViewPage from "../pages/InvoiceViewPage";
 import CustomerDetailsPage from "../pages/CustomerPageDetails";
-import CustomerStatementPage from "../pages/CustomerStatementPage";
+import CustomerStatementPage from "../pages/CustomerStatementPage.tsx";
 
 const router = createBrowserRouter([
   {

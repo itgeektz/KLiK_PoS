@@ -332,6 +332,7 @@ def _populate_sales_invoices_to_closing_entry(closing_doc, opening_entry_name):
 			filters={
 				"custom_pos_opening_entry": opening_entry_name,
 				"docstatus": 1,  # Only submitted invoices
+				"status": "Submitted"
 			},
 			fields=["name", "customer", "posting_date", "grand_total"],
 			order_by="posting_date, posting_time",
@@ -340,12 +341,12 @@ def _populate_sales_invoices_to_closing_entry(closing_doc, opening_entry_name):
 		# Append each invoice to the child table
 		for invoice in invoices:
 			closing_doc.append(
-				"custom_sales_invoice",
+				"pos_invoice",
 				{
-					"sales_invoice": invoice.name,
+					"pos_invoice": invoice.name,
 					"customer": invoice.customer,
 					"posting_date": invoice.posting_date,
-					"amount": invoice.grand_total,
+					"grand_total": invoice.grand_total,
 				},
 			)
 

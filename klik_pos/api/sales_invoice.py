@@ -1786,6 +1786,41 @@ def queue_sales_invoice(data):
 			)
 
 			try:
+				# _validate_and_autofetch_batch_and_serial() above already checked
+				# batch/serial completeness -- but only against the cart items the
+				# cashier actually rang up. doc.save() just now is where ERPNext's own
+				# pricing rule engine gets its first chance to add extra item rows
+				# (most commonly a free/bonus line from a "buy X get one free"
+				# promotion), and that engine has no idea this app requires a batch or
+				# serial to be picked -- so a bonus row for a batch/serial-tracked item
+				# can sail through with neither. For a background-queued invoice, that
+				# gap previously wasn't caught until the real on_submit stock-ledger
+				# validation ran, minutes later, in a background job -- by which point
+				# this function had already told the cashier the sale succeeded and
+				# they'd moved on to the next order. Checking doc.items (the final,
+				# post-pricing-rule row set) here, before anything is queued or
+				# reported as accepted, turns that into a normal, synchronous checkout
+				# error instead of a silent later failure.
+				_validate_stock_items_have_batch_or_serial(doc)
+			except Exception as batch_error:
+				_revert_reservations_on_failure(doc.name, context="batch/serial check at queue time")
+				_update_queue_fields(doc, QUEUE_STATUSES["failed"], error_message=str(batch_error))
+				doc.save(ignore_permissions=True)
+				_update_checkout_request(
+					checkout_request_id,
+					status="Failed",
+					invoice_name=doc.name,
+					error_message=batch_error,
+				)
+				return {
+					"success": False,
+					"message": str(batch_error),
+					"checkout_request_id": checkout_request_id,
+					"invoice_name": doc.name,
+					"invoice_id": doc.name,
+				}
+
+			try:
 				_reserve_stock_for_queued_invoice(doc)
 			except Exception as reserve_error:
 				# A multi-item invoice can fail partway through reserving (e.g. item 2
@@ -2937,6 +2972,51 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 						"Serial No / Batch No are mandatory for Item {0}. Please select a batch before submitting the invoice."
 					).format(item_code)
 				)
+
+
+def _validate_stock_items_have_batch_or_serial(doc):
+	"""Defensive, synchronous re-check of every actual row on a built Sales Invoice
+	doc for batch/serial completeness -- run right after doc.save(), i.e. once
+	ERPNext's own pricing rule engine has had its chance to add extra rows.
+
+	_validate_and_autofetch_batch_and_serial() above already checks this, but only
+	against the cart items list the frontend sent -- a free/bonus item ERPNext's own
+	pricing rule engine adds during save()/validate() was never in that list, so a
+	batch- or serial-tracked item's bonus row can reach here with neither. This
+	function exists to catch exactly that gap before a background-queued invoice
+	gets reported to the cashier as a success: without it, the missing batch/serial
+	only surfaces once the real on_submit stock-ledger validation runs, minutes
+	later, in a background job the cashier has no visibility into at the till.
+	"""
+	item_codes = list({row.item_code for row in doc.items if row.item_code})
+	if not item_codes:
+		return
+
+	item_data_map = _batch_fetch_item_data(item_codes)
+
+	for row in doc.items:
+		item_db_data = item_data_map.get(row.item_code, {}) or {}
+		if not int(item_db_data.get("is_stock_item") or 0):
+			continue
+
+		has_batch_no = int(item_db_data.get("has_batch_no") or 0)
+		has_serial_no = int(item_db_data.get("has_serial_no") or 0)
+		if not (has_batch_no or has_serial_no):
+			continue
+
+		row_has_batch = bool(getattr(row, "batch_no", None))
+		row_has_serial = bool(getattr(row, "serial_no", None))
+		row_has_bundle = bool(getattr(row, "serial_and_batch_bundle", None))
+
+		if not (row_has_batch or row_has_serial or row_has_bundle):
+			frappe.throw(
+				_(
+					"Serial No / Batch No are mandatory for Item {0} on an automatically "
+					"added row (for example, a free item from a promotion). Please remove "
+					"or adjust that item, or ask an administrator to check its pricing rule "
+					"and batch/serial setup."
+				).format(row.item_code)
+			)
 
 
 def _validate_no_variant_templates(items):

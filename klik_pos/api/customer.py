@@ -1020,6 +1020,25 @@ def get_customer_statement(customer, from_date=None, to_date=None):
         # below (so the numbers stay correct), they just don't get their own row.
         displayed_voucher_types = {"Sales Invoice", "Payment Entry"}
 
+        # A Sales Invoice that was paid in full at the till (cash/card/M-Pesa) posts
+        # its own settlement as GL Entry rows against itself -- same voucher_type
+        # "Sales Invoice", same voucher_no as the sale -- which together net to zero.
+        # That invoice never actually entered the customer's running balance, so
+        # showing it as a line item is just noise (and reads, to a clerk, exactly
+        # like the Journal Entry "artifacts" above). The standard printed Statement
+        # of Account excludes these outright ("POS invoices settled in full ... are
+        # excluded, as they never entered your account balance"), so we do the same:
+        # sum each Sales Invoice's own net GL contribution first, and only give it a
+        # row below if that net is materially non-zero (i.e. it left a real balance,
+        # such as a credit sale, a partially-paid sale, or one later returned).
+        si_net_by_voucher = {}
+        for row in rows:
+            if row.voucher_type == "Sales Invoice":
+                net = flt(row.debit) - flt(row.credit)
+                si_net_by_voucher[row.voucher_no] = flt(
+                    si_net_by_voucher.get(row.voucher_no, 0) + net
+                )
+
         running_balance = flt(opening_balance)
         entries = []
         for row in rows:
@@ -1027,6 +1046,12 @@ def get_customer_statement(customer, from_date=None, to_date=None):
             credit = flt(row.credit)
             running_balance = flt(running_balance + debit - credit)
             if row.voucher_type not in displayed_voucher_types:
+                continue
+            if (
+                row.voucher_type == "Sales Invoice"
+                and abs(si_net_by_voucher.get(row.voucher_no, 0)) < 0.005
+            ):
+                # Fully settled at time of sale -- never entered the account balance.
                 continue
             entries.append(
                 {

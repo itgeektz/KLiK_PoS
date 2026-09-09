@@ -369,8 +369,17 @@ export const CartItemRow = ({
   const hasExclusiveTax = exclusiveTaxRate > 0;
   const totalTaxRate = hasExclusiveTax ? exclusiveTaxRate : Number(item.total_tax_rate || 0);
   const taxAmountPerUnit = roundCurrency(Math.max(0, displayRateInclTax - discountedPrice));
-  const originalTotal = roundCurrency(item.price * item.quantity);
+  const originalItem: CartItem = {
+    ...item,
+    price: Number(item.original_price ?? item.price ?? 0),
+  };
+  const originalDisplayRateInclTax = getEffectiveDisplayRate(originalItem, {
+    itemDiscounts: {},
+    isTaxIncludedInBasicRate,
+  });
+  const originalTotal = roundCurrency(originalDisplayRateInclTax * item.quantity);
   const discountedTotal = roundCurrency(displayRateInclTax * item.quantity);
+  const hasDisplayedDiscount = originalTotal - discountedTotal >= 0.01;
   const amount = discountedTotal;
   const editableRate = hasExclusiveTax ? discountedPrice : displayRateInclTax;
   const displayRate = editableRate > 0 ? editableRate : "";
@@ -492,7 +501,7 @@ export const CartItemRow = ({
             </div>
 
             <div className={`ml-auto text-right font-mono tabular-nums`}>
-              {discountedTotal !== originalTotal ? (
+              {hasDisplayedDiscount ? (
                 <div>
                   <p className="text-gray-400 line-through text-xs whitespace-nowrap">
                     {formatCurrencyWithSymbol(originalTotal, currency_symbol)}

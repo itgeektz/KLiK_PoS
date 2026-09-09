@@ -108,18 +108,18 @@ class PoleDisplayService {
     return this.state;
   }
 
-    async probeAgent() {
-    if (this.agentConnected) return true;
-    if (await this.connectAgent(false)) return true;
+async probeAgent() {
+  if (this.agentConnected) return true;
+  if (await this.connectAgent(true)) return true;
 
-    if (navigator.serial) {
-      this.setState({ status: "disabled", message: "Windows agent not found. Web Serial fallback is available in Chrome or Edge." });
-      return false;
-    }
-
-    this.setState({ status: "unsupported", message: "Windows agent not found. Web Serial fallback requires Chrome or Edge." });
+  if (navigator.serial) {
+    this.setState({ status: "disabled", message: "Windows agent not found. Web Serial fallback is available in Chrome or Edge." });
     return false;
   }
+
+  this.setState({ status: "unsupported", message: "Windows agent not found. Web Serial fallback requires Chrome or Edge." });
+  return false;
+}
 
 
   subscribe(listener: StatusListener) {

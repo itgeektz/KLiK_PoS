@@ -340,9 +340,9 @@ def _populate_sales_invoices_to_closing_entry(closing_doc, opening_entry_name):
 		# Append each invoice to the child table
 		for invoice in invoices:
 			closing_doc.append(
-				"pos_invoice",
+				"sales_invoices",
 				{
-					"pos_invoice": invoice.name,
+					"sales_invoice": invoice.name,
 					"customer": invoice.customer,
 					"posting_date": invoice.posting_date,
 					"grand_total": invoice.grand_total,

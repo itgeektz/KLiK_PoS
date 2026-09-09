@@ -331,8 +331,7 @@ def _populate_sales_invoices_to_closing_entry(closing_doc, opening_entry_name):
 			"Sales Invoice",
 			filters={
 				"custom_pos_opening_entry": opening_entry_name,
-				"docstatus": 1,  # Only submitted invoices
-				"status": "Submitted"
+				"docstatus": 1,  # Only submitted invoices				
 			},
 			fields=["name", "customer", "posting_date", "grand_total"],
 			order_by="posting_date, posting_time",

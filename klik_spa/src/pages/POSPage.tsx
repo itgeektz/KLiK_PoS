@@ -14,8 +14,12 @@ import POSOpeningModal from '../components/PosOpeningEntryDialog'
 import erpnextAPI from '../services/erpnext-api'
 import { loadCachedItemsToCart, hasCachedDraftInvoiceItems } from '../utils/draftInvoiceCache'
 import { usePOSProfileStore } from '../stores/posProfileStore'
+import { usePoleDisplay } from '../hooks/usePoleDisplay'
+import { useCustomerDisplay } from '../hooks/useCustomerDisplay'
 
 export default function MainPOSScreen() {
+  usePoleDisplay()
+  useCustomerDisplay()
   const { isRTL } = useI18n()
   const [showOpeningModal, setShowOpeningModal] = useState(false)
   const [posReady, setPosReady] = useState(false)

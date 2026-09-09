@@ -56,6 +56,8 @@ import {
   getOrCreateCheckoutAttempt,
   markCheckoutAttemptAccepted,
 } from "../../utils/checkoutAttempt";
+import { poleDisplayService } from "../../services/poleDisplayService";
+import { customerDisplayService } from "../../services/customerDisplayService";
 
 interface MpesaFlowState {
   modeOfPayment: string;
@@ -374,10 +376,11 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const loyaltyAmount = Number(appliedLoyalty?.loyalty_amount || 0);
   const checkoutPayableTotal = roundCurrency(Math.max(0, checkoutGrandTotal - loyaltyAmount));
   const outstandingAmount = calculateRemainingAmount(checkoutPayableTotal, Object.values(paymentAmounts));
+  const poleDisplayChange = roundCurrency(Math.max(0, totalPaidAmount - checkoutPayableTotal));
 
-  // Tax amount = inclusive grand total minus exclusive subtotal (works for both item templates and global taxes)
+  // These values come from the same backend/local preview used by the checkout UI.
+  // Customer displays must consume them rather than calculating tax independently.
   const localTaxTotal = roundCurrency(checkoutGrandTotal - calculations.subtotal - (calculations.couponDiscount > 0 ? 0 : 0));
-
   const displaySubtotal = hasBackendTaxPreview
     ? Number(backendTaxPreview?.net_total || calculations.subtotal)
     : calculations.subtotal;
@@ -387,7 +390,104 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const displayTaxTotal = hasBackendTaxPreview
     ? backendTaxPreview?.total_taxes_and_charges || 0
     : calculations.taxAmount > 0 ? calculations.taxAmount : Math.max(0, localTaxTotal);
-  
+
+  useEffect(() => {
+    if (!isOpen || invoiceSubmitted) return;
+    poleDisplayService.showCheckout(
+      checkoutPayableTotal,
+      outstandingAmount,
+      totalPaidAmount,
+      poleDisplayChange,
+    );
+    customerDisplayService.publish({
+      mode: "checkout",
+      items: cartItems.map((item) => {
+        const unitPrice = effectiveDisplayRateByItem[item.item_code || item.id] ?? Number(item.price || 0);
+        return {
+          id: item.item_code || item.id,
+          name: item.name,
+          quantity: Number(item.quantity || 0),
+          uom: item.uom,
+          unitPrice,
+          lineTotal: roundCurrency(unitPrice * Number(item.quantity || 0)),
+        };
+      }),
+      customerName: selectedCustomer?.name,
+      currency: "KES",
+      subtotal: displaySubtotal,
+      discount: roundCurrency(calculations.couponDiscount + Number(billDiscountAmount || 0) + loyaltyAmount),
+      tax: displayTaxTotal,
+      total: checkoutGrandTotal,
+      payableTotal: checkoutPayableTotal,
+      paid: totalPaidAmount,
+      outstanding: outstandingAmount,
+      change: poleDisplayChange,
+    });
+  }, [
+    billDiscountAmount,
+    calculations.couponDiscount,
+    cartItems,
+    checkoutPayableTotal,
+    checkoutGrandTotal,
+    displaySubtotal,
+    displayTaxTotal,
+    effectiveDisplayRateByItem,
+    invoiceSubmitted,
+    isOpen,
+    loyaltyAmount,
+    outstandingAmount,
+    poleDisplayChange,
+    selectedCustomer?.name,
+    totalPaidAmount,
+  ]);
+
+  useEffect(() => {
+    if (!invoiceSubmitted) return;
+    const invoiceName = submittedInvoice?.invoice_name || submittedInvoice?.invoice_id || invoiceData?.name;
+    poleDisplayService.showSuccess(invoiceName);
+    customerDisplayService.showSuccess({
+      items: cartItems.map((item) => {
+        const unitPrice = effectiveDisplayRateByItem[item.item_code || item.id] ?? Number(item.price || 0);
+        return {
+          id: item.item_code || item.id,
+          name: item.name,
+          quantity: Number(item.quantity || 0),
+          uom: item.uom,
+          unitPrice,
+          lineTotal: roundCurrency(unitPrice * Number(item.quantity || 0)),
+        };
+      }),
+      customerName: selectedCustomer?.name,
+      currency: "KES",
+      subtotal: displaySubtotal,
+      discount: roundCurrency(calculations.couponDiscount + Number(billDiscountAmount || 0) + loyaltyAmount),
+      tax: displayTaxTotal,
+      total: checkoutGrandTotal,
+      payableTotal: checkoutPayableTotal,
+      paid: totalPaidAmount,
+      outstanding: outstandingAmount,
+      change: poleDisplayChange,
+      invoiceName,
+    });
+  }, [
+    billDiscountAmount,
+    calculations.couponDiscount,
+    cartItems,
+    checkoutGrandTotal,
+    checkoutPayableTotal,
+    displaySubtotal,
+    displayTaxTotal,
+    effectiveDisplayRateByItem,
+    invoiceData?.name,
+    invoiceSubmitted,
+    loyaltyAmount,
+    outstandingAmount,
+    poleDisplayChange,
+    selectedCustomer?.name,
+    submittedInvoice,
+    totalPaidAmount,
+  ]);
+
   const previousCheckoutGrandTotalRef = useRef(checkoutPayableTotal);
 
   const toggleCreditSale = () => {

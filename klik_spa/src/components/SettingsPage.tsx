@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import { useEffect, useState } from "react"
 import { useAuth } from "../hooks/useAuth"
 import { useTheme } from "../hooks/useTheme"
 import { useI18n } from "../hooks/useI18n"
@@ -14,8 +14,11 @@ import {
   LogOut,
   ChevronRight,
   ArrowLeft,
+  MonitorUp,
 
 } from "lucide-react"
+import { poleDisplayService, type PoleDisplayState } from "../services/poleDisplayService"
+import { customerDisplayService } from "../services/customerDisplayService"
 
 export default function SettingsPage() {
   const { user, logout } = useAuth()
@@ -23,6 +26,9 @@ export default function SettingsPage() {
   const { language, setLanguage, } = useI18n()
   const navigate = useNavigate()
   const [activeSection, setActiveSection] = useState<string>("profile")
+  const [poleDisplayState, setPoleDisplayState] = useState<PoleDisplayState>(poleDisplayService.getState())
+
+  useEffect(() => poleDisplayService.subscribe(setPoleDisplayState), [])
 
   // Generate initials from user's full name
   const getInitials = (name: string) => {
@@ -66,6 +72,12 @@ export default function SettingsPage() {
       title: "Language & Region",
       icon: Globe,
       description: "Set your preferred language and region"
+    },
+    {
+      id: "pole-display",
+      title: "Pole Display",
+      icon: MonitorUp,
+      description: "Connect the Posiflex customer display"
     },
     {
       id: "account",
@@ -241,6 +253,85 @@ export default function SettingsPage() {
     </div>
   )
 
+  const renderPoleDisplaySection = () => {
+    const connected = poleDisplayState.status === "connected"
+    const busy = poleDisplayState.status === "connecting"
+    const supported = poleDisplayService.isSupported()
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+          <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Posiflex PD-2300</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
+            Browser-local connection. Display errors never stop or retry checkout.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-5">
+            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"><strong>Serial:</strong> 9600, 8-N-1</div>
+            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"><strong>Mode:</strong> Noritake, 20 × 2</div>
+          </div>
+
+          <div className={`p-4 rounded-lg border mb-5 ${connected ? "bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800" : "bg-gray-50 border-gray-200 dark:bg-gray-700 dark:border-gray-600"}`}>
+            <p className="font-medium text-gray-900 dark:text-white">
+              {connected ? "Connected" : poleDisplayState.status === "unsupported" ? "Not supported" : "Not connected"}
+            </p>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{poleDisplayState.message}</p>
+          </div>
+
+          {!supported && (
+            <p className="text-sm text-amber-700 dark:text-amber-300 mb-4">
+              Open KLiK in current Chrome or Microsoft Edge on Windows. Firefox and Safari do not provide Web Serial.
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            {!connected ? (
+              <button
+                type="button"
+                disabled={!supported || busy}
+                onClick={() => void poleDisplayService.connect()}
+                className="bg-beveren-600 text-white px-4 py-2 rounded-lg hover:bg-beveren-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                {busy ? "Connecting…" : "Connect Pole Display"}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void poleDisplayService.showTest()}
+                  className="bg-beveren-600 text-white px-4 py-2 rounded-lg hover:bg-beveren-700 transition-colors"
+                >
+                  Send Test Message
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void poleDisplayService.disconnect()}
+                  className="border border-red-300 text-red-700 dark:text-red-300 px-4 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+          <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Second customer monitor</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
+            Opens the live cart and payment view in a separate window on this computer.
+          </p>
+          <button
+            type="button"
+            onClick={() => customerDisplayService.openWindow()}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Open Customer Monitor
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const renderContent = () => {
     switch (activeSection) {
       case "profile":
@@ -249,6 +340,8 @@ export default function SettingsPage() {
         return renderAppearanceSection()
       case "language":
         return renderLanguageSection()
+      case "pole-display":
+        return renderPoleDisplaySection()
       case "account":
         return renderAccountSection()
       default:

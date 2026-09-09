@@ -18,6 +18,7 @@ import InvoiceHistoryPage from "../pages/InvoiceHistory";
 import InvoiceViewPage from "../pages/InvoiceViewPage";
 import CustomerDetailsPage from "../pages/CustomerPageDetails";
 import CustomerStatementPage from "../pages/CustomerStatementPage.tsx";
+import CustomerDisplayPage from "../pages/CustomerDisplayPage";
 
 const router = createBrowserRouter([
   {
@@ -31,6 +32,10 @@ const router = createBrowserRouter([
       {
         path: "login",
         element: <LoginPage />,
+      },
+      {
+        path: "customer-display",
+        element: <CustomerDisplayPage />,
       },
       {
         path: "pos",

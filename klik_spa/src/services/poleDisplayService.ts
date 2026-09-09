@@ -351,9 +351,14 @@ async probeAgent() {
     this.queueFrame(amountLine("TOTAL", total), amountLine("DUE", due));
   }
 
-  showSuccess(invoiceName?: string) {
-    this.holdUntil = Date.now() + 5000;
-    this.queueFrame("THANK YOU", invoiceName || "VIRDI PHARMACY", true);
+  showSuccess() {
+    this.holdUntil = Date.now() + 3000;
+    this.queueFrame("THANK YOU", "VIRDI PHARMACY", true);
+
+    window.setTimeout(() => {
+      this.holdUntil = 0;
+      void this.showIdle(true);
+    }, 3000);
   }
 
   showTest() {

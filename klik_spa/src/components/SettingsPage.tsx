@@ -28,8 +28,19 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<string>("profile")
   const [poleDisplayState, setPoleDisplayState] = useState<PoleDisplayState>(poleDisplayService.getState())
 
-  useEffect(() => poleDisplayService.subscribe(setPoleDisplayState), [])
+useEffect(() => {
+  const unsubscribe = poleDisplayService.subscribe(setPoleDisplayState)
+  void poleDisplayService.probeAgent()
 
+  const timer = window.setInterval(() => {
+    void poleDisplayService.probeAgent()
+  }, 5000)
+
+  return () => {
+    unsubscribe()
+    window.clearInterval(timer)
+  }
+}, [])
   // Generate initials from user's full name
   const getInitials = (name: string) => {
     return name

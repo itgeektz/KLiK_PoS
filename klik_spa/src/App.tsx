@@ -19,15 +19,17 @@ function App() {
     setupGlobalErrorHandling();
   }, []);
 
+  const isCustomerDisplay = window.location.pathname.replace(/\/+$/, "").endsWith("/customer-display");
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ThemeProvider>
           <I18nProvider>
             <ProductProvider>
-              <RetailSidebar />
+              {!isCustomerDisplay && <RetailSidebar />}
               <Outlet />
-              <Footer />
+              {!isCustomerDisplay && <Footer />}
               <ToastContainer position="top-center" autoClose={3000} aria-label="Notification" />
             </ProductProvider>
           </I18nProvider>

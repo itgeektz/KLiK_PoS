@@ -9,7 +9,10 @@ export interface CustomerDisplayItem {
   quantity: number;
   uom?: string;
   unitPrice: number;
+  originalUnitPrice?: number;
   lineTotal: number;
+  originalLineTotal?: number;
+  itemDiscount?: number;
 }
 
 export interface CustomerDisplaySnapshot {
@@ -19,6 +22,9 @@ export interface CustomerDisplaySnapshot {
   currency: string;
   subtotal: number;
   discount: number;
+  itemDiscountTotal?: number;
+  billDiscount?: number;
+  loyaltyDiscount?: number;
   tax: number;
   total: number;
   payableTotal: number;
@@ -60,6 +66,7 @@ class CustomerDisplayService {
   private snapshot = readStoredSnapshot();
   private listeners = new Set<SnapshotListener>();
   private successHoldUntil = 0;
+  private successTimer: number | null = null;
 
   constructor() {
     if (typeof BroadcastChannel !== "undefined") {
@@ -105,8 +112,15 @@ class CustomerDisplayService {
   }
 
   showSuccess(snapshot: Omit<CustomerDisplaySnapshot, "mode" | "updatedAt">) {
+    if (this.successTimer !== null) window.clearTimeout(this.successTimer);
     this.successHoldUntil = Date.now() + 5000;
     this.publish({ ...snapshot, mode: "success" }, true);
+    this.successTimer = window.setTimeout(() => {
+      this.successTimer = null;
+      this.successHoldUntil = 0;
+      const { updatedAt: _updatedAt, ...idle } = idleSnapshot();
+      this.publish(idle, true);
+    }, 5000);
   }
 
   openWindow() {

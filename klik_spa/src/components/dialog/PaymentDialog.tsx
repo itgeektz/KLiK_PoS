@@ -390,6 +390,54 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   const displayTaxTotal = hasBackendTaxPreview
     ? backendTaxPreview?.total_taxes_and_charges || 0
     : calculations.taxAmount > 0 ? calculations.taxAmount : Math.max(0, localTaxTotal);
+  const customerDisplayItems = useMemo(() => cartItems.map((item) => {
+    const code = item.item_code || item.id;
+    const quantity = Number(item.quantity || 0);
+    const unitPrice = effectiveDisplayRateByItem[code] ?? Number(item.price || 0);
+    const originalItem = {
+      ...item,
+      price: Number((item as { original_price?: number }).original_price ?? item.price ?? 0),
+    };
+    const originalUnitPrice = getSharedEffectiveDisplayRate(originalItem, {
+      itemDiscounts: {},
+      isTaxIncludedInBasicRate,
+      selectedTaxLineMap,
+      selectedTaxTemplate,
+    });
+    const lineTotal = roundCurrency(unitPrice * quantity);
+    const originalLineTotal = roundCurrency(originalUnitPrice * quantity);
+
+    return {
+      id: code,
+      name: item.name,
+      quantity,
+      uom: item.uom,
+      unitPrice,
+      originalUnitPrice,
+      lineTotal,
+      originalLineTotal,
+      itemDiscount: roundCurrency(Math.max(0, originalLineTotal - lineTotal)),
+    };
+  }), [
+    cartItems,
+    effectiveDisplayRateByItem,
+    isTaxIncludedInBasicRate,
+    selectedTaxLineMap,
+    selectedTaxTemplate,
+  ]);
+  const customerItemDiscountTotal = useMemo(
+    () => customerDisplayItems.reduce((sum, item) => roundCurrency(sum + Number(item.itemDiscount || 0)), 0),
+    [customerDisplayItems],
+  );
+  const customerBillDiscount = roundCurrency(calculations.couponDiscount + Number(billDiscountAmount || 0));
+  const customerTotalDiscount = roundCurrency(customerItemDiscountTotal + customerBillDiscount + loyaltyAmount);
+  const customerDisplaySubtotal = useMemo(
+    () => customerDisplayItems.reduce(
+      (sum, item) => roundCurrency(sum + Number(item.originalLineTotal || 0)),
+      0,
+    ),
+    [customerDisplayItems],
+  );
 
   useEffect(() => {
     if (!isOpen || invoiceSubmitted) return;
@@ -401,21 +449,14 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     );
     customerDisplayService.publish({
       mode: "checkout",
-      items: cartItems.map((item) => {
-        const unitPrice = effectiveDisplayRateByItem[item.item_code || item.id] ?? Number(item.price || 0);
-        return {
-          id: item.item_code || item.id,
-          name: item.name,
-          quantity: Number(item.quantity || 0),
-          uom: item.uom,
-          unitPrice,
-          lineTotal: roundCurrency(unitPrice * Number(item.quantity || 0)),
-        };
-      }),
+      items: customerDisplayItems,
       customerName: selectedCustomer?.name,
       currency: "KES",
-      subtotal: displaySubtotal,
-      discount: roundCurrency(calculations.couponDiscount + Number(billDiscountAmount || 0) + loyaltyAmount),
+      subtotal: customerDisplaySubtotal,
+      discount: customerTotalDiscount,
+      itemDiscountTotal: customerItemDiscountTotal,
+      billDiscount: customerBillDiscount,
+      loyaltyDiscount: loyaltyAmount,
       tax: displayTaxTotal,
       total: checkoutGrandTotal,
       payableTotal: checkoutPayableTotal,
@@ -426,12 +467,15 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   }, [
     billDiscountAmount,
     calculations.couponDiscount,
-    cartItems,
     checkoutPayableTotal,
     checkoutGrandTotal,
+    customerBillDiscount,
+    customerDisplayItems,
+    customerItemDiscountTotal,
+    customerTotalDiscount,
+    customerDisplaySubtotal,
     displaySubtotal,
     displayTaxTotal,
-    effectiveDisplayRateByItem,
     invoiceSubmitted,
     isOpen,
     loyaltyAmount,
@@ -444,23 +488,16 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   useEffect(() => {
     if (!invoiceSubmitted) return;
     const invoiceName = submittedInvoice?.invoice_name || submittedInvoice?.invoice_id || invoiceData?.name;
-    poleDisplayService.showSuccess(invoiceName);
+    poleDisplayService.showSuccess();
     customerDisplayService.showSuccess({
-      items: cartItems.map((item) => {
-        const unitPrice = effectiveDisplayRateByItem[item.item_code || item.id] ?? Number(item.price || 0);
-        return {
-          id: item.item_code || item.id,
-          name: item.name,
-          quantity: Number(item.quantity || 0),
-          uom: item.uom,
-          unitPrice,
-          lineTotal: roundCurrency(unitPrice * Number(item.quantity || 0)),
-        };
-      }),
+      items: customerDisplayItems,
       customerName: selectedCustomer?.name,
       currency: "KES",
-      subtotal: displaySubtotal,
-      discount: roundCurrency(calculations.couponDiscount + Number(billDiscountAmount || 0) + loyaltyAmount),
+      subtotal: customerDisplaySubtotal,
+      discount: customerTotalDiscount,
+      itemDiscountTotal: customerItemDiscountTotal,
+      billDiscount: customerBillDiscount,
+      loyaltyDiscount: loyaltyAmount,
       tax: displayTaxTotal,
       total: checkoutGrandTotal,
       payableTotal: checkoutPayableTotal,
@@ -472,12 +509,15 @@ export default function PaymentDialog(props: PaymentDialogProps) {
   }, [
     billDiscountAmount,
     calculations.couponDiscount,
-    cartItems,
     checkoutGrandTotal,
     checkoutPayableTotal,
+    customerBillDiscount,
+    customerDisplayItems,
+    customerItemDiscountTotal,
+    customerTotalDiscount,
+    customerDisplaySubtotal,
     displaySubtotal,
     displayTaxTotal,
-    effectiveDisplayRateByItem,
     invoiceData?.name,
     invoiceSubmitted,
     loyaltyAmount,

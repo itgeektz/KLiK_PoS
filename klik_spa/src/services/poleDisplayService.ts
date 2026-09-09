@@ -75,6 +75,7 @@ class PoleDisplayService {
   private listeners = new Set<StatusListener>();
   private writeQueue: Promise<void> = Promise.resolve();
   private holdUntil = 0;
+  private successTimer: number | null = null;
   private reconnectTimer: number | null = null;
   private agentConnected = false;
   private agentPortName: string | null = null;
@@ -85,7 +86,6 @@ class PoleDisplayService {
     navigator.serial?.addEventListener("connect", () => {
       if (this.config.enabled) void this.tryReconnect();
     });
-
     navigator.serial?.addEventListener("disconnect", (event) => {
       if (event.target !== this.port) return;
       this.port = null;
@@ -108,19 +108,18 @@ class PoleDisplayService {
     return this.state;
   }
 
-async probeAgent() {
-  if (this.agentConnected) return true;
-  if (await this.connectAgent(true)) return true;
+  async probeAgent() {
+    if (this.agentConnected) return true;
+    if (await this.connectAgent(true)) return true;
 
-  if (navigator.serial) {
-    this.setState({ status: "disabled", message: "Windows agent not found. Web Serial fallback is available in Chrome or Edge." });
+    if (navigator.serial) {
+      this.setState({ status: "disabled", message: "Windows agent not found. Web Serial fallback is available in Chrome or Edge." });
+      return false;
+    }
+
+    this.setState({ status: "unsupported", message: "Windows agent not found. Web Serial fallback requires Chrome or Edge." });
     return false;
   }
-
-  this.setState({ status: "unsupported", message: "Windows agent not found. Web Serial fallback requires Chrome or Edge." });
-  return false;
-}
-
 
   subscribe(listener: StatusListener) {
     this.listeners.add(listener);
@@ -136,15 +135,15 @@ async probeAgent() {
   }
 
   async connect() {
-        if (await this.connectAgent(true)) {
+    if (await this.connectAgent(true)) {
       this.config = { ...this.config, enabled: true };
       saveConfig(this.config);
       await this.showIdle(true);
       return true;
     }
-    
+
     if (!navigator.serial) {
-      this.setState({ status: "unsupported", message: "Web Serial requires Chrome or Edge on Windows" });
+      this.setState({ status: "unsupported", message: "Windows agent unavailable; Web Serial requires Chrome or Edge" });
       return false;
     }
 
@@ -154,6 +153,7 @@ async probeAgent() {
         filters: [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }],
       });
       await this.openPort(port);
+      this.clearReconnectTimer();
       this.config = { ...this.config, enabled: true };
       saveConfig(this.config);
       await this.showIdle(true);
@@ -165,9 +165,8 @@ async probeAgent() {
     }
   }
 
-    async tryReconnect() {
+  async tryReconnect() {
     if (this.agentConnected || this.port) return true;
-
     if (await this.connectAgent(true)) {
       this.config = { ...this.config, enabled: true };
       saveConfig(this.config);
@@ -175,23 +174,18 @@ async probeAgent() {
       await this.showIdle(true);
       return true;
     }
-
     if (!this.config.enabled || !navigator.serial) return false;
-
     this.setState({ status: "connecting", message: "Reconnecting to the pole display" });
-
     try {
       const ports = await navigator.serial.getPorts();
       const selected = ports.find((port) => {
         const info = port.getInfo();
         return info.usbVendorId === 0x1a86 && info.usbProductId === 0x7523;
       }) || ports[0];
-
       if (!selected) {
         this.setState({ status: "disabled", message: "Open Settings and select the COM device" });
         return false;
       }
-
       await this.openPort(selected);
       this.clearReconnectTimer();
       await this.showIdle(true);
@@ -214,7 +208,7 @@ async probeAgent() {
       flowControl: "none",
     });
     this.port = port;
-        this.setState({
+    this.setState({
       status: "connected",
       message: `Connected at ${this.config.baudRate} baud`,
       transport: "web-serial",
@@ -229,6 +223,7 @@ async probeAgent() {
     this.agentConnected = false;
     this.agentPortName = null;
     this.clearReconnectTimer();
+    this.clearSuccessTimer();
     try {
       await this.writeQueue.catch(() => undefined);
       await port?.close();
@@ -242,9 +237,12 @@ async probeAgent() {
     if (!force && Date.now() < this.holdUntil) return;
     if (!this.config.enabled || (!this.agentConnected && !this.port?.writable)) return;
 
+    const fittedLine1 = fitLine(line1);
+    const fittedLine2 = fitLine(line2);
+
     const frame = new Uint8Array([
       0x0c,
-      ...new TextEncoder().encode(fitLine(line1) + fitLine(line2)),
+      ...new TextEncoder().encode(fittedLine1 + fittedLine2),
     ]);
 
     this.writeQueue = this.writeQueue
@@ -255,7 +253,7 @@ async probeAgent() {
             mode: "cors",
             cache: "no-store",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ line1: fitLine(line1), line2: fitLine(line2) }),
+            body: JSON.stringify({ line1: fittedLine1, line2: fittedLine2 }),
           });
           if (!response.ok) throw new Error(`Windows agent returned HTTP ${response.status}`);
           return;
@@ -277,37 +275,31 @@ async probeAgent() {
         void failedPort?.close().catch(() => undefined).finally(() => this.scheduleReconnect());
       });
   }
+
   private async connectAgent(markEnabled = false) {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 800);
-
     try {
       const response = await fetch(`${AGENT_URL}/health`, {
         mode: "cors",
         cache: "no-store",
         signal: controller.signal,
       });
-
       if (!response.ok) return false;
-
       const health = (await response.json()) as AgentHealth;
       if (health.ok === false) return false;
-
       this.agentConnected = true;
       this.agentPortName = health.port || null;
-
       if (markEnabled) {
         this.config = { ...this.config, enabled: true };
         saveConfig(this.config);
       }
-
       this.setState({
         status: "connected",
         message: `Connected through Windows agent${this.agentPortName ? ` on ${this.agentPortName}` : ""}`,
         transport: "agent",
         portName: this.agentPortName || undefined,
       });
-
       return true;
     } catch {
       this.agentConnected = false;
@@ -320,7 +312,6 @@ async probeAgent() {
 
   private scheduleReconnect() {
     if (!this.config.enabled || this.reconnectTimer !== null) return;
-
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       void this.tryReconnect();
@@ -329,10 +320,16 @@ async probeAgent() {
 
   private clearReconnectTimer() {
     if (this.reconnectTimer === null) return;
-
     window.clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
   }
+
+  private clearSuccessTimer() {
+    if (this.successTimer === null) return;
+    window.clearTimeout(this.successTimer);
+    this.successTimer = null;
+  }
+
   showIdle(force = false) {
     this.queueFrame("VIRDI PHARMACY", "WELCOME", force);
     return this.writeQueue;
@@ -352,13 +349,14 @@ async probeAgent() {
   }
 
   showSuccess() {
-    this.holdUntil = Date.now() + 3000;
+    this.clearSuccessTimer();
+    this.holdUntil = Date.now() + 5000;
     this.queueFrame("THANK YOU", "VIRDI PHARMACY", true);
-
-    window.setTimeout(() => {
+    this.successTimer = window.setTimeout(() => {
+      this.successTimer = null;
       this.holdUntil = 0;
       void this.showIdle(true);
-    }, 3000);
+    }, 5000);
   }
 
   showTest() {

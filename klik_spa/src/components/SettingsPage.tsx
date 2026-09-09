@@ -28,19 +28,19 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<string>("profile")
   const [poleDisplayState, setPoleDisplayState] = useState<PoleDisplayState>(poleDisplayService.getState())
 
-useEffect(() => {
-  const unsubscribe = poleDisplayService.subscribe(setPoleDisplayState)
-  void poleDisplayService.probeAgent()
-
-  const timer = window.setInterval(() => {
+  useEffect(() => {
+    const unsubscribe = poleDisplayService.subscribe(setPoleDisplayState)
     void poleDisplayService.probeAgent()
-  }, 5000)
+    const timer = window.setInterval(() => {
+      void poleDisplayService.probeAgent()
+    }, 5000)
 
-  return () => {
-    unsubscribe()
-    window.clearInterval(timer)
-  }
-}, [])
+    return () => {
+      unsubscribe()
+      window.clearInterval(timer)
+    }
+  }, [])
+
   // Generate initials from user's full name
   const getInitials = (name: string) => {
     return name
@@ -268,18 +268,21 @@ useEffect(() => {
     const connected = poleDisplayState.status === "connected"
     const busy = poleDisplayState.status === "connecting"
     const supported = poleDisplayService.isSupported()
+    const usingAgent = poleDisplayState.transport === "agent"
 
     return (
       <div className="space-y-6">
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
           <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Posiflex PD-2300</h3>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
-            Browser-local connection. Display errors never stop or retry checkout.
+            Windows background agent is preferred. Chrome or Edge Web Serial is used only as a fallback. Display errors never stop or retry checkout.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-5">
             <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"><strong>Serial:</strong> 9600, 8-N-1</div>
             <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"><strong>Mode:</strong> Noritake, 20 × 2</div>
+            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"><strong>Transport:</strong> {usingAgent ? "Windows agent" : "Browser fallback"}</div>
+            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"><strong>Port:</strong> {poleDisplayState.portName || "Auto / selected device"}</div>
           </div>
 
           <div className={`p-4 rounded-lg border mb-5 ${connected ? "bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800" : "bg-gray-50 border-gray-200 dark:bg-gray-700 dark:border-gray-600"}`}>
@@ -291,7 +294,7 @@ useEffect(() => {
 
           {!supported && (
             <p className="text-sm text-amber-700 dark:text-amber-300 mb-4">
-              Open KLiK in current Chrome or Microsoft Edge on Windows. Firefox and Safari do not provide Web Serial.
+              Install the Windows agent, or open KLiK in current Chrome or Microsoft Edge for Web Serial fallback.
             </p>
           )}
 

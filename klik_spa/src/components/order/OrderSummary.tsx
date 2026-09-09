@@ -29,6 +29,7 @@ import {
   getCheckoutAttemptForCart,
   getCheckoutCartFingerprint,
 } from "../../utils/checkoutAttempt";
+import { useCustomerDisplay } from "../../hooks/useCustomerDisplay";
 
 interface OrderSummaryProps {
   onClearCart?: () => void;
@@ -102,6 +103,11 @@ export default function OrderSummary({
     posDetails?.is_tax_included_in_basic_rate === 1
     || posDetails?.is_tax_included_in_basic_rate === "1"
     || posDetails?.is_tax_included_in_basic_rate === true;
+
+  useCustomerDisplay({
+    itemDiscounts,
+    isTaxIncludedInBasicRate,
+  });
 
   useEffect(() => {
     if (!selectedCustomer?.id || cartItems.length === 0) {

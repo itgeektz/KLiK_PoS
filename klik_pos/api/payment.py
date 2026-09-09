@@ -721,11 +721,7 @@ def _merge_payment_entry_rows(sales_rows, payment_entry_rows):
 
 def _build_payment_summary(opening_modes, sales_data):
 	"""Build payment summary by merging opening balances with sales data."""
-	sales_map = {
-    row.get("mode_of_payment"): row
-    for row in sales_data
-    if row.get("mode_of_payment")
-}
+	sales_map = {row.mode_of_payment: row for row in sales_data}
 
 	summary = []
 	for mode in opening_modes:

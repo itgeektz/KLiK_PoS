@@ -2647,7 +2647,6 @@ def _update_existing_draft_invoice(
 	invoice_doc.warehouse = rebuilt_doc.warehouse
 	invoice_doc.cost_center = rebuilt_doc.cost_center
 	invoice_doc.is_pos = rebuilt_doc.is_pos
-	invoice_doc.is_created_using_pos = rebuilt_doc.is_created_using_pos
 	invoice_doc.redeem_loyalty_points = rebuilt_doc.redeem_loyalty_points
 	invoice_doc.loyalty_points = rebuilt_doc.loyalty_points
 	invoice_doc.loyalty_amount = rebuilt_doc.loyalty_amount
@@ -2869,7 +2868,6 @@ def _get_active_pos_profile():
 def _set_pos_profile_fields(doc, pos_profile, customer, business_type, amount_paid=0.0, allow_partial_payment=False):
 	"""Set POS profile, company, currency and POS-specific fields."""
 	doc.pos_profile = pos_profile.name
-	doc.is_created_using_pos = 1
 	doc.company = pos_profile.company
 	doc.currency = get_customer_billing_currency(customer)
 	price_list = get_price_list_with_customer_priority(customer) or getattr(pos_profile, "selling_price_list", None)

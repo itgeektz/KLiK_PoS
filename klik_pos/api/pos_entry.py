@@ -222,6 +222,7 @@ def _calculate_payment_reconciliation(opening_entry, data):
 		JOIN `tabSales Invoice Payment` sip ON si.name = sip.parent
 		WHERE si.pos_profile = %s
 		  AND si.docstatus = 1
+		  AND si.is_pos = 1
 		  AND si.posting_date = %s
 		  AND si.posting_time >= %s
 		  AND si.custom_pos_opening_entry IS NOT NULL
@@ -293,6 +294,7 @@ def _calculate_closing_entry_totals(opening_entry_name):
 			LEFT JOIN `tabSales Invoice Item` sii ON si.name = sii.parent
 			WHERE si.custom_pos_opening_entry = %s
 			  AND si.docstatus = 1
+			  AND si.is_pos = 1s
 			""",
 			(opening_entry_name,),
 			as_dict=True,
@@ -331,7 +333,8 @@ def _populate_sales_invoices_to_closing_entry(closing_doc, opening_entry_name):
 			"Sales Invoice",
 			filters={
 				"custom_pos_opening_entry": opening_entry_name,
-				"docstatus": 1,  # Only submitted invoices				
+				"docstatus": 1,  # Only submitted invoices		
+				"is_pos": 1,		
 			},
 			fields=["name", "customer", "posting_date", "grand_total"],
 			order_by="posting_date, posting_time",

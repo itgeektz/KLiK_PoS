@@ -429,7 +429,13 @@ export default function PaymentDialog(props: PaymentDialogProps) {
     () => customerDisplayItems.reduce((sum, item) => roundCurrency(sum + Number(item.itemDiscount || 0)), 0),
     [customerDisplayItems],
   );
-  const customerBillDiscount = roundCurrency(calculations.couponDiscount + Number(billDiscountAmount || 0));
+  const localBillDiscount = billDiscountPercentage > 0
+    ? roundCurrency(inclGrandTotal * billDiscountPercentage / 100)
+    : roundCurrency(Number(billDiscountAmount || 0));
+  const resolvedBillDiscount = hasBackendTaxPreview
+    ? roundCurrency(Number(backendTaxPreview?.discount_amount || 0))
+    : localBillDiscount;
+  const customerBillDiscount = roundCurrency(calculations.couponDiscount + resolvedBillDiscount);
   const customerTotalDiscount = roundCurrency(customerItemDiscountTotal + customerBillDiscount + loyaltyAmount);
   const customerDisplaySubtotal = useMemo(
     () => customerDisplayItems.reduce(

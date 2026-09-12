@@ -2972,6 +2972,60 @@ def _validate_and_autofetch_batch_and_serial(items, pos_profile):
 						"Serial No / Batch No are mandatory for Item {0}. Please select a batch before submitting the invoice."
 					).format(item_code)
 				)
+		elif has_batch_no and has_bundle_values:
+			# The cart's own bundle_entries can be SHORT of the line's quantity -- the
+			# frontend picks batches up to whatever it sees as "available" and simply
+			# stops there instead of covering the rest, rather than throwing or padding
+			# the remainder onto an oversell batch. That's not hypothetical: it is
+			# EXACTLY what a live production failure looked like --
+			# {"item_code": "Lasix 40mg tabs", "quantity": 140, "bundle_entries":
+			# [{"batch_no": "1001H4792", "qty": 33, ...}]} -- 107 units short, sent to
+			# the backend as if batch selection were already complete.
+			#
+			# Because has_bundle_values above only checks that the list is non-empty,
+			# not that it actually sums to the line's quantity, this short list sailed
+			# straight through this whole function untouched. The invoice then built
+			# (via _create_batch_and_serial_bundle) an internally inconsistent Sales
+			# Invoice Item: qty=140 on the row, but only 33 units' worth of batch
+			# entries attached to it. That inconsistency is invisible until ERPNext's
+			# own on_submit stock ledger code tries to reconcile the two -- inside
+			# erpnext.stock.serial_batch_bundle.SerialBatchCreation.validate_qty(), an
+			# entirely different check from the one CustomSerialAndBatchBundle patches
+			# (see klik_pos/overrides/serial_and_batch_bundle.py's module docstring),
+			# and one that has no concept of Klik POS's oversell settings at all -- and
+			# it throws "Available qty 33.0 is less than the Required Qty 140.0",
+			# either aborting the till right after "success" was already shown (direct
+			# submit) or failing silently in the background queue (see
+			# _validate_stock_items_have_batch_or_serial above for the sibling gap this
+			# mirrors).
+			#
+			# Catching the shortfall here, synchronously, before any of that: top up
+			# with a fresh, complete FIFO pick (which already knows how to spread across
+			# multiple batches and, via CustomSerialAndBatchBundle, land the remainder as
+			# an intentional oversell) rather than trying to patch the partial list --
+			# blending the two risks double-counting whatever batch(es) are already in it.
+			entries_qty = sum(flt(entry.get("qty") or 0) for entry in bundle_entries)
+			required_qty = flt(item.get("quantity") or 0)
+			if required_qty - entries_qty > 0.005:
+				if auto_fetch_enabled:
+					auto_batch = _autofetch_batch_fifo(item_code, pos_profile.warehouse, required_qty)
+					if not auto_batch:
+						frappe.throw(
+							_(
+								"Serial No / Batch No are mandatory for Item {0} and no suitable batch is available in warehouse {1}."
+							).format(item_code, pos_profile.warehouse)
+						)
+					if isinstance(auto_batch, list):
+						item["bundle_entries"] = auto_batch
+					else:
+						item["batchNumber"] = auto_batch
+						item["bundle_entries"] = []
+				else:
+					frappe.throw(
+						_(
+							"Item {0}: only {1} of the required {2} units have a batch selected. Please select a batch covering the full quantity before submitting the invoice."
+						).format(item_code, entries_qty, required_qty)
+					)
 
 
 def _validate_stock_items_have_batch_or_serial(doc):
@@ -4322,6 +4376,111 @@ class CustomSalesInvoice(SalesInvoice):
 					frappe.bold(self.pos_profile)
 				),
 			)
+
+	def validate_selling_price(self):
+		"""Overrides erpnext.controllers.selling_controller.SellingController's
+		validate_selling_price -- ERPNext core's check behind Selling Settings >
+		"Validate selling price for Item against purchase or valuation rate" -- so it
+		compares against a STABLE reference cost (Item.last_purchase_rate, falling
+		back to Item.valuation_rate only when there's no purchase history at all)
+		instead of the live, per-transaction `incoming_rate` core puts on the invoice
+		item row.
+
+		Why this needed overriding, not just leaving the Selling Settings checkbox on:
+		Klik POS deliberately allows every stock item to oversell/go negative (see the
+		removal note above _split_oversold_items, and
+		klik_pos/overrides/serial_and_batch_bundle.py). When a sale draws on a batch
+		that's already at zero stock, ERPNext has no real stock left to value that
+		leg against, and posts it at a valuation of 0 -- confirmed against a real
+		Stock Ledger export for "Glemont L Tabs": a sale that pushed the balance to
+		-14 posted Incoming Rate, Outgoing Rate, and Value Change all as 0. Because
+		ERPNext's moving-average valuation for an item carries forward from one
+		transaction to the next, that single zero-valuation event then corrupts every
+		later purchase's computed average for that item -- the same export shows this
+		item's Avg Rate jumping from a real ~96-101 to a fabricated 288.15, then
+		148.07, then 200.10, purely as an artifact of the earlier oversold sale, with
+		no purchase ever actually costing anywhere near that. Any later invoice's
+		`incoming_rate` inherits that same corrupted average.
+
+		Core's original check compares the invoice's net rate against exactly that
+		corrupted incoming_rate/valuation_rate, so once an item's valuation has been
+		corrupted this way it starts throwing "Selling rate ... is lower than its
+		valuation rate" on perfectly normally priced sales -- which is why it had to
+		be disabled sitewide, losing real underpriced-sale protection for every item,
+		not just the corrupted ones.
+
+		This override keeps the actual protection (a sale priced below a sane
+		reference cost is still blocked) but sources that reference cost from
+		Item.last_purchase_rate -- literally "what did we last pay for a real unit of
+		this", immune to the moving-average corruption above -- falling back to
+		Item.valuation_rate only for an item with no purchase history on file at all.
+		Free/pricing-rule items and returns are skipped, matching core's own
+		exclusions.
+		"""
+		from frappe.utils import get_link_to_form
+
+		def throw_message(idx, item_name, rate, ref_rate_field):
+			frappe.throw(
+				_(
+					"""Row #{0}: Selling rate for item {1} is lower than its {2}.
+					Selling {3} should be atleast {4}.<br><br>Alternatively,
+					you can disable '{5}' in {6} to bypass
+					this validation."""
+				).format(
+					idx,
+					frappe.bold(item_name),
+					frappe.bold(ref_rate_field),
+					frappe.bold("net rate"),
+					frappe.bold(rate),
+					frappe.bold(frappe.get_meta("Selling Settings").get_label("validate_selling_price")),
+					get_link_to_form("Selling Settings"),
+				),
+				title=_("Invalid Selling Price"),
+			)
+
+		if self.get("is_return") or not frappe.get_single_value("Selling Settings", "validate_selling_price"):
+			return
+
+		if self.get("is_internal_customer"):
+			return
+
+		item_codes = list(
+			{row.item_code for row in self.items if row.item_code and not row.get("is_free_item")}
+		)
+		if not item_codes:
+			return
+
+		item_data_map = {
+			row.name: row
+			for row in frappe.get_all(
+				"Item",
+				filters={"name": ["in", item_codes]},
+				fields=["name", "last_purchase_rate", "valuation_rate", "is_stock_item"],
+			)
+		}
+
+		for item in self.items:
+			if not item.item_code or item.get("is_free_item"):
+				continue
+
+			item_data = item_data_map.get(item.item_code)
+			if not item_data or not int(item_data.is_stock_item or 0):
+				continue
+
+			last_purchase_rate = flt(item_data.last_purchase_rate)
+			reference_rate = last_purchase_rate or flt(item_data.valuation_rate)
+			if not reference_rate:
+				# No purchase history and no valuation on file yet -- nothing sane to
+				# compare against, so let the sale through rather than block on nothing.
+				continue
+
+			reference_rate_in_sales_uom = flt(
+				reference_rate * (item.conversion_factor or 1), item.precision("base_net_rate")
+			)
+
+			if flt(item.base_net_rate) < reference_rate_in_sales_uom:
+				ref_label = "last purchase rate" if last_purchase_rate else "valuation rate"
+				throw_message(item.idx, item.item_name, reference_rate_in_sales_uom, ref_label)
 
 	def before_submit(self):
 		if _should_reserve_stock(self):

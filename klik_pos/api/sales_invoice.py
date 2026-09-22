@@ -4303,39 +4303,6 @@ def get_expense_accounts(item_code):
 from frappe.model.mapper import get_mapped_doc
 
 
-def _is_credit_mode_of_payment(mode_of_payment):
-	"""True for the "Credit" (customer-account) mode of payment.
-
-	A Credit payment row on a POS invoice books its amount to the POS Credit
-	Clearing account (a Temporary asset with "Balance must be: Debit"), not to
-	cash. Nothing was collected at the till, so a return against it must never
-	push money back out of that account: by the time the return is made, the
-	clearing balance has usually already been settled, and a credit posted to it
-	is rejected with "Balance for Account POS Credit Clearing - VP must always
-	be Debit".
-	"""
-	return (mode_of_payment or "").strip().lower() == "credit"
-
-
-def _apply_credit_only_return(return_doc):
-	"""Turn a return into a plain (non-POS) credit note.
-
-	With is_pos = 0 and no payment rows the return posts only
-	Dr Sales / Dr VAT / Cr Debtors (and the stock + COGS reversal), i.e. it
-	reduces what the customer owes and leaves POS Credit Clearing untouched.
-	ERPNext's POS-return rule (paid_amount must equal the invoice total) only
-	applies when is_pos = 1, so it does not block this.
-	"""
-	return_doc.is_pos = 0
-	return_doc.payments = []
-	return_doc.paid_amount = 0
-	return_doc.base_paid_amount = 0
-	return_doc.change_amount = 0
-	return_doc.base_change_amount = 0
-	return_doc.write_off_amount = 0
-	return_doc.base_write_off_amount = 0
-
-
 @frappe.whitelist()
 def return_sales_invoice(invoice_name):
 	try:
@@ -4374,30 +4341,15 @@ def return_sales_invoice(invoice_name):
 			item.qty = -abs(item.qty)
 
 		return_doc.payments = []
-		original_payment_modes = [p.mode_of_payment for p in original_invoice.payments]
-		is_credit_only_sale = bool(original_payment_modes) and all(
-			_is_credit_mode_of_payment(mode) for mode in original_payment_modes
-		)
-
-		if is_credit_only_sale:
-			# Fully on-account sale: nothing was paid at the till, so there is
-			# nothing to refund out of POS Credit Clearing. Post a plain credit
-			# note against the customer's account instead.
-			_apply_credit_only_return(return_doc)
-		else:
-			for p in original_invoice.payments:
-				# Skip any Credit row of a mixed sale: refunding it through the
-				# clearing account is what triggers the "must always be Debit" error.
-				if _is_credit_mode_of_payment(p.mode_of_payment):
-					continue
-				return_doc.append(
-					"payments",
-					{
-						"mode_of_payment": p.mode_of_payment,
-						"amount": -abs(p.amount),
-						"account": p.account,
-					},
-				)
+		for p in original_invoice.payments:
+			return_doc.append(
+				"payments",
+				{
+					"mode_of_payment": p.mode_of_payment,
+					"amount": -abs(p.amount),
+					"account": p.account,
+				},
+			)
 
 		return_doc.save(ignore_permissions=True)
 		return_doc.submit()
@@ -5141,18 +5093,13 @@ def create_partial_return(
 		except Exception:
 			pass
 
-		if _is_credit_mode_of_payment(final_payment_method):
-			# Refund "to account": reduce the customer's balance, don't touch the
-			# POS Credit Clearing account (see _apply_credit_only_return).
-			_apply_credit_only_return(return_doc)
-		else:
-			return_doc.append(
-				"payments",
-				{
-					"mode_of_payment": final_payment_method,
-					"amount": -abs(final_return_amount),
-				},
-			)
+		return_doc.append(
+			"payments",
+			{
+				"mode_of_payment": final_payment_method,
+				"amount": -abs(final_return_amount),
+			},
+		)
 
 		# Recalculate totals (payment amount stays as user entered)
 		try:
